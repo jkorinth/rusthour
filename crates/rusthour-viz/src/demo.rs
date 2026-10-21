@@ -23,6 +23,7 @@ pub fn map() -> MapSource {
     let nodes = (0..COLUMNS * ROWS)
         .map(|i| Node {
             position: pos(NodeId(i)),
+            osm_node: None,
         })
         .collect();
 
@@ -80,5 +81,7 @@ fn one_way(from: NodeId, to: NodeId, a: Point, b: Point, lanes: u8) -> Road {
         ],
         speed_limit_mps: SPEED_MPS,
         lanes,
+        name: None,
+        osm: None,
     }
 }

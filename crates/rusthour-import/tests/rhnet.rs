@@ -3,7 +3,7 @@
 use proptest::prelude::*;
 use proptest::sample::Index;
 use rusthour_api::{
-    Connection, NETWORK_SCHEMA_VERSION, Network, Node, NodeId, Point, Road, RoadId,
+    Connection, NETWORK_SCHEMA_VERSION, Network, Node, NodeId, OsmWayPart, Point, Road, RoadId,
 };
 use rusthour_import::rhnet::{DecodeError, Metadata, decode, encode};
 
@@ -20,20 +20,34 @@ fn network() -> impl Strategy<Value = Network> {
         prop::collection::vec(point.clone(), 0..6),
         float,
         any::<u8>(),
+        any::<Option<String>>(),
+        any::<Option<(i64, i64, i64)>>(),
     )
-        .prop_map(|(from, to, geometry, speed_limit_mps, lanes)| Road {
-            from_node: NodeId(from),
-            to_node: NodeId(to),
-            geometry,
-            speed_limit_mps,
-            lanes,
-        });
+        .prop_map(
+            |(from, to, geometry, speed_limit_mps, lanes, name, osm)| Road {
+                from_node: NodeId(from),
+                to_node: NodeId(to),
+                geometry,
+                speed_limit_mps,
+                lanes,
+                name,
+                osm: osm.map(|(way, from_node, to_node)| OsmWayPart {
+                    way,
+                    from_node,
+                    to_node,
+                }),
+            },
+        );
     let connection = (any::<u32>(), any::<u32>()).prop_map(|(a, b)| Connection {
         from_road: RoadId(a),
         to_road: RoadId(b),
     });
     (
-        prop::collection::vec(point.prop_map(|position| Node { position }), 0..30),
+        prop::collection::vec(
+            (point, any::<Option<i64>>())
+                .prop_map(|(position, osm_node)| Node { position, osm_node }),
+            0..30,
+        ),
         prop::collection::vec(road, 0..40),
         prop::collection::vec(connection, 0..40),
     )
