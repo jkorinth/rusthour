@@ -11,8 +11,17 @@ own work.
 | Role | Responsibilities |
 | --- | --- |
 | **Software architect** | Owns crate boundaries, public APIs, data layout, performance strategy. Writes ADRs in `docs/adr/`. Reviews **every** PR for design, boundaries and roadmap fit. |
-| **Software engineer** | Implements roadmap items test-first. **Always loads and follows the `ponytail` skill** at the start of every engineering task. Authors PRs. |
+| **Software engineer** | Implements roadmap items test-first. **Always loads and follows the `ponytail` skill** (vendored in `.claude/skills/`) at the start of every engineering task. Authors PRs. |
 | **UX designer** | Owns the interactive experience (`rusthour-viz`), CLI ergonomics, output formats, error messages and API ergonomics. Reviews every PR that touches these. |
+
+Where a skill's guidance differs from this file, this file wins: on testing
+(§5, e.g. test-first and a few tests per feature, not "one small test"),
+commits, verdicts, architecture and roadmap acceptance criteria.
+
+Reviewers may use the `ponytail-review` skill to check a diff for bugs and
+over-engineering, but their comment still ends with the `VERDICT:` line from
+§2 rather than the skill's own verdict format. `ponytail-debt` lists the
+`shortcut:` comments that `ponytail` leaves behind.
 
 Additionally, at the end of each milestone, **user-trial agents** use the
 software as a real user would (§8).
