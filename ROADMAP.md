@@ -1,0 +1,211 @@
+# Rust Hour — Project Brief & Roadmap
+
+*A traffic simulator where every hour is rush hour.*
+
+> **This is the central planning document.** Agents claim, update and complete
+> items here. Process rules live in [AGENTS.md](AGENTS.md).
+
+## 1. Vision
+
+A microscopic traffic simulator built on real OpenStreetMap road networks,
+with two faces:
+
+- **Interactive ("anthill") mode** — watch thousands of vehicles move through a
+  city in the browser or natively; speed time up or down, change parameters
+  live, edit intersections and see the effect immediately.
+- **Analysis mode (CLI)** — run deterministic, multi-seed batch simulations of
+  full days and compare scenarios statistically, e.g. *"replacing this
+  crossroads with a roundabout changes mean travel time by X ± Y"*.
+
+What makes it different from existing tools (e.g. A/B Street, which uses a
+discrete-event model): **continuous car-following physics with heterogeneous
+driver personalities**, explicit time-of-day/weekday demand, and rigorous A/B
+statistics.
+
+## 2. Core concepts
+
+| Concept | Approach |
+| --- | --- |
+| Map | OSM → `osm2streets` → simplified lane-level network in our own compact format |
+| Car-following | Intelligent Driver Model (IDM) |
+| Lane changing | MOBIL (politeness factor per driver) |
+| Drivers | Parameter profiles: aggressive, normal, cautious, erratic (noise on parameters) |
+| Vehicles | Classes: car, van, truck, bus, (bike later) — length, accel, braking, top speed |
+| Demand | Agents with activity chains (home → work → shop → home); departure times from time-of-day × weekday profiles; through-traffic via boundary/highway nodes |
+| Routing | A* first, contraction hierarchies (`fast_paths`) when needed; periodic rerouting on observed travel times |
+| Intersections | Pluggable controllers: priority/yield, stop, traffic signal, roundabout (gap acceptance) |
+| Time | Fixed timestep (default 0.1 s, configurable), seeded RNG → fully deterministic |
+| Stats | Travel time, delay, throughput (vehicles/day), queue lengths, per-edge flows |
+
+## 3. Architecture
+
+Cargo workspace, four crates:
+
+```text
+rusthour-core       pure simulation; no I/O, no rendering, no async;
+   ▲                compiles to wasm32
+   │
+rusthour-api        the standard interface: protocol types (serde),
+   ▲                `Simulation` facade, in-process client;
+   │                `server` feature runs core as a remote service
+   │
+   ├── rusthour-viz interactive frontend (native + wasm)
+   └── rusthour-cli headless batch runs, statistics, scenario comparison
+```
+
+- `rusthour-viz` and `rusthour-cli` talk **only** to `rusthour-api`, never to `rusthour-core`
+  directly. This guarantees anything the frontends can do, a remote client can
+  do too.
+- The `server` feature of `rusthour-api` (HTTP + WebSocket) is native-only so the
+  wasm build stays lean.
+- `rusthour-core` modules are organised so features can be built in parallel:
+  `network`, `routing`, `vehicle` (IDM kinematics), `behavior` (MOBIL, driver
+  profiles), `control` (intersection controllers), `demand`, `scenario`,
+  `stats`.
+
+Architectural decisions are recorded as ADRs in `docs/adr/`.
+
+## 4. Releases
+
+Each milestone ships as one release via **release-please** (pre-1.0, minor
+bump per milestone: M0 → `v0.1.0`, M1 → `v0.2.0`, …). The release PR is merged
+only when the milestone's acceptance criteria and user trial are done.
+
+## 5. How to use this roadmap
+
+- Each item has an ID (`M<milestone>.<n>`), a status and an owner.
+- Status: `todo` · `claimed` · `in-review` · `done` · `blocked`.
+- Claim an item by setting status `claimed` and owner to your branch name in
+  your first commit/PR. Edit **only your own item's line** to avoid merge
+  conflicts.
+- New work discovered along the way goes into **Backlog** (§7), not into an
+  active milestone, unless the architect agrees.
+
+## 6. Milestones
+
+### M0 — Scaffolding → `v0.1.0`
+
+Goal: an empty but fully wired project. Commits go straight to `main` during
+M0; PRs are mandatory from the M0 release onward.
+
+| ID | Item | Status | Owner |
+| --- | --- | --- | --- |
+| M0.1 | Cargo workspace with `rusthour-core`, `rusthour-api`, `rusthour-viz`, `rusthour-cli`; `rust-toolchain.toml`; workspace lints in root `Cargo.toml` | in-review | main |
+| M0.2 | Lint tooling configured (see AGENTS.md §4): rustfmt, clippy, cargo-deny, cargo-shear, typos, taplo, markdownlint, actionlint, zizmor | in-review | main |
+| M0.3 | Local hooks via lefthook (fmt, clippy, typos, commit-msg check) | in-review | main |
+| M0.4 | CI: lint, test (cargo-nextest), wasm32 check for `rusthour-core` + `rusthour-viz`, dependency-direction check | in-review | main |
+| M0.5 | Conventional commits enforced: PR-title check (squash merge) + commit-msg hook | in-review | main |
+| M0.6 | release-please (Rust, cargo-workspace plugin, pre-major settings) | in-review | main |
+| M0.7 | PR template, issue templates (feature, bug/regression), CODEOWNERS-style role notes | in-review | main |
+| M0.8 | Determinism harness: helper that runs N steps and returns a state hash | in-review | main |
+| M0.9 | README: build, run, test; ADR-0001 (crate split & dependency rules) | in-review | main |
+
+**Acceptance:** `main` is green; `cargo build` native and wasm32 succeed; a
+test PR with a non-conventional title is rejected; release-please opens a
+release PR.
+
+### M1 — Map → `v0.2.0`
+
+| ID | Item | Status | Owner |
+| --- | --- | --- | --- |
+| M1.1 | ADR: viz framework choice (Bevy vs macroquad), decided by architect + UX | todo | |
+| M1.2 | OSM import via `osm2streets` into the compact network format (lanes, intersections, speed limits) | todo | |
+| M1.3 | Network serialization (binary snapshot) loadable in wasm without OSM parsing | todo | |
+| M1.4 | `rusthour-api`: load network, query geometry for rendering | todo | |
+| M1.5 | `rusthour-viz`: render network, pan/zoom, native + browser | todo | |
+| M1.6 | Bundled sample map (a few km², chosen by user) | todo | |
+
+**Acceptance:** sample map renders natively and in the browser; import is
+reproducible from the OSM extract.
+
+### M2 — First traffic → `v0.3.0`
+
+| ID | Item | Status | Owner |
+| --- | --- | --- | --- |
+| M2.1 | Fixed-timestep simulation loop, seeded RNG, sim clock | todo | |
+| M2.2 | Vehicle state as structure-of-arrays; per-lane sorted vehicle lists | todo | |
+| M2.3 | IDM car-following | todo | |
+| M2.4 | Simple routing (A*) and random origin–destination spawning | todo | |
+| M2.5 | Basic intersection passage (priority rule only) | todo | |
+| M2.6 | `rusthour-api`: step, run/pause, time-scale, vehicle snapshot stream | todo | |
+| M2.7 | `rusthour-viz`: animated vehicles, play/pause, speed slider (0.1×–100×+) | todo | |
+| M2.8 | Benchmark (criterion): vehicles × steps/s, tracked in CI (non-gating) | todo | |
+
+**Acceptance:** thousands of vehicles run in real time in the browser; same
+seed ⇒ identical state hash.
+
+> After M2 the core loop exists and M3–M6 workstreams can proceed **in
+> parallel**.
+
+### M3 — Lanes & intersections → `v0.4.0`
+
+| ID | Item | Status | Owner |
+| --- | --- | --- | --- |
+| M3.1 | MOBIL lane changing (incentive + safety criteria, politeness) | todo | |
+| M3.2 | Intersection controller trait + priority/yield and stop controllers | todo | |
+| M3.3 | Traffic signal controller (fixed-time plans) | todo | |
+| M3.4 | Turn lanes and lane selection ahead of intersections | todo | |
+| M3.5 | Gridlock detection and recovery strategy (ADR) | todo | |
+
+### M4 — Drivers & vehicles → `v0.5.0`
+
+| ID | Item | Status | Owner |
+| --- | --- | --- | --- |
+| M4.1 | Driver profiles: aggressive, normal, cautious, erratic (IDM + MOBIL parameters, noise) | todo | |
+| M4.2 | Vehicle classes: car, van, truck, bus | todo | |
+| M4.3 | Fleet/driver mix configurable per scenario | todo | |
+| M4.4 | `rusthour-viz`: live parameter panel, color by driver/vehicle type, inspect a vehicle | todo | |
+
+### M5 — Demand & scenarios → `v0.6.0`
+
+| ID | Item | Status | Owner |
+| --- | --- | --- | --- |
+| M5.1 | Scenario file format (TOML): map, demand, fleet mix, duration, seed(s) | todo | |
+| M5.2 | Agents with activity chains (home, work, shop, school, leisure) | todo | |
+| M5.3 | Time-of-day × weekday departure profiles | todo | |
+| M5.4 | Boundary/highway through-traffic and network exits | todo | |
+| M5.5 | Rerouting on observed travel times | todo | |
+| M5.6 | `rusthour-viz`: clock & day display, jump to time, scenario picker | todo | |
+
+### M6 — Statistics & batch CLI → `v0.7.0`
+
+| ID | Item | Status | Owner |
+| --- | --- | --- | --- |
+| M6.1 | Metrics collection in `stats` (travel time, delay, throughput, queues, edge flows) with minimal hot-loop overhead | todo | |
+| M6.2 | `rusthour-cli run`: headless, multi-seed, parallel (rayon) | todo | |
+| M6.3 | Output: CSV and Parquet, plus summary JSON | todo | |
+| M6.4 | `rusthour-cli compare A B`: means, confidence intervals, effect sizes | todo | |
+| M6.5 | `rusthour-viz`: live stats overlay (heatmap of delay/flow) | todo | |
+
+### M7 — Network editing & A/B studies → `v0.8.0`
+
+| ID | Item | Status | Owner |
+| --- | --- | --- | --- |
+| M7.1 | Network edit model (change controller, lanes, speed limits, close roads) as serializable patches | todo | |
+| M7.2 | Roundabout controller with gap acceptance (driver-dependent) | todo | |
+| M7.3 | Convert crossroads → roundabout edit, incl. geometry | todo | |
+| M7.4 | `rusthour-viz`: click-to-edit intersections, save edits as patch | todo | |
+| M7.5 | Scenario + patch → CLI comparison end-to-end | todo | |
+
+**Acceptance:** a user can replace an intersection with a roundabout in the
+viewer, save it, and get a statistical before/after report from the CLI.
+
+### M8 — Remote service → `v0.9.0`
+
+| ID | Item | Status | Owner |
+| --- | --- | --- | --- |
+| M8.1 | `rusthour-api` `server` feature: HTTP control + WebSocket snapshot stream | todo | |
+| M8.2 | Remote client implementing the same `Simulation` facade | todo | |
+| M8.3 | `rusthour-viz` can connect to a remote simulation | todo | |
+| M8.4 | API versioning and compatibility test | todo | |
+
+## 7. Backlog (unscheduled)
+
+- Crashes and near misses (reaction delay, perception error, distraction,
+  time-to-collision metrics) — explicitly deferred.
+- Pedestrians, bikes, public transit.
+- Parking search.
+- Actuated/adaptive traffic signals.
+- Multi-threaded core (spatial partitioning) and wasm threads.
+- Calibration against real counts.
+- Pin GitHub Actions by commit SHA (currently pinned by version tag).

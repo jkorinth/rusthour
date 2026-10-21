@@ -1,0 +1,16 @@
+# Agents share one GitHub account, so GitHub ownership is the maintainer.
+# The comments name which agent role must review each area (AGENTS.md §2).
+
+# Architect: everything, especially boundaries and public APIs.
+*                         @jkorinth
+
+# Architect: crate structure, lint and CI policy.
+/Cargo.toml               @jkorinth
+/deny.toml                @jkorinth
+/.github/workflows/       @jkorinth
+/docs/adr/                @jkorinth
+
+# Architect + UX designer: public interface and user-facing surfaces.
+/crates/rusthour-api/     @jkorinth
+/crates/rusthour-viz/     @jkorinth
+/crates/rusthour-cli/     @jkorinth

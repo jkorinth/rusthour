@@ -1,0 +1,23 @@
+name: Feature
+description: Propose new work (goes to the roadmap backlog unless the architect agrees otherwise)
+labels: [feature]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What and why
+      description: The behavior you want and the problem it solves.
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      description: A few checkable statements; these become the tests.
+    validations:
+      required: true
+  - type: input
+    id: roadmap
+    attributes:
+      label: Related roadmap item
+      placeholder: e.g. M4.1
