@@ -7,8 +7,13 @@
 #[cfg(all(feature = "server", target_arch = "wasm32"))]
 compile_error!("the `server` feature is native-only");
 
+mod network;
+
 use serde::{Deserialize, Serialize};
 
+pub use network::{
+    Connection, NETWORK_SCHEMA_VERSION, Network, NetworkError, Node, NodeId, Point, Road, RoadId,
+};
 pub use rusthour_core::Config;
 
 /// Version of the wire protocol. Bump on any incompatible change to the
@@ -35,21 +40,41 @@ pub trait Simulation {
 
     /// Returns the current status.
     fn status(&self) -> Status;
+
+    /// Returns the road network the simulation runs on, e.g. for rendering.
+    fn network(&self) -> &Network;
 }
 
 /// A simulation running in the caller's process (and thread).
 #[derive(Debug, Clone)]
 pub struct InProcess {
     engine: rusthour_core::Engine,
+    // The core keeps its own layout; this copy answers geometry queries.
+    network: Network,
 }
 
 impl InProcess {
-    /// Starts a new in-process simulation.
+    /// Starts a new in-process simulation on an empty network.
     #[must_use]
     pub fn new(config: Config, seed: u64) -> Self {
         Self {
             engine: rusthour_core::Engine::new(config, seed),
+            network: Network::default(),
         }
+    }
+
+    /// Starts a new in-process simulation on `network`.
+    ///
+    /// # Errors
+    ///
+    /// Returns a [`NetworkError`] if the network is inconsistent, e.g. a road
+    /// references a missing node or has zero length.
+    pub fn with_network(config: Config, seed: u64, network: Network) -> Result<Self, NetworkError> {
+        let core = network.to_core()?;
+        Ok(Self {
+            engine: rusthour_core::Engine::with_network(config, seed, core),
+            network,
+        })
     }
 }
 
@@ -65,6 +90,10 @@ impl Simulation for InProcess {
             sim_time_ms: self.engine.sim_time_ms(),
             state_hash: self.engine.state_hash(),
         }
+    }
+
+    fn network(&self) -> &Network {
+        &self.network
     }
 }
 
