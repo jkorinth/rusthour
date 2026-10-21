@@ -90,15 +90,15 @@ M0; PRs are mandatory from the M0 release onward.
 
 | ID | Item | Status | Owner |
 | --- | --- | --- | --- |
-| M0.1 | Cargo workspace with `rusthour-core`, `rusthour-api`, `rusthour-viz`, `rusthour-cli`; `rust-toolchain.toml`; workspace lints in root `Cargo.toml` | in-review | main |
-| M0.2 | Lint tooling configured (see AGENTS.md §4): rustfmt, clippy, cargo-deny, cargo-shear, typos, taplo, markdownlint, actionlint, zizmor | in-review | main |
-| M0.3 | Local hooks via lefthook (fmt, clippy, typos, commit-msg check) | in-review | main |
-| M0.4 | CI: lint, test (cargo-nextest), wasm32 check for `rusthour-core` + `rusthour-viz`, dependency-direction check | in-review | main |
-| M0.5 | Conventional commits enforced: PR-title check (squash merge) + commit-msg hook | in-review | main |
-| M0.6 | release-please (Rust, cargo-workspace plugin, pre-major settings) | in-review | main |
-| M0.7 | PR template, issue templates (feature, bug/regression), CODEOWNERS-style role notes | in-review | main |
-| M0.8 | Determinism harness: helper that runs N steps and returns a state hash | in-review | main |
-| M0.9 | README: build, run, test; ADR-0001 (crate split & dependency rules) | in-review | main |
+| M0.1 | Cargo workspace with `rusthour-core`, `rusthour-api`, `rusthour-viz`, `rusthour-cli`; `rust-toolchain.toml`; workspace lints in root `Cargo.toml` | done | main |
+| M0.2 | Lint tooling configured (see AGENTS.md §4): rustfmt, clippy, cargo-deny, cargo-shear, typos, taplo, markdownlint, actionlint, zizmor | done | main |
+| M0.3 | Local hooks via lefthook (fmt, clippy, typos, commit-msg check) | done | main |
+| M0.4 | CI: lint, test (cargo-nextest), wasm32 check for `rusthour-core` + `rusthour-viz`, dependency-direction check | done | main |
+| M0.5 | Conventional commits enforced: PR-title check (squash merge) + commit-msg hook | done | main |
+| M0.6 | release-please (Rust, cargo-workspace plugin, pre-major settings) | done | main |
+| M0.7 | PR template, issue templates (feature, bug/regression), CODEOWNERS-style role notes | done | main |
+| M0.8 | Determinism harness: helper that runs N steps and returns a state hash | done | main |
+| M0.9 | README: build, run, test; ADR-0001 (crate split & dependency rules) | done | main |
 
 **Acceptance:** `main` is green; `cargo build` native and wasm32 succeed; a
 test PR with a non-conventional title is rejected; release-please opens a
