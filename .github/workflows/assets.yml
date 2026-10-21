@@ -1,0 +1,172 @@
+name: assets
+
+# Builds map assets for the areas in data/areas.toml (ROADMAP M1.6) and
+# publishes them as an `assets-<date>` pre-release, so no generated data is
+# committed. A PR then records the build in data/assets.toml.
+
+on:
+  workflow_dispatch:
+    inputs:
+      areas:
+        description: Comma-separated area names from data/areas.toml (empty = all)
+        type: string
+        default: ""
+
+permissions: {}
+
+concurrency:
+  group: assets
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash # -eo pipefail, so a failing command in a pipe fails the step
+
+env:
+  SOURCE_URL: https://download.geofabrik.de/europe/germany/hessen-latest.osm.pbf
+
+jobs:
+  build:
+    # Releases tag reviewed commits only, and the manifest PR targets main.
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: write # create the release, tag and manifest branch
+      pull-requests: write # open the manifest PR
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Validate requested areas
+        env:
+          AREAS: ${{ inputs.areas }}
+        run: python3 -I scripts/assets.py plan data/areas.toml "$AREAS" | tee "$RUNNER_TEMP/plan"
+
+      - name: Install osmium-tool
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends osmium-tool
+
+      - name: Download and verify the source extract
+        id: source
+        run: |
+          mkdir "$RUNNER_TEMP/src"
+          cd "$RUNNER_TEMP/src"
+          curl -fsSL --retry 3 -O "$SOURCE_URL" -O "$SOURCE_URL.md5"
+          md5sum -c "$(basename "$SOURCE_URL").md5"
+          timestamp=$(osmium fileinfo -g header.option.osmosis_replication_timestamp "$(basename "$SOURCE_URL")")
+          if [ -z "$timestamp" ]; then
+            echo "error: the extract has no replication timestamp" >&2
+            exit 1
+          fi
+          {
+            echo "md5=$(cut -d' ' -f1 "$(basename "$SOURCE_URL").md5")"
+            echo "timestamp=$timestamp"
+            # Geofabrik keeps dated copies; -latest is overwritten daily.
+            echo "dated=${SOURCE_URL%-latest.osm.pbf}-$(date -u -d "$timestamp" +%y%m%d).osm.pbf"
+            # sed, not head: head closing the pipe early could fail it under pipefail.
+            echo "tool=$(osmium --version | sed -n '1,2p' | paste -sd ',' | sed 's/,/, /')"
+          } >> "$GITHUB_OUTPUT"
+
+      # complete_ways keeps every node of a way that crosses the box, so roads
+      # at the edge stay whole instead of being cut off at the last inner node.
+      - name: Extract areas
+        run: |
+          mkdir "$RUNNER_TEMP/out"
+          src="$RUNNER_TEMP/src/$(basename "$SOURCE_URL")"
+          while read -r area bbox; do
+            cmd="osmium extract -b $bbox --strategy complete_ways --set-bounds -o $area.osm.pbf $(basename "$src")"
+            echo "$cmd" | tee -a "$RUNNER_TEMP/commands"
+            osmium extract -b "$bbox" --strategy complete_ways --set-bounds \
+              -o "$RUNNER_TEMP/out/$area.osm.pbf" "$src"
+          done < "$RUNNER_TEMP/plan"
+
+      - name: Create the pre-release
+        id: release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          MD5: ${{ steps.source.outputs.md5 }}
+          TIMESTAMP: ${{ steps.source.outputs.timestamp }}
+          DATED: ${{ steps.source.outputs.dated }}
+          TOOL: ${{ steps.source.outputs.tool }}
+        run: |
+          tag="assets-$(date -u +%F)"
+          # Unique per run and re-run attempt; never parses as a vX.Y.Z release.
+          if gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$tag" > /dev/null 2>&1; then
+            tag="$tag-$GITHUB_RUN_NUMBER-$GITHUB_RUN_ATTEMPT"
+          fi
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          notes="$RUNNER_TEMP/notes.md"
+          {
+            echo "Map assets for Rust Hour, built by the \`assets\` workflow (run $GITHUB_RUN_ID)."
+            echo
+            echo "- Source: $SOURCE_URL (dated copy: $DATED)"
+            echo "- Source replication timestamp: $TIMESTAMP"
+            echo "- Source md5: \`$MD5\`"
+            echo "- Tool: $TOOL"
+            echo
+            echo "SHA-256:"
+            echo
+            echo '```text'
+            (cd "$RUNNER_TEMP/out" && sha256sum -- *.osm.pbf)
+            echo '```'
+            echo
+            echo "Commands:"
+            echo
+            echo '```sh'
+            cat "$RUNNER_TEMP/commands"
+            echo '```'
+            echo
+            echo "Map data © OpenStreetMap contributors, available under the Open Database License (ODbL)."
+            echo "See https://www.openstreetmap.org/copyright."
+          } > "$notes"
+          gh release create "$tag" "$RUNNER_TEMP"/out/*.osm.pbf --repo "$GITHUB_REPOSITORY" \
+            --target "$GITHUB_SHA" --prerelease --latest=false \
+            --title "Map assets $tag" --notes-file "$notes"
+
+      # Commits through the contents API, so the checkout holds no credentials.
+      # If only this step fails, the release exists: add its entry to
+      # data/assets.toml by hand (from the release notes), or delete the
+      # release and run the workflow again.
+      - name: Open a PR recording the build in data/assets.toml
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.release.outputs.tag }}
+          MD5: ${{ steps.source.outputs.md5 }}
+          TIMESTAMP: ${{ steps.source.outputs.timestamp }}
+          DATED: ${{ steps.source.outputs.dated }}
+          TOOL: ${{ steps.source.outputs.tool }}
+        run: |
+          python3 -I scripts/assets.py record data/assets.toml "tag=$TAG" \
+            "source=$SOURCE_URL" "source_dated=$DATED" "source_timestamp=$TIMESTAMP" \
+            "source_md5=$MD5" "tool=$TOOL" "$RUNNER_TEMP"/out/*.osm.pbf
+          branch="chore/$TAG"
+          title="chore(data): record map assets $TAG"
+          gh api -X POST "repos/$GITHUB_REPOSITORY/git/refs" \
+            -f ref="refs/heads/$branch" -f sha="$GITHUB_SHA" > /dev/null
+          gh api -X PUT "repos/$GITHUB_REPOSITORY/contents/data/assets.toml" \
+            -f message="$title" -f branch="$branch" \
+            -f content="$(base64 -w0 data/assets.toml)" \
+            -f sha="$(git rev-parse "$GITHUB_SHA:data/assets.toml")" > /dev/null
+          cat > "$RUNNER_TEMP/body.md" <<EOF
+          ## What
+
+          Records the map assets of release [$TAG](https://github.com/$GITHUB_REPOSITORY/releases/tag/$TAG)
+          in \`data/assets.toml\`, so every map is traceable from git.
+
+          Roadmap item: M1.6
+
+          ## Why / approach
+
+          Opened by the \`assets\` workflow (run $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID).
+          Source: $SOURCE_URL, replication timestamp $TIMESTAMP, md5 \`$MD5\`.
+
+          ## Tests
+
+          PRs opened with \`GITHUB_TOKEN\` don't trigger CI: close and reopen
+          this PR (or push to it) to run the checks.
+          EOF
+          gh pr create --repo "$GITHUB_REPOSITORY" --base "$GITHUB_REF_NAME" --head "$branch" \
+            --title "$title" --body-file "$RUNNER_TEMP/body.md"

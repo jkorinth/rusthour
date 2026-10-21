@@ -123,7 +123,8 @@ release PR.
 | M1.3 | `.rhnet` asset format in `rusthour-import` (header, versioning, pure-Rust compression), readable on wasm32 without OSM parsing | done | feat/M1.3-rhnet-format |
 | M1.4 | `rusthour-api`: network data types, load a validated network into the simulation (bytes are decoded by `rusthour-import`, ADR-0002), query geometry for rendering | done | feat/M1.4-network-types |
 | M1.5 | `rusthour-viz`: render network, pan/zoom, native + browser | done | feat/M1.5-map-viewer |
-| M1.6 | Bundled sample maps: Bensheim areas (see below) | todo | |
+| M1.6 | Sample maps (see below): `assets` workflow publishes OSM extracts per area in `assets-*` pre-releases, recorded in `data/assets.toml` | done | feat/M1.6-asset-workflow |
+| M1.7 | `assets` workflow builds `.rhnet` files with `rusthour-import` (after M1.2), and a deploy job publishes the web viewer plus assets to GitHub Pages (needed for the M1 user trial; release assets can't be fetched cross-origin) | todo | |
 | M1.8 | `rusthour-viz` loads a Bensheim `.rhnet` map: loading progress, in-page errors for wasm/map load failures, OSM attribution text, startup-time check (3 s native / 5 s browser on bensheim-5km per ADR-0003), frame-time measurement per ADR-0003, street-name labels incl. ä/ö/ü/ß | todo | |
 
 **Sample areas (M1.6):** named, square boxes in
@@ -131,9 +132,12 @@ release PR.
 (e.g. `--area bensheim-5km`). All three are centered on the Bensheim
 Marktplatz (49.6810 N, 8.6230 E): `bensheim-1km` for quick tests,
 `bensheim-2km`, and `bensheim-5km` as the default sample map. New areas are
-added there, not here. For each imported area, record the extract's source,
-date, the exact extraction command and the `osm2streets` version in
-`data/<area>/README.md` so the import is reproducible. OSM data is ODbL:
+added there, not here. Extracts and assets are built by the `assets`
+workflow and published as `assets-*` GitHub pre-releases, not committed; the
+release notes record the source, its date and the exact commands, and
+[`data/assets.toml`](data/assets.toml) records each build (tag, source
+timestamp, file hashes) so the import is reproducible. `.rhnet` assets and
+their deployment next to the web viewer follow in M1.7. OSM data is ODbL:
 keep the attribution "© OpenStreetMap contributors" with the data and in the
 viewer.
 

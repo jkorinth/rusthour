@@ -1,0 +1,13 @@
+# Map asset builds, maintained by the `assets` workflow
+# (.github/workflows/assets.yml); don't edit by hand.
+#
+# Each `[[builds]]` entry is one GitHub pre-release `tag` (`assets-*`):
+#   source            URL of the regional OSM extract the areas were cut from
+#   source_dated      Geofabrik's dated copy of that extract (`source` changes daily)
+#   source_timestamp  replication timestamp of that extract
+#   source_md5        md5 of the extract, as published by Geofabrik
+#   tool              osmium-tool and libosmium versions used
+# and one `[[builds.files]]` entry per release asset: `area` (a name from
+# data/areas.toml), `file` and its `sha256`. Newest builds are at the end.
+#
+# Map data © OpenStreetMap contributors, ODbL 1.0 (see data/LICENSE).
