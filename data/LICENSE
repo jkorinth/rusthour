@@ -1,0 +1,17 @@
+Map data license
+================
+
+Map data derived from OpenStreetMap, whether in this directory or attached
+to the `assets-*` GitHub releases of this repository (OSM extracts such as
+`*.osm.pbf`, imported networks such as `*.rhnet`), is
+
+    © OpenStreetMap contributors, available under the
+    Open Database License (ODbL) 1.0.
+
+    https://www.openstreetmap.org/copyright
+    https://opendatacommons.org/licenses/odbl/1-0/
+
+This data is not covered by the GPL-3.0 license of the Rust Hour source code
+(see ../LICENSE). If you publicly use or redistribute it, or a database
+derived from it, you must keep this attribution and offer any derived
+database under the ODbL.
