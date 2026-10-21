@@ -1,0 +1,22 @@
+[package]
+name = "rusthour-import"
+description = "Rust Hour map assets: the .rhnet format (all targets), later the OSM importer."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+rusthour-api.workspace = true
+serde.workspace = true
+postcard.workspace = true
+lz4_flex.workspace = true
+sha2.workspace = true
+
+[dev-dependencies]
+proptest.workspace = true
+
+[lints]
+workspace = true
