@@ -56,6 +56,16 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       # The `server` feature is native-only, so default features here.
       - run: cargo build --target wasm32-unknown-unknown -p rusthour-core -p rusthour-api -p rusthour-import -p rusthour-viz
+      # ADR-0002: no OSM parser in the browser build, even once the viewer
+      # depends on rusthour-import (only `cargo tree`'s "no match" passes).
+      - name: No osmpbf in the rusthour-viz wasm32 tree
+        run: |
+          if out=$(cargo tree -p rusthour-viz --target wasm32-unknown-unknown -e normal -i osmpbf 2>&1); then
+            echo "$out"
+            echo "::error::osmpbf is in rusthour-viz's wasm32 dependency tree (ADR-0002)"
+            exit 1
+          fi
+          grep -q "did not match any packages" <<<"$out" || { echo "$out"; exit 1; }
       - uses: taiki-e/install-action@v2
         with:
           # Pinned (Dependabot doesn't bump it); tool versions in Trunk.toml.
