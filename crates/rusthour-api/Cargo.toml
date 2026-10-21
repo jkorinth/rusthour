@@ -1,0 +1,23 @@
+[package]
+name = "rusthour-api"
+description = "Rust Hour standard interface: protocol types and the Simulation facade."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[features]
+# Runs the core as a remote service (HTTP + WebSocket). Native-only; filled in M8.
+server = []
+
+[dependencies]
+rusthour-core.workspace = true
+serde.workspace = true
+
+[dev-dependencies]
+serde_json.workspace = true
+
+[lints]
+workspace = true

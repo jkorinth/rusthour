@@ -1,0 +1,18 @@
+[package]
+name = "rusthour-viz"
+description = "Rust Hour interactive viewer (native and browser)."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+license.workspace = true
+publish.workspace = true
+
+# The rendering framework is chosen in M1.1 (ADR). Until then this is a
+# placeholder that proves the crate builds natively and for wasm32.
+
+[dependencies]
+rusthour-api.workspace = true
+
+[lints]
+workspace = true

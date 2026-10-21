@@ -1,0 +1,37 @@
+[workspace]
+resolver = "3"
+members = ["crates/*"]
+
+[workspace.package]
+# Bumped by release-please (see release-please-config.json). Do not edit by hand.
+version = "0.0.0"
+edition = "2024"
+rust-version = "1.97"
+repository = "https://github.com/jkorinth/rusthour"
+license = "GPL-3.0-only"
+publish = false
+
+[workspace.dependencies]
+rusthour-core = { path = "crates/rusthour-core" }
+rusthour-api = { path = "crates/rusthour-api" }
+rand_chacha = { version = "0.9", default-features = false }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+clap = { version = "4", features = ["derive"] }
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+missing_docs = "warn"
+
+[workspace.lints.clippy]
+pedantic = { level = "warn", priority = -1 }
+# Documented exceptions to `pedantic`:
+# - Crate-prefixed type names (e.g. `network::NetworkId`) are idiomatic in this codebase.
+module_name_repetitions = "allow"
+
+[profile.release]
+codegen-units = 1
+lto = "thin"
+
+[profile.bench]
+debug = true
