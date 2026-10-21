@@ -47,6 +47,8 @@ deny = [
   # Dependency direction (AGENTS.md §6): only rusthour-api may depend on
   # rusthour-core. Frontends go through the API.
   { crate = "rusthour-core", wrappers = ["rusthour-api"] },
+  # ADR-0002: the OSM parser stays behind rusthour-import's native `osm` feature.
+  { crate = "osmpbf", wrappers = ["rusthour-import"] },
 ]
 
 [sources]
