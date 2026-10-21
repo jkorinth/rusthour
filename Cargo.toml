@@ -16,7 +16,8 @@ rusthour-core = { path = "crates/rusthour-core" }
 rusthour-api = { path = "crates/rusthour-api" }
 rand_chacha = { version = "0.10", default-features = false }
 serde = { version = "1", features = ["derive"] }
-serde_json = "1"
+# `float_roundtrip`: exact f64 parsing, so network JSON round-trips losslessly.
+serde_json = { version = "1", features = ["float_roundtrip"] }
 clap = { version = "4", features = ["derive"] }
 
 [workspace.lints.rust]
