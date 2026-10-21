@@ -61,7 +61,7 @@ accompany every copy of the viewer; the web build copies them into `dist/`.
 | `rusthour-api` | The standard interface (`Simulation` facade, protocol types); later also a remote service |
 | `rusthour-viz` | Interactive viewer, native and browser |
 | `rusthour-cli` | `rusthour` binary: headless runs, statistics, comparisons |
-| `rusthour-import` | Planned (M1): map assets and the offline OSM importer ([ADR-0002](docs/adr/0002-map-asset-pipeline.md)) |
+| `rusthour-import` | Map assets: the `.rhnet` format (all targets, including wasm32); the offline OSM importer follows in M1.2 ([ADR-0002](docs/adr/0002-map-asset-pipeline.md)) |
 
 Frontends depend only on `rusthour-api`, never on `rusthour-core` directly
 (see [ADR-0001](docs/adr/0001-crate-split.md)).
