@@ -1,7 +1,9 @@
-name: PR title
+name: Commit messages
 
-# PRs are squash-merged, so the PR title becomes the commit on main and must be
-# a Conventional Commit (AGENTS.md §3).
+# PRs are rebase-merged, so every commit of a PR lands on main and feeds
+# release-please: each one must be a Conventional Commit, with no leftover
+# fixup!/squash! commits (AGENTS.md §2, §3). The PR title is checked too,
+# because it names the change in reviews.
 
 on:
   pull_request:
@@ -17,9 +19,37 @@ jobs:
       - uses: actions/checkout@v5
         with:
           persist-credentials: false
-      - name: Check title
+      - name: Check PR title
         env:
           TITLE: ${{ github.event.pull_request.title }}
         run: |
           printf '%s\n' "$TITLE" > "$RUNNER_TEMP/title"
           scripts/check-commit-msg.sh "$RUNNER_TEMP/title"
+
+  conventional-commits:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha }}
+      - name: Check every commit in the PR
+        env:
+          BASE: ${{ github.event.pull_request.base.sha }}
+          HEAD: ${{ github.event.pull_request.head.sha }}
+        run: |
+          commits=$(git rev-list --reverse "$BASE..$HEAD")
+          if [ -z "$commits" ]; then
+            echo "error: found no commits between $BASE and $HEAD" >&2
+            exit 1
+          fi
+          failed=0
+          for sha in $commits; do
+            git log -1 --format=%B "$sha" > "$RUNNER_TEMP/msg"
+            if ! scripts/check-commit-msg.sh --strict "$RUNNER_TEMP/msg"; then
+              echo "  in commit $sha"
+              failed=1
+            fi
+          done
+          exit "$failed"

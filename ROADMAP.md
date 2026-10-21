@@ -94,7 +94,7 @@ M0; PRs are mandatory from the M0 release onward.
 | M0.2 | Lint tooling configured (see AGENTS.md §4): rustfmt, clippy, cargo-deny, cargo-shear, typos, taplo, markdownlint, actionlint, zizmor | done | main |
 | M0.3 | Local hooks via lefthook (fmt, clippy, typos, commit-msg check) | done | main |
 | M0.4 | CI: lint, test (cargo-nextest), wasm32 check for `rusthour-core` + `rusthour-viz`, dependency-direction check | done | main |
-| M0.5 | Conventional commits enforced: PR-title check (squash merge) + commit-msg hook | done | main |
+| M0.5 | Conventional commits enforced: PR-title and per-commit checks (rebase merge) + commit-msg hook | done | main |
 | M0.6 | release-please (Rust, cargo-workspace plugin, pre-major settings) | done | main |
 | M0.7 | PR template, issue templates (feature, bug/regression), CODEOWNERS-style role notes | done | main |
 | M0.8 | Determinism harness: helper that runs N steps and returns a state hash | done | main |
