@@ -19,7 +19,7 @@ target are pinned in `rust-toolchain.toml` and installed automatically.
 # Run a headless simulation and print its status as JSON
 cargo run -p rusthour-cli -- run --seed 42 --steps 1000
 
-# Open the viewer (a demo town grid until real maps land in M1.6)
+# Open the viewer (a demo town grid until it loads real maps, M1.8)
 cargo run -p rusthour-viz --release
 
 # Tests
