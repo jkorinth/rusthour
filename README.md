@@ -53,6 +53,20 @@ Font Licence 1.0, MIT, Bitstream Vera) are in
 [`crates/rusthour-viz/licenses/`](crates/rusthour-viz/licenses/) and must
 accompany every copy of the viewer; the web build copies them into `dist/`.
 
+## Map data
+
+Sample maps (the areas in [`data/areas.toml`](data/areas.toml)) are not
+committed. They are built by the **assets** workflow: on GitHub, open
+*Actions → assets → Run workflow* and optionally list area names
+(comma-separated; empty builds all). It cuts each area from Geofabrik's Hesse
+extract and publishes the files as an `assets-<date>` pre-release on the
+[Releases](https://github.com/jkorinth/rusthour/releases) page, then opens a
+PR that records the build in [`data/assets.toml`](data/assets.toml).
+
+Map data © OpenStreetMap contributors, available under the
+[ODbL](https://www.openstreetmap.org/copyright); see
+[`data/LICENSE`](data/LICENSE).
+
 ## Crates
 
 | Crate | Role |
