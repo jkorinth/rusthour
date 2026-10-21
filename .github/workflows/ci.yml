@@ -58,18 +58,22 @@ jobs:
       - run: cargo build --target wasm32-unknown-unknown -p rusthour-core -p rusthour-api -p rusthour-import -p rusthour-viz
       - uses: taiki-e/install-action@v2
         with:
-          tool: trunk
+          # Pinned (Dependabot doesn't bump it); tool versions in Trunk.toml.
+          tool: trunk@0.22.0
       - name: Web build (Trunk) and size report
         working-directory: crates/rusthour-viz
         run: |
           trunk build --release
+          raw=$(cat dist/*.wasm | wc -c)
+          gz=$(gzip -9 -c dist/*.wasm | wc -c)
           {
             echo '### Web build size (bytes)'
             echo '```'
             ls -l dist
-            echo "wasm, gzip -9: $(gzip -9 -c dist/*.wasm | wc -c)"
+            echo "wasm, gzip -9: $gz"
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
+          echo "::notice title=Web build size::wasm $raw bytes, gzip -9 $gz bytes"
 
   deps:
     name: cargo-deny + cargo-shear

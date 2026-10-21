@@ -5,7 +5,9 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
   <title>Rust Hour</title>
   <!-- Trunk: build the viewer and ship the font license texts (ADR-0003). -->
-  <link data-trunk rel="rust" data-bin="rusthour-viz">
+  <!-- wasm-opt -Os: most of -Oz's size savings, with less risk of slowing the
+       per-frame path; the ADR-0003 opt-level "z" experiment compares to this. -->
+  <link data-trunk rel="rust" data-bin="rusthour-viz" data-wasm-opt="s">
   <link data-trunk rel="copy-dir" href="licenses">
   <style>
     html, body { margin: 0; height: 100%; overflow: hidden; background: #1b1b1b; color: #e0e0e0; }

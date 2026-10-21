@@ -1,0 +1,9 @@
+# Trunk (web build) configuration: https://trunkrs.dev/configuration/
+# Pinned so the web build is reproducible. Trunk downloads these tools.
+# `wasm_bindgen` must equal the `wasm-bindgen` version in Cargo.lock; update
+# both together, or the build fails.
+
+[tools]
+wasm_bindgen = "0.2.129"
+# The version Trunk 0.22.0 defaults to (CI pins Trunk in .github/workflows/ci.yml).
+wasm_opt = "version_131"
