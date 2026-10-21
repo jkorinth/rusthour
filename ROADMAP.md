@@ -119,7 +119,7 @@ release PR.
 | ID | Item | Status | Owner |
 | --- | --- | --- | --- |
 | M1.1 | ADR: viz framework choice (Bevy vs macroquad vs eframe), decided by architect + UX | done | docs/M1.1-viz-framework |
-| M1.2 | `rusthour-import` crate: OSM extract → network via `osm2streets` (lanes, intersections, speed limits), behind the `osm` feature, with a `rusthour-import` binary taking an area name from `data/areas.toml`. Carry OSM source ids into the network types and asset (OSM node id for intersections; way id plus endpoint node ids for roads, since osm2streets splits ways) so M7.0 needs no format bump or re-import | todo | |
+| M1.2 | `rusthour-import` crate: OSM extract → network via our own `osmpbf`-based importer (lanes, intersections, speed limits; ADR-0002), behind the `osm` feature, with a `rusthour-import` binary taking an area name from `data/areas.toml`. Carry OSM source ids into the network types and asset (OSM node id for intersections; way id plus endpoint node ids for roads, since the importer splits ways) so M7.0 needs no format bump or re-import | done | feat/M1.2-osm-importer |
 | M1.3 | `.rhnet` asset format in `rusthour-import` (header, versioning, pure-Rust compression), readable on wasm32 without OSM parsing | done | feat/M1.3-rhnet-format |
 | M1.4 | `rusthour-api`: network data types, load a validated network into the simulation (bytes are decoded by `rusthour-import`, ADR-0002), query geometry for rendering | done | feat/M1.4-network-types |
 | M1.5 | `rusthour-viz`: render network, pan/zoom, native + browser | done | feat/M1.5-map-viewer |
