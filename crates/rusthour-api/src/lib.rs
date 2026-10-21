@@ -12,7 +12,8 @@ mod network;
 use serde::{Deserialize, Serialize};
 
 pub use network::{
-    Connection, NETWORK_SCHEMA_VERSION, Network, NetworkError, Node, NodeId, Point, Road, RoadId,
+    Connection, NETWORK_SCHEMA_VERSION, Network, NetworkError, Node, NodeId, OsmWayPart, Point,
+    Road, RoadId,
 };
 pub use rusthour_core::Config;
 

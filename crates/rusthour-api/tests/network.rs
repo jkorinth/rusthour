@@ -17,6 +17,7 @@ fn node(i: usize, (jx, jy): (f64, f64)) -> Node {
             x: col * 250.0 + jx,
             y: row * 250.0 + jy,
         },
+        osm_node: None,
     }
 }
 
@@ -76,6 +77,8 @@ fn valid_network() -> impl Strategy<Value = Network> {
                         geometry: polyline(nodes[from].position, nodes[to].position, &offsets),
                         speed_limit_mps,
                         lanes,
+                        name: None,
+                        osm: None,
                     }
                 })
                 .collect();
@@ -123,13 +126,21 @@ fn arbitrary_network() -> impl Strategy<Value = Network> {
             geometry,
             speed_limit_mps,
             lanes,
+            name: None,
+            osm: None,
         });
     let connection = (0u32..8, 0u32..8).prop_map(|(a, b)| Connection {
         from_road: RoadId(a),
         to_road: RoadId(b),
     });
     (
-        prop::collection::vec(point.prop_map(|position| Node { position }), 0..6),
+        prop::collection::vec(
+            point.prop_map(|position| Node {
+                position,
+                osm_node: None,
+            }),
+            0..6,
+        ),
         prop::collection::vec(road, 0..6),
         prop::collection::vec(connection, 0..6),
     )

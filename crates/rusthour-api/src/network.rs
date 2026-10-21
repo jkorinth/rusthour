@@ -9,7 +9,10 @@ use serde::{Deserialize, Serialize};
 ///
 /// Written into the `.rhnet` asset header (ADR-0002). Bump on any
 /// incompatible change to these types.
-pub const NETWORK_SCHEMA_VERSION: u32 = 1;
+///
+/// Version 2 added OSM source references ([`Node::osm_node`], [`Road::osm`])
+/// and [`Road::name`].
+pub const NETWORK_SCHEMA_VERSION: u32 = 2;
 
 /// Index of a node in [`Network::nodes`]. Serializes as a plain number.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -36,6 +39,9 @@ pub struct Node {
     /// The intersection's reference point (e.g. its center). Roads attached to
     /// the node need not start or end exactly here; see [`Road::geometry`].
     pub position: Point,
+    /// The OpenStreetMap node this node was imported from, if any. `None` for
+    /// hand-built networks.
+    pub osm_node: Option<i64>,
 }
 
 /// A directed road between two nodes; all its lanes run from `from_node` to
@@ -55,6 +61,29 @@ pub struct Road {
     pub speed_limit_mps: f64,
     /// Number of lanes, at least one.
     pub lanes: u8,
+    /// Street name for display only (OSM `name`, else `ref`); never used to
+    /// identify the road.
+    pub name: Option<String>,
+    /// The part of an OpenStreetMap way this road was imported from, if any.
+    /// `None` for hand-built networks.
+    pub osm: Option<OsmWayPart>,
+}
+
+/// Where a [`Road`] comes from in OpenStreetMap: the stretch of way `way`
+/// between its nodes `from_node` and `to_node`, in travel direction.
+///
+/// An importer splits ways at intersections and may merge or move nodes, so
+/// the way id alone is ambiguous and the road's [`Node`]s need not carry these
+/// OSM node ids. Together the three ids identify the road again after a
+/// re-import (M7.0), unless the way itself changed there.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct OsmWayPart {
+    /// OSM way id.
+    pub way: i64,
+    /// OSM id of the way node the road starts at.
+    pub from_node: i64,
+    /// OSM id of the way node the road ends at.
+    pub to_node: i64,
 }
 
 /// An allowed movement at a node: traffic may continue from `from_road` onto
@@ -93,13 +122,18 @@ pub struct Connection {
 /// let a = Point { x: 0.0, y: 0.0 };
 /// let b = Point { x: 100.0, y: 0.0 };
 /// let network = Network {
-///     nodes: vec![Node { position: a }, Node { position: b }],
+///     nodes: vec![
+///         Node { position: a, osm_node: None },
+///         Node { position: b, osm_node: None },
+///     ],
 ///     roads: vec![Road {
 ///         from_node: NodeId(0),
 ///         to_node: NodeId(1),
 ///         geometry: vec![a, b],
 ///         speed_limit_mps: 13.9,
 ///         lanes: 2,
+///         name: Some("Hauptstraße".into()),
+///         osm: None,
 ///     }],
 ///     connections: vec![],
 /// };
