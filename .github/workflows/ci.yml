@@ -56,6 +56,20 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       # The `server` feature is native-only, so default features here.
       - run: cargo build --target wasm32-unknown-unknown -p rusthour-core -p rusthour-api -p rusthour-viz
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: trunk
+      - name: Web build (Trunk) and size report
+        working-directory: crates/rusthour-viz
+        run: |
+          trunk build --release
+          {
+            echo '### Web build size (bytes)'
+            echo '```'
+            ls -l dist
+            echo "wasm, gzip -9: $(gzip -9 -c dist/*.wasm | wc -c)"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
 
   deps:
     name: cargo-deny + cargo-shear
