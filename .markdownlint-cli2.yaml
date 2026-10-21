@@ -1,0 +1,17 @@
+config:
+  default: true
+  # Tables and URLs make hard line limits impractical.
+  MD013: false
+  # Allow repeated headings in different sections (e.g. per milestone).
+  MD024:
+    siblings_only: true
+  # Allow the tagline emphasis under the title.
+  MD036: false
+globs:
+  - "**/*.md"
+ignores:
+  - "target/**"
+  - "CHANGELOG.md"
+  # Single-line import file and a template that starts at section level.
+  - "CLAUDE.md"
+  - ".github/pull_request_template.md"

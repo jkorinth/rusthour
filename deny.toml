@@ -1,0 +1,40 @@
+# cargo-deny configuration: https://embarkstudios.github.io/cargo-deny/
+
+[graph]
+all-features = true
+
+[advisories]
+version = 2
+yanked = "deny"
+
+[licenses]
+version = 2
+confidence-threshold = 0.9
+allow = [
+  "Apache-2.0",
+  "Apache-2.0 WITH LLVM-exception",
+  "BSD-2-Clause",
+  "BSD-3-Clause",
+  "ISC",
+  "MIT",
+  "Unicode-3.0",
+  "Zlib",
+]
+
+[licenses.private]
+# Workspace crates are `publish = false`; their own license is not checked.
+ignore = true
+
+[bans]
+multiple-versions = "warn"
+wildcards = "deny"
+allow-wildcard-paths = true
+deny = [
+  # Dependency direction (AGENTS.md §6): only rusthour-api may depend on
+  # rusthour-core. Frontends go through the API.
+  { crate = "rusthour-core", wrappers = ["rusthour-api"] },
+]
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"

@@ -1,0 +1,6 @@
+[files]
+extend-exclude = ["CHANGELOG.md", "target/"]
+
+[default.extend-words]
+# Intentional project/domain terms.
+rusthour = "rusthour"
