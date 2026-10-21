@@ -8,12 +8,13 @@ version = 2
 yanked = "deny"
 ignore = [
   # Unmaintained, no fix available; native-only (Linux) dependencies of eframe
-  # (winit's Wayland decorations; AccessKit's AT-SPI bridge). Revisit with
-  # every eframe update.
-  { id = "RUSTSEC-2026-0192", reason = "ttf-parser, via winit/sctk-adwaita" },
-  { id = "RUSTSEC-2026-0370", reason = "zvariant, via accesskit_unix/zbus" },
-  { id = "RUSTSEC-2026-0371", reason = "zbus_names, via accesskit_unix/zbus" },
-  { id = "RUSTSEC-2026-0372", reason = "zvariant_derive, via accesskit_unix/zbus" },
+  # (winit's Wayland decorations; AccessKit's AT-SPI bridge). On every eframe
+  # update, re-run `cargo deny check advisories` without these (see
+  # .github/dependabot.yml).
+  { id = "RUSTSEC-2026-0192", reason = "ttf-parser via winit/sctk-adwaita; https://github.com/harfbuzz/ttf-parser/issues/217; remove when winit/sctk-adwaita moves to a ttf-parser replacement" },
+  { id = "RUSTSEC-2026-0370", reason = "zvariant via accesskit_unix/zbus 5; https://github.com/z-galaxy/zbus/issues/2043; remove when eframe/accesskit moves to zbus 6" },
+  { id = "RUSTSEC-2026-0371", reason = "zbus_names via accesskit_unix/zbus 5; https://github.com/z-galaxy/zbus/issues/2043; remove when eframe/accesskit moves to zbus 6" },
+  { id = "RUSTSEC-2026-0372", reason = "zvariant_derive via accesskit_unix/zbus 5; https://github.com/z-galaxy/zbus/issues/2043; remove when eframe/accesskit moves to zbus 6" },
 ]
 
 [licenses]

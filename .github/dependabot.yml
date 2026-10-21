@@ -6,6 +6,9 @@ updates:
       interval: weekly
     commit-message:
       prefix: chore(deps)
+    # On eframe updates, re-run `cargo deny check advisories` without the four
+    # RUSTSEC ignores in deny.toml, and bump wasm_bindgen in
+    # crates/rusthour-viz/Trunk.toml with wasm-bindgen.
     groups:
       cargo:
         patterns: ["*"]
