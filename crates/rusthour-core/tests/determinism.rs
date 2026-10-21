@@ -6,8 +6,9 @@
 
 use rusthour_core::{Config, Engine, run_and_hash};
 
-/// State hash after 1000 steps with seed 42 and the default config.
-const GOLDEN_HASH: u64 = 565_821_329_266_480_033;
+/// State hash after 1000 steps with seed 42, the default config and an empty
+/// network. Changed in M1.4: the state hash now includes the network.
+const GOLDEN_HASH: u64 = 11_439_358_342_447_110_657;
 
 #[test]
 fn same_seed_gives_same_hash() {

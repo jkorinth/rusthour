@@ -4,6 +4,7 @@ use rand_chacha::ChaCha8Rng;
 use rand_chacha::rand_core::SeedableRng;
 
 use crate::StateHasher;
+use crate::network::Network;
 
 /// Engine-wide settings fixed at construction.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -27,16 +28,24 @@ pub struct Engine {
     config: Config,
     tick: u64,
     rng: ChaCha8Rng,
+    network: Network,
 }
 
 impl Engine {
-    /// Creates an engine at time zero.
+    /// Creates an engine at time zero with an empty network.
     #[must_use]
     pub fn new(config: Config, seed: u64) -> Self {
+        Self::with_network(config, seed, Network::default())
+    }
+
+    /// Creates an engine at time zero running on `network`.
+    #[must_use]
+    pub fn with_network(config: Config, seed: u64, network: Network) -> Self {
         Self {
             config,
             tick: 0,
             rng: ChaCha8Rng::seed_from_u64(seed),
+            network,
         }
     }
 
@@ -76,6 +85,7 @@ impl Engine {
         h.write_u64(self.tick);
         h.write_bytes(&self.rng.get_seed());
         h.write_u128(self.rng.get_word_pos());
+        self.network.hash_into(&mut h);
         h.finish()
     }
 }
