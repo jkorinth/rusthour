@@ -18,8 +18,11 @@ Map preparation is an **offline step** handled by a fifth crate,
 
 1. **Fetch** an OSM extract for a named area (e.g. cut the area's `bbox` from
    a regional Geofabrik `.osm.pbf` with osmium). Fetching is separate from
-   importing so the source file, date and command can be recorded in
-   `data/<area>/README.md`.
+   importing so the source file, date and command can be recorded: the
+   `assets` workflow does this in its `assets-*` pre-release notes and in
+   `data/assets.toml`. Its `complete_ways` extracts include whole ways that
+   cross the box, so the importer clips to the header bbox, not the data
+   extent.
 2. **Import** (feature `osm`, native-only, plus a `rusthour-import` binary):
    run `osm2streets` on the extract, simplify to the network data types
    defined in `rusthour-api`, and write one asset per area.
@@ -54,8 +57,10 @@ Dependencies: `rusthour-import` depends on `rusthour-api`, not on
 `rusthour-import` without the `osm` feature, so `osm2streets` never enters the
 browser build.
 
-Small sample assets (the Bensheim areas) are committed or attached to
-releases, so users can run the simulator without running the importer. OSM
+Small sample assets (the Bensheim areas) are built by the `assets` workflow,
+attached to `assets-*` GitHub pre-releases (not committed) and recorded in
+`data/assets.toml`, so users can run the simulator without running the
+importer. OSM
 data is ODbL: assets and the viewer carry "© OpenStreetMap contributors", and
 `data/LICENSE` states that map data is ODbL, not covered by the code's GPL.
 
