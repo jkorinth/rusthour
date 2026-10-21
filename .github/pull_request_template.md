@@ -15,6 +15,7 @@ Roadmap item: M?.?
 ## Checklist
 
 - [ ] Roadmap item status updated (own line only)
+- [ ] History cleaned up before merge: no `fixup!`/wip commits (PRs are rebase-merged)
 - [ ] Dependency direction respected (`core` ← `api` ← `viz`/`cli`)
 - [ ] User-facing change? UX designer review requested
 

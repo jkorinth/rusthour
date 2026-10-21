@@ -30,15 +30,24 @@ Direct commits to `main` are allowed. Conventional commits are still mandatory.
 2. **Branch** per item: `<type>/<ID>-<slug>`, e.g. `feat/M3.1-mobil`.
    Use a separate git worktree per item so agents can work in parallel.
 3. **Test first** (§5), then implement.
-4. **Open a PR** using the template. Title is a conventional commit
-   (it becomes the squash commit). Reference the roadmap ID.
+4. **Open a PR** using the template. The title is a conventional commit
+   summarizing the change. Reference the roadmap ID. Address review findings
+   with `git commit --fixup=<sha>` so reviewers can follow what changed.
 5. **Review**: architect always; UX designer if the PR touches `rusthour-viz`,
    `rusthour-cli` UX, output formats or `rusthour-api` public types. Reviewers post a
    comment ending with an explicit verdict: `VERDICT: APPROVE` or
    `VERDICT: REQUEST CHANGES` (agents may share a GitHub account, so formal
    approvals may not be available).
-6. **Merge** by squash once CI is green and required verdicts are APPROVE.
-   Set the roadmap item to `done` in the same PR.
+6. **Clean up history** before merging:
+   `git rebase -i --autosquash origin/main`, then force-push your branch
+   (`--force-with-lease`). Every remaining commit must be a meaningful,
+   conventional commit; no `fixup!`, "address review" or "wip" commits (CI
+   rejects `fixup!`-style leftovers). Each commit should also build and pass
+   tests on its own; check with
+   `git rebase -x 'cargo nextest run' origin/main` (CI tests only the head).
+7. **Merge** by rebase once CI is green and required verdicts are APPROVE.
+   Every commit lands on `main` as-is. Set the roadmap item to `done` in the
+   same PR.
 
 PRs stay small: one roadmap item, or part of one. Never mix unrelated changes.
 
@@ -47,11 +56,15 @@ PRs stay small: one roadmap item, or part of one. Never mix unrelated changes.
 Format: `<type>(<scope>): <summary>` — types `feat`, `fix`, `perf`,
 `refactor`, `test`, `docs`, `build`, `ci`, `chore`. Scope is the crate
 (`core`, `api`, `viz`, `cli`) or area (`ci`, `deps`, `roadmap`). Breaking
-changes use `!` and a `BREAKING CHANGE:` footer.
+changes use `!` and a `BREAKING CHANGE:` footer. Reverts use
+`revert: <original subject>`; git's default `Revert "..."` message is
+rejected, so edit it when running `git revert`.
 
-Enforced by a commit-msg hook (lefthook) and a PR-title check in CI.
-release-please derives versions and changelogs from these commits; the release
-PR is merged only at milestone completion. Use a `Release-As:` footer if the
+Enforced by a commit-msg hook (lefthook) and, in CI, by checks of the PR
+title and of every commit in the PR. release-please derives versions and
+changelogs from every commit on `main`, so each commit message is a changelog
+line: write it for a reader of the release notes. The release PR is merged
+only at milestone completion. Use a `Release-As:` footer if the
 computed version doesn't match the milestone.
 
 ## 4. Linting (continuous)
