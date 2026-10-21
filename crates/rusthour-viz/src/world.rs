@@ -14,16 +14,20 @@ const ROAD_COLOR: Color32 = Color32::from_gray(0x8a);
 /// Keyboard pan speed, in screen points per second.
 const KEY_PAN_SPEED: f32 = 600.0;
 /// Zoom per `+`/`-` press.
-const KEY_ZOOM_STEP: f32 = 1.25;
-/// Zoom per screen point of scrolling.
-const SCROLL_ZOOM_PER_POINT: f32 = 0.002;
+const KEY_ZOOM_STEP: f32 = 1.5;
+/// Zoom per screen point of scrolling: about ×1.4 per native wheel notch
+/// (40 points), as in web maps.
+const SCROLL_ZOOM_PER_POINT: f32 = 0.0084;
+/// Room left around the map by "fit": keeps it clear of the overlays at the
+/// top and bottom corners.
+const FIT_PADDING: Vec2 = Vec2::new(8.0, 40.0);
 
 /// Keys bound in the map view, for the `?` help: (keys, action).
 pub const SHORTCUTS: &[(&str, &str)] = &[
     ("Drag, arrow keys, WASD", "Pan"),
     ("Scroll, pinch, + / -", "Zoom"),
     ("Home, F, 0", "Fit the map"),
-    ("?", "Show or hide this list"),
+    ("? / Esc", "Show or close this list"),
 ];
 
 /// The network mesh plus the camera looking at it.
@@ -67,13 +71,24 @@ impl World {
         if viewport.width() < 1.0 || viewport.height() < 1.0 {
             return; // e.g. a minimized window: a zero scale would poison the camera
         }
-        let fit = Camera::fit(self.bounds, viewport);
+        let padded = viewport.shrink2(FIT_PADDING);
+        let fit = Camera::fit(
+            self.bounds,
+            if padded.is_positive() {
+                padded
+            } else {
+                viewport
+            },
+        );
         let camera = self.camera.get_or_insert(fit);
         // Zoom out to "whole map fits", in to "one lane fills the screen".
         let max_scale = viewport.size().min_elem() / LANE_WIDTH_M;
 
         let keyboard = !ui.ctx().egui_wants_keyboard_input();
         let (pan, zoom, anchor, keys_held, fit_key) = ui.input(|i| {
+            // Ctrl/Cmd/Alt combinations belong to egui and the browser (UI zoom).
+            let keyboard =
+                keyboard && !(i.modifiers.command || i.modifiers.ctrl || i.modifiers.alt);
             let mut pan = Vec2::ZERO;
             let mut zoom = 1.0;
             let mut anchor = viewport.center();
@@ -129,6 +144,10 @@ impl World {
             ui.ctx().request_repaint();
         }
 
+        // egui copies every mesh it paints and re-uploads the vertex buffer each
+        // frame anyway; only ADR-0003's custom-pipeline fallback (static vertex
+        // buffer, camera uniform) avoids that. Frame times on bensheim-5km
+        // are measured in M1.8.
         let mut mesh = self.mesh.clone();
         mesh.transform(camera.mesh_transform(viewport));
         ui.painter_at(viewport).add(Shape::mesh(mesh));

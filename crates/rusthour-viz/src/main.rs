@@ -19,8 +19,9 @@ pub struct MapSource {
     pub attribution_url: Option<&'static str>,
 }
 
-/// The map the viewer shows. The one place to switch to decoded `.rhnet`
-/// assets (M1.6), with "© OpenStreetMap contributors" as attribution.
+/// The map the viewer shows; decoded `.rhnet` assets with "© OpenStreetMap
+/// contributors" replace it in M1.8. Fetching is async in the browser, so
+/// that also turns `App` into ADR-0003's Loading → Ready | Failed states.
 fn load_map() -> MapSource {
     demo::map()
 }
@@ -35,7 +36,7 @@ struct App {
 impl App {
     fn new(map: MapSource) -> Self {
         // shortcut: a bad map panics; real map loading gets the Loading/Failed
-        // states of ADR-0003 §5 in M1.6.
+        // states of ADR-0003 §5 in M1.8.
         let sim = InProcess::with_network(Config::default(), 0, map.network)
             .expect("the bundled map is valid");
         Self {
@@ -52,6 +53,9 @@ impl eframe::App for App {
         let ctx = ui.ctx().clone();
         if !ctx.egui_wants_keyboard_input() && ctx.input(|i| i.key_pressed(Key::Questionmark)) {
             self.show_help = !self.show_help;
+        }
+        if self.show_help && ctx.input(|i| i.key_pressed(Key::Escape)) {
+            self.show_help = false;
         }
 
         egui::CentralPanel::default()
@@ -129,12 +133,23 @@ fn main() {
         if let Some(status) = document.get_element_by_id("status") {
             match started {
                 Ok(()) => status.remove(),
-                // Mostly: neither WebGPU nor WebGL2 is available.
-                Err(e) => status.set_text_content(Some(&format!(
-                    "Rust Hour could not start: {e:?}. It needs WebGPU or WebGL2; \
-                     try a current Firefox, Chrome, Edge or Safari, \
-                     with hardware acceleration enabled."
-                ))),
+                Err(e) => {
+                    // Mostly: neither WebGPU nor WebGL2 is available.
+                    status.set_text_content(Some(
+                        "Rust Hour could not start. Most likely this browser offers \
+                         neither WebGPU nor WebGL2: try a current Firefox, Chrome, \
+                         Edge or Safari with hardware acceleration on.",
+                    ));
+                    if let (Ok(details), Ok(pre)) = (
+                        document.create_element("details"),
+                        document.create_element("pre"),
+                    ) {
+                        details.set_inner_html("<summary>Technical details</summary>");
+                        pre.set_text_content(Some(&format!("{e:?}")));
+                        let _ = details.append_child(&pre);
+                        let _ = status.append_child(&details);
+                    }
+                }
             }
         }
     });
