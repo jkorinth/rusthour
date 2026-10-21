@@ -1,0 +1,23 @@
+name: release-please
+
+# Maintains a release PR from conventional commits. Merge it only when a
+# milestone is complete (ROADMAP.md §4); merging tags the release.
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  release-please:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: googleapis/release-please-action@v4
+        with:
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json

@@ -1,0 +1,7 @@
+# zizmor configuration. Actions are pinned by version tag for now and kept
+# current by Dependabot; hash-pinning is a backlog item.
+rules:
+  unpinned-uses:
+    config:
+      policies:
+        "*": ref-pin
