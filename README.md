@@ -19,12 +19,39 @@ target are pinned in `rust-toolchain.toml` and installed automatically.
 # Run a headless simulation and print its status as JSON
 cargo run -p rusthour-cli -- run --seed 42 --steps 1000
 
-# Run the (placeholder) viewer
-cargo run -p rusthour-viz
+# Open the viewer (a demo town grid until real maps land in M1.6)
+cargo run -p rusthour-viz --release
 
 # Tests
 cargo nextest run --workspace     # or: cargo test --workspace
 ```
+
+## Viewer
+
+Natively, `cargo run -p rusthour-viz --release` opens a window. On Linux it
+needs a running X11 or Wayland session; no extra system packages are needed
+to build it.
+
+In the browser, build with [Trunk](https://trunkrs.dev)
+(`cargo install --locked trunk`):
+
+```sh
+cd crates/rusthour-viz
+trunk serve --release   # then open http://127.0.0.1:8080
+trunk build --release   # static site in crates/rusthour-viz/dist/
+```
+
+The browser needs WebGPU or WebGL2 (any current Firefox, Chrome, Edge or
+Safari).
+
+Controls: drag to pan, scroll or pinch to zoom, arrow keys or WASD to pan,
+`+`/`-` to zoom, `Home`, `F` or `0` to fit the map, `?` for the list of
+shortcuts.
+
+The viewer embeds egui's default fonts. Their licenses (SIL OFL 1.1, Ubuntu
+Font Licence 1.0, MIT, Bitstream Vera) are in
+[`crates/rusthour-viz/licenses/`](crates/rusthour-viz/licenses/) and must
+accompany every copy of the viewer; the web build copies them into `dist/`.
 
 ## Crates
 

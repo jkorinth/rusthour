@@ -24,6 +24,6 @@ rustc-ice-*.txt
 #.idea/
 
 # Rust Hour
-/dist
+dist/
 *.profraw
 .DS_Store
