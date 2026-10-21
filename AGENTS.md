@@ -122,6 +122,12 @@ approval, a module-level `allow`, and `// SAFETY:` comments.
   that first and get architect approval.
 - Rebase on `main` before requesting review. Resolve `Cargo.lock` conflicts by
   regenerating, not hand-editing.
+- Never merge `main` into a PR branch: merge commits can't land on `main`
+  (linear history) and CI rejects them. Locally, use
+  `git rebase origin/main`; on GitHub, use **Update branch → Update with
+  rebase**, not the default merge. For Dependabot PRs, comment
+  `@dependabot rebase` (or `@dependabot recreate` if the branch was already
+  modified).
 - If two items conflict, the architect decides ordering and marks one
   `blocked` in the roadmap.
 
