@@ -122,8 +122,9 @@ release PR.
 | M1.2 | `rusthour-import` crate: OSM extract → network via `osm2streets` (lanes, intersections, speed limits), behind the `osm` feature, with a `rusthour-import` binary taking an area name from `data/areas.toml`. Carry OSM source ids into the network types and asset (OSM node id for intersections; way id plus endpoint node ids for roads, since osm2streets splits ways) so M7.0 needs no format bump or re-import | todo | |
 | M1.3 | `.rhnet` asset format in `rusthour-import` (header, versioning, pure-Rust compression), readable on wasm32 without OSM parsing | done | feat/M1.3-rhnet-format |
 | M1.4 | `rusthour-api`: network data types, load a validated network into the simulation (bytes are decoded by `rusthour-import`, ADR-0002), query geometry for rendering | done | feat/M1.4-network-types |
-| M1.5 | `rusthour-viz`: render network, pan/zoom, native + browser | in-review | feat/M1.5-map-viewer |
+| M1.5 | `rusthour-viz`: render network, pan/zoom, native + browser | done | feat/M1.5-map-viewer |
 | M1.6 | Bundled sample maps: Bensheim areas (see below) | todo | |
+| M1.8 | `rusthour-viz` loads a Bensheim `.rhnet` map: loading progress, in-page errors for wasm/map load failures, OSM attribution text, startup-time check (3 s native / 5 s browser on bensheim-5km per ADR-0003), frame-time measurement per ADR-0003, street-name labels incl. ä/ö/ü/ß | todo | |
 
 **Sample areas (M1.6):** named, square boxes in
 [`data/areas.toml`](data/areas.toml), selected by name in the importer
