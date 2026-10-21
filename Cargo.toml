@@ -28,6 +28,9 @@ lz4_flex = { version = "0.14", default-features = false, features = [
   "safe-encode",
 ] }
 sha2 = { version = "0.11", default-features = false }
+# OSM importer only (native, feature `osm` of rusthour-import; ADR-0002).
+osmpbf = "0.3"
+toml = { version = "1", default-features = false, features = ["parse", "serde", "std"] }
 
 [workspace.lints.rust]
 unsafe_code = "forbid"

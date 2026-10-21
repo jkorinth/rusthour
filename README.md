@@ -22,8 +22,12 @@ cargo run -p rusthour-cli -- run --seed 42 --steps 1000
 # Open the viewer (a demo town grid until it loads real maps, M1.8)
 cargo run -p rusthour-viz --release
 
+# Import a map (see "Importing maps" below)
+cargo run -p rusthour-import --features osm -- bensheim-5km \
+    --input bensheim-5km.osm.pbf --output bensheim-5km.rhnet
+
 # Tests
-cargo nextest run --workspace     # or: cargo test --workspace
+cargo nextest run --workspace --all-features   # or: cargo test --workspace --all-features
 ```
 
 ## Viewer
@@ -67,6 +71,26 @@ Map data © OpenStreetMap contributors, available under the
 [ODbL](https://www.openstreetmap.org/copyright); see
 [`data/LICENSE`](data/LICENSE).
 
+### Importing an area yourself
+
+Most users won't need this: the assets workflow above publishes ready-cut
+extracts, and will publish `.rhnet` maps (ROADMAP M1.7). To import an area from
+`data/areas.toml` yourself, use one of those extracts or cut it from a regional
+[Geofabrik](https://download.geofabrik.de) extract with
+[osmium](https://osmcode.org/osmium-tool/). `areas.toml` stores the bbox as
+`[south, west, north, east]`; osmium wants `west,south,east,north`:
+
+```sh
+# bensheim-5km: bbox = [49.6585, 8.5883, 49.7035, 8.6577]
+osmium extract -b 8.5883,49.6585,8.6577,49.7035 --strategy complete_ways \
+    hessen-latest.osm.pbf -o bensheim-5km.osm.pbf
+cargo run -p rusthour-import --features osm -- bensheim-5km \
+    --input bensheim-5km.osm.pbf --output bensheim-5km.rhnet
+```
+
+The importer stores the OpenStreetMap attribution in every `.rhnet` file;
+anything that shows the map must display it.
+
 ## Crates
 
 | Crate | Role |
@@ -75,7 +99,7 @@ Map data © OpenStreetMap contributors, available under the
 | `rusthour-api` | The standard interface (`Simulation` facade, protocol types); later also a remote service |
 | `rusthour-viz` | Interactive viewer, native and browser |
 | `rusthour-cli` | `rusthour` binary: headless runs, statistics, comparisons |
-| `rusthour-import` | Map assets: the `.rhnet` format (all targets, including wasm32); the offline OSM importer follows in M1.2 ([ADR-0002](docs/adr/0002-map-asset-pipeline.md)) |
+| `rusthour-import` | Map assets: the `.rhnet` format (all targets, including wasm32); with feature `osm`, the native-only OSM importer and its `rusthour-import` binary ([ADR-0002](docs/adr/0002-map-asset-pipeline.md)) |
 
 Frontends depend only on `rusthour-api`, never on `rusthour-core` directly
 (see [ADR-0001](docs/adr/0001-crate-split.md)).
