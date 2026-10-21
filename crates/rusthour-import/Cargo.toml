@@ -1,6 +1,6 @@
 [package]
 name = "rusthour-import"
-description = "Rust Hour map assets: the .rhnet format (all targets), later the OSM importer."
+description = "Rust Hour map assets: the .rhnet format (all targets) and the OSM importer (native)."
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -8,12 +8,27 @@ repository.workspace = true
 license.workspace = true
 publish.workspace = true
 
+[features]
+# The OSM importer and the `rusthour-import` binary. Native-only (ADR-0002).
+osm = ["dep:osmpbf", "dep:toml", "dep:clap"]
+
+[[bin]]
+name = "rusthour-import"
+required-features = ["osm"]
+
+[[test]]
+name = "osm"
+required-features = ["osm"]
+
 [dependencies]
 rusthour-api.workspace = true
 serde.workspace = true
 postcard.workspace = true
 lz4_flex.workspace = true
 sha2.workspace = true
+osmpbf = { workspace = true, optional = true }
+toml = { workspace = true, optional = true }
+clap = { workspace = true, optional = true }
 
 [dev-dependencies]
 proptest.workspace = true

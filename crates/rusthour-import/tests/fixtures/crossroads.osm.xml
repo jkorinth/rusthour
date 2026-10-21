@@ -1,0 +1,77 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Hand-written test fixture for the Rust Hour OSM importer (M1.2). Fictional
+  geometry near Bensheim (~49.68 N, 8.62 E); arms are ~100 m long.
+
+            2 (N)
+            |  Bahnhofstraße: two-way, no lanes/maxspeed tags
+  5 (W) === 1 === 4 (E) ~~ 6 ~~ 7   Hauptstraße 5-1 (way 100), 1-4 (way 104): two-way, lanes=2, maxspeed=50
+            |                       Müllerweg 4-6-7: bent, maxspeed=DE:urban, dead end at 7
+            v  Schulgäßchen 1->3: oneway=yes, lanes=1, maxspeed=30
+            3 (S)
+
+  Node 1 has traffic signals. A no-left-turn restriction (from way 100 via node 1 to way 101) bans W->N.
+
+  The importer reads PBF only. After editing, regenerate crossroads.osm.pbf with
+  `osmium cat crossroads.osm.xml -O -o crossroads.osm.pbf` plus the output header
+  osmosis_replication_timestamp=2026-10-01T00:00:00Z (option output-header; XML
+  comments can't contain a double dash).
+-->
+<osm version="0.6" generator="hand-written">
+  <bounds minlat="49.6790" minlon="8.6180" maxlat="49.6810" maxlon="8.6240"/>
+  <node id="1" lat="49.6800" lon="8.6200" version="1">
+    <tag k="highway" v="traffic_signals"/>
+  </node>
+  <node id="2" lat="49.6809" lon="8.6200" version="1"/>
+  <node id="3" lat="49.6791" lon="8.6200" version="1"/>
+  <node id="4" lat="49.6800" lon="8.6214" version="1"/>
+  <node id="5" lat="49.6800" lon="8.6186" version="1"/>
+  <node id="6" lat="49.6803" lon="8.6224" version="1"/>
+  <node id="7" lat="49.6803" lon="8.6236" version="1"/>
+  <way id="100" version="1">
+    <nd ref="5"/>
+    <nd ref="1"/>
+    <tag k="highway" v="residential"/>
+    <tag k="name" v="Hauptstraße"/>
+    <tag k="lanes" v="2"/>
+    <tag k="maxspeed" v="50"/>
+  </way>
+  <way id="104" version="1">
+    <nd ref="1"/>
+    <nd ref="4"/>
+    <tag k="highway" v="residential"/>
+    <tag k="name" v="Hauptstraße"/>
+    <tag k="lanes" v="2"/>
+    <tag k="maxspeed" v="50"/>
+  </way>
+  <way id="101" version="1">
+    <nd ref="1"/>
+    <nd ref="2"/>
+    <tag k="highway" v="residential"/>
+    <tag k="name" v="Bahnhofstraße"/>
+  </way>
+  <way id="102" version="1">
+    <nd ref="1"/>
+    <nd ref="3"/>
+    <tag k="highway" v="residential"/>
+    <tag k="name" v="Schulgäßchen"/>
+    <tag k="oneway" v="yes"/>
+    <tag k="lanes" v="1"/>
+    <tag k="maxspeed" v="30"/>
+  </way>
+  <way id="103" version="1">
+    <nd ref="4"/>
+    <nd ref="6"/>
+    <nd ref="7"/>
+    <tag k="highway" v="residential"/>
+    <tag k="name" v="Müllerweg"/>
+    <tag k="maxspeed" v="DE:urban"/>
+  </way>
+  <relation id="200" version="1">
+    <member type="way" ref="100" role="from"/>
+    <member type="node" ref="1" role="via"/>
+    <member type="way" ref="101" role="to"/>
+    <tag k="type" v="restriction"/>
+    <tag k="restriction" v="no_left_turn"/>
+  </relation>
+</osm>

@@ -1,0 +1,7 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc 46e9186350ad6321f137dc6857af2becc8e160f2cd9605669712cecd1ab2f309 # shrinks to data = OsmData { nodes: {5: (49.6796, 8.6186), 9: (49.6796, 8.6186), 10: (49.6796, 8.6218), 11: (49.6796, 8.6186), 1: (49.6796, 8.6186), 6: (49.6796, 8.621), 8: (49.6796, 8.6186), 12: (49.6796, 8.621), 7: (49.6796, 8.6186), 3: (49.6796, 8.6186), 2: (49.6796, 8.6186), 4: (49.6796, 8.6186)}, ways: [Way { id: 100, nodes: [6, 7, 1, 6], tags: [("highway", "residential"), ("junction", "roundabout")] }], relations: [], replication_timestamp: None }
