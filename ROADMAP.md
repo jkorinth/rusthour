@@ -118,7 +118,7 @@ release PR.
 
 | ID | Item | Status | Owner |
 | --- | --- | --- | --- |
-| M1.1 | ADR: viz framework choice (Bevy vs macroquad), decided by architect + UX | todo | |
+| M1.1 | ADR: viz framework choice (Bevy vs macroquad vs eframe), decided by architect + UX | done | docs/M1.1-viz-framework |
 | M1.2 | `rusthour-import` crate: OSM extract → network via `osm2streets` (lanes, intersections, speed limits), behind the `osm` feature, with a `rusthour-import` binary taking an area name from `data/areas.toml` | todo | |
 | M1.3 | `.rhnet` asset format in `rusthour-import` (header, versioning, pure-Rust compression), readable on wasm32 without OSM parsing | todo | |
 | M1.4 | `rusthour-api`: network data types, load a network from bytes, query geometry for rendering | todo | |
