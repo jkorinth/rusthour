@@ -92,8 +92,6 @@ jobs:
       - uses: actions/checkout@v5
         with:
           persist-credentials: false
-      - uses: taiki-e/install-action@v2
-        with:
-          tool: actionlint
-      - run: actionlint
+      - name: actionlint
+        run: docker run --rm -v "$PWD:/repo" -w /repo rhysd/actionlint:1.7.7 -color
       - run: pipx run zizmor --offline .github/workflows
