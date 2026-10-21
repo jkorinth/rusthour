@@ -25,10 +25,14 @@ Map preparation is an **offline step** handled by a fifth crate,
    defined in `rusthour-api`, and write one asset per area.
 3. **Asset format** (`.rhnet`, always compiled, wasm-compatible): a small
    little-endian header followed by the serialized, compressed network. The
-   header holds magic bytes, the `.rhnet` container format version, the
-   network schema version (of the `rusthour-api` types), area name, source
-   date, importer and `osm2streets` versions, the ODbL attribution string,
-   and a hash of the compressed payload (which is also the cache key). The
+   fixed header holds magic bytes, the `.rhnet` container format version,
+   the network schema version (of the `rusthour-api` types), the section
+   lengths and a SHA-256 of the whole file except the hash field (which is
+   also the cache key). Covering the whole file protects the header fields
+   too, and a content-hashed cache name must change when only the metadata
+   changes. Area name, source date, importer and `osm2streets` versions and
+   the ODbL attribution string follow in a postcard-encoded metadata block
+   right after the fixed header. The
    decoder must be pure Rust so it runs on `wasm32-unknown-unknown`; the
    encoder only runs natively and is unconstrained. Exact choices are made in
    M1.3.
