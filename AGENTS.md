@@ -99,8 +99,18 @@ approval, a module-level `allow`, and `// SAFETY:` comments.
 - **Test-driven:** write the failing test first, then the code.
 - **Don't overconstrain:** a few well-defined tests per feature (typically
   2–5) that pin down the roadmap item's acceptance criteria — not every line.
-- **Regressions:** every bug fix adds exactly one test reproducing it, named
-  `regression_<issue-number>_<slug>`.
+- **Property tests:** where inputs have structure (validation at trust
+  boundaries, serialization, invariants), prefer a few `proptest` properties
+  over many examples. Test-first still applies: write the failing property
+  before the code. Keep the default case count, keep `prop_assume!` and
+  filter rejections rare, and don't pin seeds. Commit the regressions file
+  proptest writes (`tests/<name>.proptest-regressions` for integration
+  tests, `proptest-regressions/…` for unit tests in `src/`).
+- **Regressions:** a bug found on `main` (after merge) gets a filed issue,
+  and its fix adds exactly one test reproducing it, named
+  `regression_<issue-number>_<slug>`. A bug a property finds in an unmerged
+  PR is covered by the case proptest saves to the regressions file; no issue
+  or named test is needed.
 - **Determinism:** any change to `rusthour-core` must keep the determinism test
   passing (same seed ⇒ same state hash). Intentional changes update the golden
   hash in the same PR with a note.
