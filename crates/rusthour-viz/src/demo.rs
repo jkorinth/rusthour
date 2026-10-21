@@ -1,4 +1,4 @@
-//! A small hand-built town grid, shown until `.rhnet` maps load (M1.6).
+//! A small hand-built town grid, shown until `.rhnet` maps load (M1.8).
 
 use rusthour_api::{Network, Node, NodeId, Point, Road};
 
