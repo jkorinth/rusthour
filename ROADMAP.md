@@ -113,7 +113,18 @@ release PR.
 | M1.3 | Network serialization (binary snapshot) loadable in wasm without OSM parsing | todo | |
 | M1.4 | `rusthour-api`: load network, query geometry for rendering | todo | |
 | M1.5 | `rusthour-viz`: render network, pan/zoom, native + browser | todo | |
-| M1.6 | Bundled sample map (a few km², chosen by user) | todo | |
+| M1.6 | Bundled sample maps: Bensheim areas (see below) | todo | |
+
+**Sample areas (M1.6):** named, square boxes in
+[`data/areas.toml`](data/areas.toml), selected by name in the importer
+(e.g. `--area bensheim-5km`). All three are centered on the Bensheim
+Marktplatz (49.6810 N, 8.6230 E): `bensheim-1km` for quick tests,
+`bensheim-2km`, and `bensheim-5km` as the default sample map. New areas are
+added there, not here. For each imported area, record the extract's source,
+date, the exact extraction command and the `osm2streets` version in
+`data/<area>/README.md` so the import is reproducible. OSM data is ODbL:
+keep the attribution "© OpenStreetMap contributors" with the data and in the
+viewer.
 
 **Acceptance:** sample map renders natively and in the browser; import is
 reproducible from the OSM extract.

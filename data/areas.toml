@@ -1,0 +1,29 @@
+# Named map areas for the OSM import (ROADMAP M1.2, M1.6).
+#
+# `bbox` is authoritative, in WGS84 degrees: [south, west, north, east].
+# `center` ([lat, lon]) and `size_km` (side length of the square) only
+# document how the box was derived. Boxes are square on the ground, so the
+# longitude span is wider than the latitude span at this latitude.
+#
+# OSM data is ODbL: keep "© OpenStreetMap contributors" with any extract and
+# in the viewer.
+
+# Bensheim, Hesse, centered on the Marktplatz (49.6810 N, 8.6230 E).
+
+[areas.bensheim-1km]
+description = "Bensheim town center, 1 × 1 km. Smallest map for quick tests."
+center = [49.6810, 8.6230]
+size_km = 1.0
+bbox = [49.6765, 8.6161, 49.6855, 8.6299]
+
+[areas.bensheim-2km]
+description = "Bensheim town center, 2 × 2 km."
+center = [49.6810, 8.6230]
+size_km = 2.0
+bbox = [49.6720, 8.6091, 49.6900, 8.6369]
+
+[areas.bensheim-5km]
+description = "Bensheim, 5 × 5 km around the town center. Default sample map."
+center = [49.6810, 8.6230]
+size_km = 5.0
+bbox = [49.6585, 8.5883, 49.7035, 8.6577]
