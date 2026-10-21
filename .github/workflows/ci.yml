@@ -55,7 +55,7 @@ jobs:
       - run: rustup toolchain install
       - uses: Swatinem/rust-cache@v2
       # The `server` feature is native-only, so default features here.
-      - run: cargo build --target wasm32-unknown-unknown -p rusthour-core -p rusthour-api -p rusthour-viz
+      - run: cargo build --target wasm32-unknown-unknown -p rusthour-core -p rusthour-api -p rusthour-import -p rusthour-viz
       - uses: taiki-e/install-action@v2
         with:
           tool: trunk
