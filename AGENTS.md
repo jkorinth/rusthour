@@ -100,8 +100,11 @@ approval, a module-level `allow`, and `// SAFETY:` comments.
 
 ## 6. Architecture rules
 
-- **Dependency direction:** `rusthour-core` ← `rusthour-api` ← {`rusthour-viz`, `rusthour-cli`}.
-  Frontends never depend on `rusthour-core` directly. CI checks this.
+- **Dependency direction:** `rusthour-core` ← `rusthour-api` ←
+  {`rusthour-import`, `rusthour-viz`, `rusthour-cli`}. Only `rusthour-api`
+  depends on `rusthour-core`; CI checks this. Frontends may use
+  `rusthour-import` for reading map assets, never its native-only `osm`
+  feature (ADR-0002).
 - **`rusthour-core`:** no I/O, no rendering, no async, no wall-clock time, no global
   RNG. Must compile to `wasm32-unknown-unknown`. Fixed timestep; all
   randomness from the scenario seed.

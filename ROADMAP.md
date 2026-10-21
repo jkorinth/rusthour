@@ -39,23 +39,33 @@ statistics.
 
 ## 3. Architecture
 
-Cargo workspace, four crates:
+Cargo workspace, five crates:
 
 ```text
-rusthour-core       pure simulation; no I/O, no rendering, no async;
-   ▲                compiles to wasm32
+rusthour-core          pure simulation; no I/O, no rendering, no async;
+   ▲                   compiles to wasm32
    │
-rusthour-api        the standard interface: protocol types (serde),
-   ▲                `Simulation` facade, in-process client;
-   │                `server` feature runs core as a remote service
+rusthour-api           the standard interface: protocol types (serde),
+   ▲                   `Simulation` facade, in-process client;
+   │                   `server` feature runs core as a remote service
    │
-   ├── rusthour-viz interactive frontend (native + wasm)
-   └── rusthour-cli headless batch runs, statistics, scenario comparison
+   ├── rusthour-import map assets: `.rhnet` format read/write (all targets);
+   │      ▲            `osm` feature + `rusthour-import` binary: OSM →
+   │      │            network via osm2streets (native, offline)
+   │      │ (format only)
+   ├── rusthour-viz    interactive frontend (native + wasm)
+   └── rusthour-cli    headless batch runs, statistics, scenario comparison
 ```
 
 - `rusthour-viz` and `rusthour-cli` talk **only** to `rusthour-api`, never to `rusthour-core`
   directly. This guarantees anything the frontends can do, a remote client can
-  do too.
+  do too. They may use `rusthour-import` to read map assets, but never its
+  `osm` feature.
+- Map data flow (ADR-0002): fetch an OSM extract for a named area in
+  `data/areas.toml` → `rusthour-import` writes a compressed `.rhnet` asset →
+  frontends load the bytes (file on native, HTTP in the browser, cached by
+  content-hashed name) and pass them through `rusthour-api` to the core. The
+  core never does I/O.
 - The `server` feature of `rusthour-api` (HTTP + WebSocket) is native-only so the
   wasm build stays lean.
 - `rusthour-core` modules are organised so features can be built in parallel:
@@ -109,9 +119,9 @@ release PR.
 | ID | Item | Status | Owner |
 | --- | --- | --- | --- |
 | M1.1 | ADR: viz framework choice (Bevy vs macroquad), decided by architect + UX | todo | |
-| M1.2 | OSM import via `osm2streets` into the compact network format (lanes, intersections, speed limits) | todo | |
-| M1.3 | Network serialization (binary snapshot) loadable in wasm without OSM parsing | todo | |
-| M1.4 | `rusthour-api`: load network, query geometry for rendering | todo | |
+| M1.2 | `rusthour-import` crate: OSM extract → network via `osm2streets` (lanes, intersections, speed limits), behind the `osm` feature, with a `rusthour-import` binary taking an area name from `data/areas.toml` | todo | |
+| M1.3 | `.rhnet` asset format in `rusthour-import` (header, versioning, pure-Rust compression), readable on wasm32 without OSM parsing | todo | |
+| M1.4 | `rusthour-api`: network data types, load a network from bytes, query geometry for rendering | todo | |
 | M1.5 | `rusthour-viz`: render network, pan/zoom, native + browser | todo | |
 | M1.6 | Bundled sample maps: Bensheim areas (see below) | todo | |
 
@@ -219,4 +229,9 @@ viewer, save it, and get a statistical before/after report from the CLI.
 - Actuated/adaptive traffic signals.
 - Multi-threaded core (spatial partitioning) and wasm threads.
 - Calibration against real counts.
+- **Outlook: import in the browser.** Pick any area on a map in the viewer and
+  simulate it, running the `osm` pipeline of `rusthour-import` compiled to
+  wasm (osm2streets already runs in the browser for its own demo). Needs OSM
+  data fetched client-side, e.g. from the Overpass API, within its usage
+  policy. Not planned yet; the offline preparation step stays the default.
 - Pin GitHub Actions by commit SHA (currently pinned by version tag).
