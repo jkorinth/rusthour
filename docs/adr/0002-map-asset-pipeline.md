@@ -3,12 +3,12 @@
 - **Status:** proposed
 - **Date:** 2026-10-21
 - **Amends:** ADR-0001 (adds a fifth crate to the workspace)
+- **Amended:** 2026-10-21, M1.2: own importer on `osmpbf` instead of `osm2streets`
 
 ## Context
 
 Simulations run on road networks derived from OpenStreetMap. Parsing and
-simplifying raw OSM data is slow and needs heavy native dependencies
-(`osm2streets`), while the browser build must start fast and the core must
+simplifying raw OSM data is slow and needs native dependencies, while the browser build must start fast and the core must
 stay free of I/O (ADR-0001). Areas are defined by name in `data/areas.toml`.
 
 ## Decision
@@ -24,8 +24,10 @@ Map preparation is an **offline step** handled by a fifth crate,
    cross the box, so the importer clips to the header bbox, not the data
    extent.
 2. **Import** (feature `osm`, native-only, plus a `rusthour-import` binary):
-   run `osm2streets` on the extract, simplify to the network data types
-   defined in `rusthour-api`, and write one asset per area.
+   read the extract with our own small importer on
+   [`osmpbf`](https://docs.rs/osmpbf), convert it to the network data types
+   defined in `rusthour-api`, and write one asset per area (see
+   *Importer choice* below).
 3. **Asset format** (`.rhnet`, always compiled, wasm-compatible): a small
    little-endian header followed by the serialized, compressed network. The
    fixed header holds magic bytes, the `.rhnet` container format version,
@@ -54,8 +56,20 @@ Map preparation is an **offline step** handled by a fifth crate,
 
 Dependencies: `rusthour-import` depends on `rusthour-api`, not on
 `rusthour-core`. `rusthour-viz` and `rusthour-cli` may depend on
-`rusthour-import` without the `osm` feature, so `osm2streets` never enters the
-browser build.
+`rusthour-import` without the `osm` feature, so the OSM parser never enters
+the browser build.
+
+### Importer choice (amended with M1.2)
+
+We write our own importer on `osmpbf` instead of depending on `osm2streets`.
+A spike found `osm2streets` not viable as a direct dependency: it is only
+available from git, with git-only transitive dependencies (one on an
+unreachable GitLab host) that can't be pinned, crates without license fields,
+dependencies with unmaintained-crate advisories, and about 100 panic sites on
+input data. Our importer covers what M1/M2 need (drivable roads, lanes, speed
+limits, simple turn restrictions; intersections are OSM nodes, not
+polygons). `osm2streets` may later be swapped in behind the same `osm`
+feature, filling `osm2streets_version` in the asset metadata.
 
 Small sample assets (the Bensheim areas) are built by the `assets` workflow,
 attached to `assets-*` GitHub pre-releases (not committed) and recorded in
@@ -66,11 +80,11 @@ data is ODbL: assets and the viewer carry "© OpenStreetMap contributors", and
 
 ### Enforcement (required with M1.2/M1.3)
 
-- `cargo-deny`: ban `osm2streets` except under the `rusthour-import` wrapper.
-  If `osm2streets` comes from git rather than crates.io, add a pinned
-  `allow-git` entry and check its dependencies' licenses.
+- `cargo-deny`: ban the OSM parser (`osmpbf`; `osm2streets` if it is
+  swapped in) except under the `rusthour-import` wrapper.
 - CI: build `rusthour-import` (default features) in the wasm32 job, and fail
-  if `osm2streets` appears in `rusthour-viz`'s dependency tree for wasm32.
+  if `osmpbf` appears in `rusthour-viz`'s dependency tree for wasm32. Build
+  and test the `osm` feature natively.
 - `rusthour-import`: `compile_error!` if the `osm` feature is enabled on
   wasm32.
 - Tests: importing the same extract with the same versions yields
