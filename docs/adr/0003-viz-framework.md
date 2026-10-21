@@ -223,10 +223,13 @@ records the cold-cache time and the wasm and map transfer sizes.
   failed, which browser to try), not only in the console.
 - [ ] **Startup:** bensheim-5km is *interactive* (pan/zoom responds) within
   **3 s natively** and **5 s in the browser**.
-- [ ] **Pan/zoom:** mouse drag pans; mouse wheel and trackpad pinch zoom
-  around the cursor; two-finger trackpad scroll pans. Zoom is clamped between
-  "whole map fits" and about "one lane fills the screen". `Home` (or a
-  button) resets the view.
+- [ ] **Pan/zoom:** scrolling (mouse wheel or two-finger trackpad scroll)
+  zooms around the cursor, as in web maps; trackpad pinch and Ctrl/Cmd+wheel
+  zoom too. Drag, arrow keys and WASD pan. (Browsers, and winit on X11 and
+  Windows, can't reliably tell a trackpad from a wheel. Panning with
+  trackpad scroll on native macOS/Wayland may come later if the M1 trial
+  finds this confusing.) Zoom is clamped between "whole map fits" and about
+  "one lane fills the screen". `Home` (or a button) resets the view.
 - [ ] **Touch** (mobile Chrome and Safari): one finger pans, pinch zooms
   around the pinch center, and the page itself never scrolls or zooms
   (`touch-action: none` on the canvas).
