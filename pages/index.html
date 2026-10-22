@@ -36,16 +36,30 @@
     const open = document.getElementById("open");
     const frame = document.getElementById("frame");
 
+    // The viewer's own parameters (e.g. ?map=bensheim-1km) travel with this page's URL.
+    function viewerSearch(params) {
+      const own = new URLSearchParams(params);
+      own.delete("v");
+      const search = own.toString();
+      return search ? "?" + search : "";
+    }
+
     function show(id) {
       select.value = id;
-      open.href = frame.src = id + "/";
+      open.href = frame.src = id + "/" + viewerSearch(location.search);
       const url = new URL(location);
       url.searchParams.set("v", id);
       history.replaceState(null, "", url);
     }
 
-    // Hand keyboard focus to the viewer, unless the user is still picking a version.
     frame.addEventListener("load", () => {
+      // The viewer reloads itself to switch maps; keep this page's URL shareable.
+      const inner = frame.contentWindow.location;
+      const url = new URL(location);
+      url.search = "?" + new URLSearchParams([["v", select.value], ...new URLSearchParams(inner.search)]);
+      history.replaceState(null, "", url);
+      open.href = inner.pathname + inner.search;
+      // Hand keyboard focus to the viewer, unless the user is still picking a version.
       if (document.activeElement !== select) frame.focus();
     });
     select.addEventListener("change", () => show(select.value));
