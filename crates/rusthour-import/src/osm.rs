@@ -282,6 +282,10 @@ struct Directions {
     backward: bool,
 }
 
+fn is_roundabout(tags: &[(String, String)]) -> bool {
+    matches!(tag(tags, "junction"), Some("roundabout" | "circular"))
+}
+
 fn directions(highway: &str, tags: &[(String, String)]) -> Option<Directions> {
     let one = |forward| Directions {
         forward,
@@ -296,9 +300,7 @@ fn directions(highway: &str, tags: &[(String, String)]) -> Option<Directions> {
             forward: true,
             backward: true,
         }),
-        _ if matches!(highway, "motorway" | "motorway_link")
-            || matches!(tag(tags, "junction"), Some("roundabout" | "circular")) =>
-        {
+        _ if matches!(highway, "motorway" | "motorway_link") || is_roundabout(tags) => {
             Some(one(true))
         }
         _ => Some(Directions {
@@ -495,7 +497,7 @@ pub fn import(data: &OsmData, bbox: Bbox) -> Network {
                         from_node: from,
                         to_node: to,
                     }),
-                    roundabout: false,
+                    roundabout: is_roundabout(&way.tags),
                 });
                 twin.push(None);
             }
