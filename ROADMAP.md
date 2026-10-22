@@ -156,7 +156,7 @@ reproducible from the OSM extract.
 | M2.1 | Fixed-timestep simulation loop, seeded RNG, sim clock: step pipeline per ADR-0004 (leaders across road ends, ballistic integration, transfers, arrivals), one RNG stream per subsystem, determinism test on wasm32 in CI | todo | |
 | M2.2 | Vehicle state as structure-of-arrays; per-lane sorted vehicle lists | done | feat/M2.2-vehicle-store |
 | M2.3 | IDM car-following | done | feat/M2.3-idm |
-| M2.4 | Simple routing (A*) and random origin–destination spawning, origins and destinations within the largest strongly connected component | todo | |
+| M2.4 | Simple routing (A*) and random origin–destination spawning, origins and destinations within the largest strongly connected component | claimed | feat/M2.4-routing-demand |
 | M2.5 | Basic intersection passage (priority rule only, incl. circulating priority at roundabouts); first a road-attributes PR: road directions and a `roundabout` flag, network schema 3 (ADR-0004) | claimed | feat/M2.5a-road-attributes |
 | M2.6 | `rusthour-api`: step, run/pause, time-scale, vehicle snapshot stream; `Placement` (road offset → world position), `state_hash` moves out of `Status` (ADR-0004) | todo | |
 | M2.7 | `rusthour-viz`: animated vehicles, play/pause, single step, speed slider (0.1×–100×+, log scale) showing the achieved speed, reset with the same seed, sim clock, active and waiting vehicle counts | todo | |
