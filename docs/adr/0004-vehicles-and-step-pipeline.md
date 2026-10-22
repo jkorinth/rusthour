@@ -380,3 +380,18 @@ Critical path: M2.3 → M2.2 → M2.1b → M2.6b → M2.7 → M2 trial.
   are not modelled; multi-lane roads have single-lane capacity until M3.
 - `Controller` and `Approach` are the M3.2 interface: M3.2 adds the stop
   controller and per-node selection, not a new trait.
+
+## Addendum (M2.1b)
+
+The step pipeline as merged deviates from §2 in three accepted ways:
+
+- **Head clamp uses the start-of-step leader:** a lane head is clamped
+  behind its leader on a later road at that leader's start-of-step
+  position, not its new one, so phase 5 needs no cross-lane ordering.
+- **One-step wait at the road end:** a follower whose leader is still on
+  the same road at the step start can't move past where that leader was,
+  so at large `dt` it may wait one step at the road end (documented on
+  `Config::dt_ms`).
+- **Route cap:** at most 8 trips are routed and inserted per step, starting
+  at a rotating origin; the rest wait. The value is a `shortcut:` until
+  M2.8 times routing.
