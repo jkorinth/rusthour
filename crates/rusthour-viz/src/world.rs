@@ -33,6 +33,7 @@ pub const SHORTCUTS: &[(&str, &str)] = &[
     ("Drag, arrow keys, WASD", "Pan"),
     ("Scroll, pinch, + / -", "Zoom"),
     ("Home, F, 0", "Fit the map"),
+    ("F3", "Show or hide frame times"),
     ("? / Esc", "Show or close this list"),
 ];
 
