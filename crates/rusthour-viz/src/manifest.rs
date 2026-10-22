@@ -53,6 +53,17 @@ pub fn requested_area(search: &str) -> Option<&str> {
         .filter(|a| !a.is_empty())
 }
 
+/// `search` with its `map` parameter set to `area`, e.g. for switching maps.
+pub fn with_map(search: &str, area: &str) -> String {
+    let others = search
+        .trim_start_matches('?')
+        .split('&')
+        .filter(|kv| !kv.is_empty() && *kv != "map" && !kv.starts_with("map="));
+    let map = format!("map={area}");
+    let all: Vec<&str> = others.chain([map.as_str()]).collect();
+    format!("?{}", all.join("&"))
+}
+
 /// Picks the map to load: the requested area, else [`DEFAULT_AREA`], else the
 /// first one. `Err` says, for the user, why the demo network is shown instead.
 pub fn choose<'a>(
@@ -108,6 +119,24 @@ mod tests {
         assert_eq!(requested_area("?x=1&map=a"), Some("a"));
         assert_eq!(requested_area(""), None);
         assert_eq!(requested_area("?map="), None);
+    }
+
+    proptest::proptest! {
+        /// Switching maps sets `map` and keeps the page's other parameters.
+        #[test]
+        fn with_map_sets_the_map_and_keeps_the_rest(
+            params in proptest::collection::vec(("[a-z]{1,4}", "[a-z0-9-]{0,6}"), 0..4),
+            area in "[a-z0-9-]{1,12}",
+        ) {
+            let pairs: Vec<String> = params.iter().map(|(k, v)| format!("{k}={v}")).collect();
+            let search = format!("?{}", pairs.join("&"));
+            let switched = with_map(&search, &area);
+            proptest::prop_assert_eq!(requested_area(&switched), Some(area.as_str()));
+            for (k, v) in params.iter().filter(|(k, _)| k != "map") {
+                let kv = format!("{k}={v}");
+                proptest::prop_assert!(switched[1..].split('&').any(|p| p == kv), "{} lost {}", switched, kv);
+            }
+        }
     }
 
     #[test]

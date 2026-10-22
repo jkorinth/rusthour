@@ -48,8 +48,9 @@ trunk build --release   # static site in crates/rusthour-viz/dist/
 
 The browser needs WebGPU or WebGL2 (any current Firefox, Chrome, Edge or
 Safari). It loads the maps listed in `maps/manifest.json` next to the page:
-`bensheim-5km` by default, another area with `?map=<area>` (e.g.
-`?map=bensheim-1km`). Without that list (as with a plain `trunk serve`), or for
+`bensheim-5km` by default; pick another in the map selector at the top
+left, or link to one with `?map=<area>` (e.g. `?map=bensheim-1km`, also on
+the site's version page). Without that list (as with a plain `trunk serve`), or for
 an unknown area, it shows the demo town grid and says why.
 
 Controls: drag to pan (left button, Shift + left or middle button; one finger on
