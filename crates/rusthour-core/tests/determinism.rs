@@ -5,12 +5,69 @@
 //! PR and say so in the PR description.
 
 use rand_chacha::rand_core::Rng;
+use rusthour_core::network::{Network, Road};
+use rusthour_core::vehicle::idm::IdmParams;
 use rusthour_core::{Config, Engine, Stream, run_and_hash};
 
-/// State hash after 1000 steps with seed 42, the default config and an empty
-/// network. Changed in M1.4: the state hash now includes the network.
-/// Changed in M2.1a: one random stream per subsystem, each hashed.
-const GOLDEN_HASH: u64 = 11_109_598_748_520_651_163;
+/// State hash of [`traffic`] with seed 42. Changed in M1.4: the state hash
+/// now includes the network. Changed in M2.1a: one random stream per
+/// subsystem, each hashed. Changed in M2.1b: the golden run is now the
+/// traffic scenario below, and the hash includes the vehicle store.
+const GOLDEN_HASH: u64 = 15_655_745_098_119_295_518;
+
+/// A four-road ring with a short road and a merging side road; vehicles go
+/// round it, are blocked at the merge, arrive, and their slots are reused.
+fn traffic(seed: u64) -> u64 {
+    let road = |from, to, length_m, speed_limit_mps, lanes| Road {
+        from,
+        to,
+        length_m,
+        speed_limit_mps,
+        lanes,
+        start_dir: [1.0, 0.0],
+        end_dir: [0.0, 1.0],
+        roundabout: false,
+    };
+    let net = Network {
+        nodes: vec![
+            [0.0, 0.0],
+            [120.0, 0.0],
+            [120.0, 80.0],
+            [110.0, 80.0],
+            [60.0, -50.0],
+        ],
+        roads: vec![
+            road(0, 1, 120.0, 13.9, 1),
+            road(1, 2, 80.0, 8.3, 2),
+            road(2, 3, 9.5, 8.3, 1),
+            road(3, 0, 160.0, 13.9, 1),
+            road(4, 1, 70.0, 13.9, 1),
+        ],
+        connections: vec![(0, 1), (1, 2), (2, 3), (3, 0), (4, 1)],
+    };
+    let mut e = Engine::with_network(Config::default(), seed, net);
+    for i in 0..40u32 {
+        let (a, b) = (1.0 + f64::from(i % 3) * 0.4, 1.5 + f64::from(i % 2));
+        let params = IdmParams {
+            desired_speed_factor: 0.8 + f64::from(i % 5) * 0.1,
+            time_headway_s: 1.0 + f64::from(i % 4) * 0.25,
+            max_accel_mps2: a,
+            comfort_decel_mps2: b,
+            min_gap_m: 2.0,
+            length_m: 4.5,
+            sqrt_ab: f64::sqrt(a * b),
+        };
+        let route: Vec<u32> = if i % 3 == 0 {
+            [4, 1, 2, 3, 0, 1].to_vec()
+        } else {
+            (0..4 + i % 7).map(|k| (i + k) % 4).collect()
+        };
+        let _ = e.spawn(&route, params);
+        e.step(25);
+    }
+    e.step(1000);
+    e.state_hash()
+}
 
 #[test]
 fn same_seed_gives_same_hash() {
@@ -39,7 +96,12 @@ fn stepping_in_chunks_matches_stepping_at_once() {
 
 #[test]
 fn golden_hash_is_stable() {
-    assert_eq!(run_and_hash(Config::default(), 42, 1000), GOLDEN_HASH);
+    assert_eq!(traffic(42), GOLDEN_HASH);
+}
+
+#[test]
+fn traffic_gives_the_same_hash_twice() {
+    assert_eq!(traffic(42), traffic(42));
 }
 
 #[test]
