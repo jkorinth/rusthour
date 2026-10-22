@@ -84,6 +84,13 @@ jobs:
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
           echo "::notice title=Web build size::wasm $raw bytes, gzip -9 $gz bytes"
+      # Preview a PR's web build locally; see README "Web viewer".
+      - uses: actions/upload-artifact@v7
+        with:
+          # The PR head, not the merge commit, so the name matches the PR's sha.
+          name: rusthour-web-${{ github.event.pull_request.head.sha || github.sha }}
+          path: crates/rusthour-viz/dist
+          retention-days: 7
 
   deps:
     name: cargo-deny + cargo-shear

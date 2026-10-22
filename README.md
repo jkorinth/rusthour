@@ -67,6 +67,12 @@ version also works on its own, e.g.
 <https://jkorinth.github.io/rusthour/main/> or `…/rusthour/v0.2.0/`.
 One-time repository setting: Settings → Pages → Source: "GitHub Actions".
 
+To try a pull request's web build before it merges, download the
+`rusthour-web-<sha>` artifact from the PR's CI run (kept 7 days), unzip it
+and serve the folder: `python3 -m http.server`, then open
+<http://localhost:8000>. Opening `index.html` directly does not work, as
+browsers won't load WebAssembly from `file://`.
+
 ## Map data
 
 Sample maps (the areas in [`data/areas.toml`](data/areas.toml)) are not
