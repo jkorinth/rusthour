@@ -52,7 +52,8 @@ Safari). It loads the maps listed in `maps/manifest.json` next to the page:
 `?map=bensheim-1km`). Without that list (as with a plain `trunk serve`), or for
 an unknown area, it shows the demo town grid and says why.
 
-Controls: drag to pan, scroll or pinch to zoom, arrow keys or WASD to pan,
+Controls: drag to pan (left button, Shift + left or middle button; one finger on
+touch screens), scroll or pinch to zoom, arrow keys or WASD to pan,
 `+`/`-` to zoom, `Home`, `F` or `0` to fit the map, `?` for the list of
 shortcuts. `F3` shows frame times (median and 95th percentile over the last
 10 s), the startup time and the map's size.

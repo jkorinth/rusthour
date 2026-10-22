@@ -30,7 +30,10 @@ const FIT_PADDING: Vec2 = Vec2::new(8.0, 40.0);
 
 /// Keys bound in the map view, for the `?` help: (keys, action).
 pub const SHORTCUTS: &[(&str, &str)] = &[
-    ("Drag, arrow keys, WASD", "Pan"),
+    (
+        "Drag (left, Shift + left or middle button), arrow keys, WASD",
+        "Pan",
+    ),
     ("Scroll, pinch, + / -", "Zoom"),
     ("Home, F, 0", "Fit the map"),
     ("F3", "Show or hide frame times"),
@@ -102,9 +105,16 @@ impl World {
         let max_scale = viewport.size().min_elem() / LANE_WIDTH_M;
 
         let keyboard = !ui.ctx().egui_wants_keyboard_input();
-        // Read outside `ui.input`: `drag_delta` locks the context too, and
-        // nesting the locks deadlocks.
-        let drag = response.drag_delta();
+        // Left drag (also with Shift) and middle drag pan; right drag is kept
+        // free for later tools. Read outside `ui.input`: `drag_delta` locks
+        // the context too, and nesting the locks deadlocks.
+        let drag = if response.dragged_by(egui::PointerButton::Primary)
+            || response.dragged_by(egui::PointerButton::Middle)
+        {
+            response.drag_delta()
+        } else {
+            Vec2::ZERO
+        };
         let (pan, zoom, anchor, keys_held, fit_key) = ui.input(|i| {
             // Ctrl/Cmd/Alt combinations belong to egui and the browser (UI zoom).
             let keyboard =
@@ -318,6 +328,18 @@ mod tests {
     fn regression_drag_deadlock() {
         // Dragging right moves the view west.
         assert!(drag(PointerButton::Primary, Modifiers::NONE) < -1.0);
+    }
+
+    #[test]
+    fn shift_left_and_middle_drag_pan_but_right_does_not() {
+        for (button, modifiers) in [
+            (PointerButton::Primary, Modifiers::SHIFT),
+            (PointerButton::Middle, Modifiers::NONE),
+        ] {
+            // Dragging right moves the view west.
+            assert!(drag(button, modifiers) < -1.0, "{button:?} {modifiers:?}");
+        }
+        assert!(drag(PointerButton::Secondary, Modifiers::NONE).abs() < f32::EPSILON);
     }
 
     #[test]
