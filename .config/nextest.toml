@@ -1,0 +1,6 @@
+# cargo-nextest settings (https://nexte.st/docs/configuration/).
+
+[profile.default]
+# A hung test (e.g. a deadlock regression) fails after 2 minutes instead of
+# holding CI until the job times out.
+slow-timeout = { period = "30s", terminate-after = 4 }
