@@ -102,6 +102,9 @@ impl World {
         let max_scale = viewport.size().min_elem() / LANE_WIDTH_M;
 
         let keyboard = !ui.ctx().egui_wants_keyboard_input();
+        // Read outside `ui.input`: `drag_delta` locks the context too, and
+        // nesting the locks deadlocks.
+        let drag = response.drag_delta();
         let (pan, zoom, anchor, keys_held, fit_key) = ui.input(|i| {
             // Ctrl/Cmd/Alt combinations belong to egui and the browser (UI zoom).
             let keyboard =
@@ -114,7 +117,7 @@ impl World {
                 zoom *= touch.zoom_delta;
                 anchor = touch.center_pos;
             } else {
-                pan += response.drag_delta();
+                pan += drag;
                 if response.hovered() {
                     // Ctrl/Cmd+scroll and trackpad pinch arrive as zoom_delta,
                     // plain scrolling (mouse wheel or two fingers) as scroll.
@@ -276,6 +279,46 @@ pub fn build_mesh(network: &Network) -> Mesh {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use egui::{Event, Modifiers, PointerButton};
+
+    /// Runs one frame of `world` with `events`.
+    fn frame(ctx: &egui::Context, world: &mut World, events: Vec<Event>) {
+        let input = egui::RawInput {
+            screen_rect: Some(Rect::from_min_size(Pos2::ZERO, egui::vec2(800.0, 600.0))),
+            events,
+            ..Default::default()
+        };
+        let mut out = ctx.run_ui(input, |ui| world.show(ui));
+        out.textures_delta.clear();
+    }
+
+    /// World meters the view center moves when dragging 80 points right.
+    fn drag(button: PointerButton, modifiers: Modifiers) -> f32 {
+        let ctx = egui::Context::default();
+        let mut world = World::new(&crate::demo::map().network);
+        let p = pos2(400.0, 300.0);
+        frame(&ctx, &mut world, vec![Event::PointerMoved(p)]);
+        let before = world.camera.expect("set on the first frame").center;
+        let press = Event::PointerButton {
+            pos: p,
+            button,
+            pressed: true,
+            modifiers,
+        };
+        frame(&ctx, &mut world, vec![press]);
+        for dx in [40.0, 80.0] {
+            let moved = Event::PointerMoved(p + egui::vec2(dx, 0.0));
+            frame(&ctx, &mut world, vec![moved]);
+        }
+        world.camera.expect("still set").center.x - before.x
+    }
+
+    /// Dragging used to deadlock: `drag_delta` was read inside `ui.input`.
+    #[test]
+    fn regression_drag_deadlock() {
+        // Dragging right moves the view west.
+        assert!(drag(PointerButton::Primary, Modifiers::NONE) < -1.0);
+    }
 
     #[test]
     fn demo_mesh_is_plausible() {
