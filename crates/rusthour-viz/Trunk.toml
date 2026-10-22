@@ -3,6 +3,11 @@
 # `wasm_bindgen` must equal the `wasm-bindgen` version in Cargo.lock; update
 # both together, or the build fails.
 
+[build]
+# Relative asset URLs, so the same build works at any path: the Pages site
+# serves each version under its own folder (`/rusthour/main/`, `/rusthour/v0.2.0/`).
+public_url = "./"
+
 [tools]
 wasm_bindgen = "0.2.129"
 # The version Trunk 0.22.0 defaults to (CI pins Trunk in .github/workflows/ci.yml).

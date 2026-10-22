@@ -1,0 +1,64 @@
+name: Pages
+
+# Site layout: /main/ is the current main build, /<tag>/ each release's
+# rusthour-web-<tag>.zip, and / a frame with a version dropdown.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+  # release-please.yml calls this after attaching a release's web build.
+  workflow_call:
+
+permissions: {}
+
+# One deploy at a time; never cancel one halfway. A newer run may replace a
+# queued one (the release workflow then shows "cancelled"); that's fine, as
+# every run lists all releases afresh.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: assemble site
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - run: rustup toolchain install
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: trunk@0.22.0
+      # A relative public URL works under any subpath (/rusthour/main/, /rusthour/<tag>/).
+      # dist/ includes the font license texts (ADR-0003).
+      - name: Trunk build of main
+        working-directory: crates/rusthour-viz
+        run: trunk build --release
+      - run: mkdir _site && mv crates/rusthour-viz/dist _site/main
+      - name: Add releases, versions.json and the frame
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 scripts/pages.py _site
+      - uses: actions/upload-pages-artifact@v5
+        with:
+          path: _site
+
+  deploy:
+    name: deploy
+    needs: build
+    # workflow_dispatch can run from any branch; only main is published.
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v5
