@@ -1,5 +1,6 @@
 """Tests for assets.py. Run: python3 -I -m unittest discover -s scripts"""
 
+import hashlib
 import pathlib
 import tempfile
 import tomllib
@@ -47,11 +48,32 @@ class RecordTest(unittest.TestCase):
                              ["assets-2026-10-21", "assets-2026-11-01"])
             self.assertEqual(data["builds"][0]["tool"], 'osmium "1.16"')
             self.assertEqual(data["builds"][0]["files"], [{
+                "kind": "osm.pbf",
                 "area": "bensheim-1km",
                 "file": "bensheim-1km.osm.pbf",
                 # printf pbf | sha256sum
                 "sha256": "992d322a9bff6f443ca804811b135ed6c1b8f0064bdc8cff815714587c7a0184",
             }])
+
+    def test_rhnet_files_get_their_kind_and_area(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp = pathlib.Path(tmp)
+            manifest = tmp / "assets.toml"
+            extract = tmp / "bensheim-1km.osm.pbf"
+            extract.write_bytes(b"pbf")
+            rhnet = tmp / "bensheim-1km.rhnet"
+            rhnet.write_bytes(b"map")
+            rhnet = assets.hash_rename(rhnet)
+            assets.record(manifest, {"tag": "assets-2026-10-21", "network_schema_version": 2},
+                          [extract, rhnet])
+
+            build = tomllib.loads(manifest.read_text())["builds"][0]
+            sha = hashlib.sha256(b"map").hexdigest()
+            self.assertEqual(rhnet.name, f"bensheim-1km.{sha}.rhnet")
+            self.assertEqual(build["network_schema_version"], 2)
+            self.assertEqual([(f["kind"], f["area"]) for f in build["files"]],
+                             [("osm.pbf", "bensheim-1km"), ("rhnet", "bensheim-1km")])
+            self.assertEqual(build["files"][1]["file"], rhnet.name)
 
 
 if __name__ == "__main__":

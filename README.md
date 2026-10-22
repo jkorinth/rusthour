@@ -84,9 +84,12 @@ Sample maps (the areas in [`data/areas.toml`](data/areas.toml)) are not
 committed. They are built by the **assets** workflow: on GitHub, open
 *Actions → assets → Run workflow* and optionally list area names
 (comma-separated; empty builds all). It cuts each area from Geofabrik's Hesse
-extract and publishes the files as an `assets-<date>` pre-release on the
+extract, imports each as a `.rhnet` map and publishes both as an
+`assets-<date>` pre-release on the
 [Releases](https://github.com/jkorinth/rusthour/releases) page, then opens a
-PR that records the build in [`data/assets.toml`](data/assets.toml).
+PR that records the build in [`data/assets.toml`](data/assets.toml). PRs
+opened by a workflow don't start CI: close and reopen that PR to run the
+checks.
 
 Map data © OpenStreetMap contributors, available under the
 [ODbL](https://www.openstreetmap.org/copyright); see
@@ -95,7 +98,7 @@ Map data © OpenStreetMap contributors, available under the
 ### Importing an area yourself
 
 Most users won't need this: the assets workflow above publishes ready-cut
-extracts, and will publish `.rhnet` maps (ROADMAP M1.7). To import an area from
+extracts and `.rhnet` maps. To import an area from
 `data/areas.toml` yourself, use one of those extracts or cut it from a regional
 [Geofabrik](https://download.geofabrik.de) extract with
 [osmium](https://osmcode.org/osmium-tool/). `areas.toml` stores the bbox as
