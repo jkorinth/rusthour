@@ -152,13 +152,14 @@ reproducible from the OSM extract.
 
 | ID | Item | Status | Owner |
 | --- | --- | --- | --- |
-| M2.1 | Fixed-timestep simulation loop, seeded RNG, sim clock | todo | |
+| M2.0 | ADR-0004: vehicle state layout, step pipeline, module interfaces for M2 | done | docs/M2.0-adr-vehicles |
+| M2.1 | Fixed-timestep simulation loop, seeded RNG, sim clock: step pipeline per ADR-0004 (leaders across road ends, ballistic integration, transfers, arrivals), one RNG stream per subsystem, determinism test on wasm32 in CI | todo | |
 | M2.2 | Vehicle state as structure-of-arrays; per-lane sorted vehicle lists | todo | |
 | M2.3 | IDM car-following | todo | |
-| M2.4 | Simple routing (A*) and random origin–destination spawning | todo | |
-| M2.5 | Basic intersection passage (priority rule only) | todo | |
-| M2.6 | `rusthour-api`: step, run/pause, time-scale, vehicle snapshot stream | todo | |
-| M2.7 | `rusthour-viz`: animated vehicles, play/pause, speed slider (0.1×–100×+) | todo | |
+| M2.4 | Simple routing (A*) and random origin–destination spawning, origins and destinations within the largest strongly connected component | todo | |
+| M2.5 | Basic intersection passage (priority rule only, incl. circulating priority at roundabouts); first a road-attributes PR: road directions and a `roundabout` flag, network schema 3 (ADR-0004) | todo | |
+| M2.6 | `rusthour-api`: step, run/pause, time-scale, vehicle snapshot stream; `Placement` (road offset → world position), `state_hash` moves out of `Status` (ADR-0004) | todo | |
+| M2.7 | `rusthour-viz`: animated vehicles, play/pause, single step, speed slider (0.1×–100×+, log scale) showing the achieved speed, reset with the same seed, sim clock, active and waiting vehicle counts | todo | |
 | M2.8 | Benchmark (criterion): vehicles × steps/s, tracked in CI (non-gating) | todo | |
 
 **Acceptance:** thousands of vehicles run in real time in the browser; same

@@ -153,8 +153,10 @@ approval, a module-level `allow`, and `// SAFETY:` comments.
   `Simulation` facade with in-process and (later) remote implementations. The
   `server` feature is native-only.
 - **Extension points over shared files:** new intersection controllers, driver
-  profiles, metrics etc. go in their own module behind a trait, so parallel
-  PRs rarely touch the same file.
+  profiles, metrics etc. go in their own submodule implementing the module's
+  trait, so parallel PRs rarely touch the same file. The engine dispatches
+  statically through one enum per extension point (ADR-0004), whose variant
+  list is the only shared line.
 
 ## 7. Parallel work
 

@@ -1,2 +1,3 @@
-//! Intersection controllers behind a common trait: priority, stop, signals,
-//! roundabouts (M2, M3, M7). Each controller lives in its own submodule.
+//! Intersection controllers: priority, stop, signals, roundabouts (M2, M3,
+//! M7). Each lives in its own submodule implementing a common trait and is
+//! dispatched statically through one enum (ADR-0004).
