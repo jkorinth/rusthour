@@ -92,6 +92,31 @@ jobs:
           path: crates/rusthour-viz/dist
           retention-days: 7
 
+  wasm-determinism:
+    name: wasm32 determinism
+    runs-on: ubuntu-latest
+    env:
+      CARGO_TARGET_WASM32_WASIP1_RUNNER: wasmtime
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - run: rustup toolchain install
+      - run: rustup target add wasm32-wasip1
+      - uses: Swatinem/rust-cache@v2
+      - uses: taiki-e/install-action@v2
+        with:
+          # Pinned (Dependabot doesn't bump it).
+          tool: wasmtime@36.0.0
+      # ADR-0004: the same golden hash natively and on wasm32 proves
+      # native = wasm. The test file holds the golden constant.
+      - name: Determinism test under wasmtime
+        run: |
+          cargo test -p rusthour-core --test determinism --target wasm32-wasip1 || {
+            echo "::error::determinism test failed on wasm32-wasip1 (golden hash differs from native, or the build/runtime failed)"
+            exit 1
+          }
+
   deps:
     name: cargo-deny + cargo-shear
     runs-on: ubuntu-latest
