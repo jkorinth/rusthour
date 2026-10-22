@@ -1,0 +1,46 @@
+name: review-gate
+
+# Sets the `review-gate` commit status on a PR's head from the agents'
+# review comments (AGENTS.md §2.5; logic in scripts/review_gate.py). A
+# commit status, not a check run, because issue_comment runs on the default
+# branch and its check runs would not attach to the PR.
+#
+# pull_request_target (not pull_request) so the gate logic always comes from
+# the default branch: a PR cannot edit the gate to turn itself green. It
+# never checks out or runs PR code, and only the PR number reaches the shell.
+
+on:
+  pull_request_target: # zizmor: ignore[dangerous-triggers] no PR code is checked out or run
+    types: [opened, synchronize, reopened, edited, ready_for_review]
+  issue_comment:
+    types: [created, edited, deleted]
+
+permissions: {}
+
+concurrency:
+  group: review-gate-${{ github.event.pull_request.number || github.event.issue.number }}
+
+jobs:
+  review-gate:
+    # Comments from outsiders can't change the result (review_gate.py ignores them).
+    if: >-
+      github.event_name == 'pull_request_target' ||
+      (github.event.issue.pull_request &&
+       contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'), github.event.comment.author_association))
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: read
+      pull-requests: read
+      statuses: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+          ref: ${{ github.event.repository.default_branch }}
+          sparse-checkout: scripts
+      - name: Set review-gate status
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number || github.event.issue.number }}
+        run: python3 -I scripts/review_gate.py "$PR"
