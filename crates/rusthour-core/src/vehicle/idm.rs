@@ -24,7 +24,7 @@ pub struct IdmParams {
 /// The vehicle or standing obstacle ahead.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Leader {
-    /// Bumper-to-bumper gap (m), > 0.
+    /// Bumper-to-bumper gap (m), >= 0.
     pub gap_m: f64,
     /// Leader speed (m/s); 0 for a standing obstacle.
     pub speed_mps: f64,
@@ -33,8 +33,12 @@ pub struct Leader {
 /// IDM acceleration (m/s²) for a vehicle at speed `v` with desired speed
 /// `v0`; `leader` is `None` on a free road. Unclamped below: the engine
 /// clamps to its braking limit.
+///
+/// `v0` must be positive. `gap_m` may be 0: the 1 mm floor then gives a large
+/// but finite deceleration, which the engine clamps.
 #[must_use]
 pub fn acceleration(p: &IdmParams, v0: f64, v: f64, leader: Option<Leader>) -> f64 {
+    debug_assert!(v0 > 0.0, "desired speed must be positive");
     let ratio = v / v0;
     let ratio2 = ratio * ratio;
     let free = 1.0 - ratio2 * ratio2;
@@ -137,6 +141,18 @@ mod tests {
             let leader = has_leader.then_some(Leader { gap_m: gap, speed_mps: lv });
             let acc = acceleration(&p, v0, v, leader);
             prop_assert!(acc.is_finite() && acc <= a);
+        }
+
+        #[test]
+        fn acceleration_does_not_decrease_as_gap_grows(
+            a in 0.5..4.0f64, b in 0.5..4.0f64, t in 0.5..3.0f64, s0 in 0.5..5.0f64,
+            v0 in 1.0..40.0f64, v in 0.0..45.0f64, lv in 0.0..45.0f64,
+            g1 in 0.0..500.0f64, g2 in 0.0..500.0f64,
+        ) {
+            let p = params(a, b, t, s0);
+            let at = |gap_m| acceleration(&p, v0, v, Some(Leader { gap_m, speed_mps: lv }));
+            let (lo, hi) = if g1 <= g2 { (g1, g2) } else { (g2, g1) };
+            prop_assert!(at(lo) <= at(hi));
         }
     }
 }
