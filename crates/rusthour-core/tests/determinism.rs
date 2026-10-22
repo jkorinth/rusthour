@@ -12,11 +12,14 @@ use rusthour_core::{Config, Engine, Stream, run_and_hash};
 /// State hash of [`traffic`] with seed 42. Changed in M1.4: the state hash
 /// now includes the network. Changed in M2.1a: one random stream per
 /// subsystem, each hashed. Changed in M2.1b: the golden run is now the
-/// traffic scenario below, and the hash includes the vehicle store.
-const GOLDEN_HASH: u64 = 15_655_745_098_119_295_518;
+/// traffic scenario below (step pipeline, random demand and routing), and
+/// the hash includes the vehicle store and the waiting trips.
+const GOLDEN_HASH: u64 = 15_891_696_688_621_766_271;
 
-/// A four-road ring with a short road and a merging side road; vehicles go
-/// round it, are blocked at the merge, arrive, and their slots are reused.
+/// A four-road ring with a short road and a merging side road that routing
+/// excludes. Random demand keeps 10 vehicles on the ring, and hand-placed
+/// ones come in from the side road; they are blocked at the merge, arrive,
+/// and their slots are reused.
 fn traffic(seed: u64) -> u64 {
     let road = |from, to, length_m, speed_limit_mps, lanes| Road {
         from,
@@ -45,7 +48,11 @@ fn traffic(seed: u64) -> u64 {
         ],
         connections: vec![(0, 1), (1, 2), (2, 3), (3, 0), (4, 1)],
     };
-    let mut e = Engine::with_network(Config::default(), seed, net);
+    let config = Config {
+        target_vehicles: 10,
+        ..Config::default()
+    };
+    let mut e = Engine::with_network(config, seed, net);
     for i in 0..40u32 {
         let (a, b) = (1.0 + f64::from(i % 3) * 0.4, 1.5 + f64::from(i % 2));
         let params = IdmParams {
@@ -100,8 +107,9 @@ fn golden_hash_is_stable() {
 }
 
 #[test]
-fn traffic_gives_the_same_hash_twice() {
+fn traffic_is_reproducible_and_seeded() {
     assert_eq!(traffic(42), traffic(42));
+    assert_ne!(traffic(42), traffic(43), "demand must draw from the seed");
 }
 
 #[test]

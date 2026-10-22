@@ -1,11 +1,15 @@
 //! The simulation engine: fixed timestep, seeded RNG, sim clock, and the
 //! step pipeline of ADR-0004 §2.
 
+use std::collections::VecDeque;
+
 use rand_chacha::ChaCha8Rng;
 use rand_chacha::rand_core::SeedableRng;
 
 use crate::StateHasher;
+use crate::demand::{DemandContext, RandomOd, Trip};
 use crate::network::Network;
+use crate::routing::Router;
 use crate::vehicle::idm::{self, IdmParams, Leader};
 use crate::vehicle::{NewVehicle, VehicleId, Vehicles};
 
@@ -13,6 +17,23 @@ use crate::vehicle::{NewVehicle, VehicleId, Vehicles};
 const MAX_DECEL_MPS2: f64 = 9.0;
 /// Fixed part of a lane head's look-ahead (m); the rest is `v²/b`.
 const LOOK_AHEAD_M: f64 = 50.0;
+/// Most trips routed and inserted per step; the rest wait (ADR-0004 §2).
+// shortcut: a fixed guess (~3× the steady-state rate at 5,000 vehicles), tune when M2.8 times routing.
+const MAX_ROUTES_PER_STEP: u32 = 8;
+
+/// The M2 car, the same for every vehicle until M4 driver profiles.
+fn car() -> IdmParams {
+    let (a, b) = (1.5, 2.0);
+    IdmParams {
+        desired_speed_factor: 1.0,
+        time_headway_s: 1.5,
+        max_accel_mps2: a,
+        comfort_decel_mps2: b,
+        min_gap_m: 2.0,
+        length_m: 4.5,
+        sqrt_ab: f64::sqrt(a * b),
+    }
+}
 
 /// A vehicle past its road end, waiting to enter the next road (phase 6).
 #[derive(Debug, Clone, Copy)]
@@ -30,11 +51,17 @@ struct Entrant {
 pub struct Config {
     /// Length of one simulation step in milliseconds.
     pub dt_ms: u32,
+    /// Vehicles (active plus waiting) that random demand keeps on the
+    /// network; 0 means no demand. Until M5.1 scenarios replace it.
+    pub target_vehicles: u32,
 }
 
 impl Default for Config {
     fn default() -> Self {
-        Self { dt_ms: 100 }
+        Self {
+            dt_ms: 100,
+            target_vehicles: 0,
+        }
     }
 }
 
@@ -72,6 +99,18 @@ pub struct Engine {
     head_limit_m: Vec<f64>,
     /// Phase 6 scratch, reused every step.
     entrants: Vec<Entrant>,
+    router: Router,
+    demand: RandomOd,
+    /// Trips that have not entered yet, a FIFO per origin road.
+    pending: Vec<VecDeque<Trip>>,
+    /// Total length of `pending`.
+    waiting: u32,
+    /// Origin road where the next step starts inserting, so the route cap
+    /// doesn't always favour low road ids.
+    spawn_cursor: usize,
+    /// Phase 1 scratch, reused every step.
+    new_trips: Vec<Trip>,
+    route: Vec<u32>,
 }
 
 impl Engine {
@@ -98,6 +137,15 @@ impl Engine {
                 network.roads.iter().map(|r| usize::from(r.lanes)).sum()
             ],
             entrants: Vec::new(),
+            router: Router::new(&network),
+            demand: RandomOd {
+                target_vehicles: config.target_vehicles,
+            },
+            pending: vec![VecDeque::new(); network.roads.len()],
+            waiting: 0,
+            spawn_cursor: 0,
+            new_trips: Vec::new(),
+            route: Vec::new(),
             network,
         }
     }
@@ -105,7 +153,7 @@ impl Engine {
     /// Advances the simulation by `steps` fixed timesteps.
     pub fn step(&mut self, steps: u64) {
         for _ in 0..steps {
-            // 1. Spawn: none until demand (M2.4) calls `spawn` from here.
+            self.spawn_trips();
             // 2. Route updates: none in M2 (M5.5).
             // 3. Intersection decisions: none until M2.5b, so there is no
             //    stop line and every head may pass its road end.
@@ -124,27 +172,73 @@ impl Engine {
     /// # Panics
     /// If `route` is empty or names a road not in the network.
     pub fn spawn(&mut self, route: &[u32], params: IdmParams) -> Option<VehicleId> {
-        let road = route[0];
+        let v = self.entry_speed(route[0], &params)?;
+        Some(self.vehicles.spawn(entering(route, params, v, self.tick)))
+    }
+
+    /// Trips generated but not yet on the network.
+    #[must_use]
+    pub fn waiting(&self) -> u32 {
+        self.waiting
+    }
+
+    /// Speed `min(v0, v_tail)` for a vehicle entering `road` at offset 0, or
+    /// `None` if the gap to the lane's tail is below `s0 + v·T`.
+    fn entry_speed(&self, road: u32, params: &IdmParams) -> Option<f64> {
         let v0 = params.desired_speed_factor * self.network.roads[road as usize].speed_limit_mps;
         let vs = &self.vehicles;
-        let mut v = v0;
-        if let Some(&t) = vs.lane(vs.lane_id(road, 0)).back() {
-            let t = t as usize;
-            v = v0.min(vs.speed_mps[t]);
-            let gap = vs.pos_m[t] - vs.params[t].length_m;
-            if gap < params.min_gap_m + v * params.time_headway_s {
-                return None;
+        let Some(&t) = vs.lane(vs.lane_id(road, 0)).back() else {
+            return Some(v0);
+        };
+        let t = t as usize;
+        let v = v0.min(vs.speed_mps[t]);
+        let gap = vs.pos_m[t] - vs.params[t].length_m;
+        (gap >= params.min_gap_m + v * params.time_headway_s).then_some(v)
+    }
+
+    /// Phase 1: new trips join their origin's FIFO; then, origin by origin
+    /// from the cursor, each FIFO head is routed and inserted if the entry
+    /// gap allows, up to `MAX_ROUTES_PER_STEP` per step.
+    fn spawn_trips(&mut self) {
+        let ctx = DemandContext {
+            tick: self.tick,
+            dt_ms: self.config.dt_ms,
+            active: u32::try_from(self.vehicles.live_count()).expect("vehicle count fits u32"),
+            waiting: self.waiting,
+        };
+        self.new_trips.clear();
+        let rng = &mut self.rngs[Stream::Demand as usize - 1];
+        (self.demand).spawn(&ctx, self.router.routable(), rng, &mut self.new_trips);
+        for &t in &self.new_trips {
+            self.pending[t.origin as usize].push_back(t);
+            self.waiting += 1;
+        }
+        let n = self.pending.len();
+        let mut routed = 0;
+        for i in 0..n {
+            let origin = (self.spawn_cursor + i) % n;
+            let Some(&trip) = self.pending[origin].front() else {
+                continue;
+            };
+            if routed == MAX_ROUTES_PER_STEP {
+                self.spawn_cursor = origin;
+                break;
+            }
+            let params = car();
+            let road = u32::try_from(origin).expect("road id fits u32");
+            let Some(v) = self.entry_speed(road, &params) else {
+                continue;
+            };
+            routed += 1;
+            self.pending[origin].pop_front();
+            self.waiting -= 1;
+            let found = self.router.route(&self.network, trip, &mut self.route);
+            debug_assert!(found, "demand only draws routable roads");
+            if found {
+                let new = entering(&self.route, params, v, self.tick);
+                self.vehicles.spawn(new);
             }
         }
-        Some(self.vehicles.spawn(NewVehicle {
-            road,
-            lane: 0,
-            pos_m: 0.0,
-            speed_mps: v,
-            params,
-            route,
-            depart_tick: self.tick,
-        }))
     }
 
     /// The vehicle store.
@@ -325,6 +419,7 @@ impl Engine {
     pub fn state_hash(&self) -> u64 {
         let mut h = StateHasher::new();
         h.write_u64(u64::from(self.config.dt_ms));
+        h.write_u64(u64::from(self.config.target_vehicles));
         h.write_u64(self.tick);
         for (stream, rng) in STREAMS.iter().zip(&self.rngs) {
             h.write_bytes(&rng.get_seed());
@@ -333,6 +428,14 @@ impl Engine {
         }
         self.network.hash_into(&mut h);
         self.vehicles.hash_into(&mut h);
+        for q in &self.pending {
+            h.write_u64(q.len() as u64);
+            for t in q {
+                h.write_u64(u64::from(t.origin));
+                h.write_u64(u64::from(t.destination));
+            }
+        }
+        h.write_u64(self.spawn_cursor as u64);
         h.finish()
     }
 }
@@ -369,4 +472,17 @@ fn leader_ahead(net: &Network, vs: &Vehicles, slot: usize, mut dist_m: f64) -> O
         dist_m += net.roads[r as usize].length_m;
     }
     None
+}
+
+/// A vehicle entering `route[0]` at offset 0, lane 0, with speed `v`.
+fn entering(route: &[u32], params: IdmParams, v: f64, tick: u64) -> NewVehicle<'_> {
+    NewVehicle {
+        road: route[0],
+        lane: 0,
+        pos_m: 0.0,
+        speed_mps: v,
+        params,
+        route,
+        depart_tick: tick,
+    }
 }
