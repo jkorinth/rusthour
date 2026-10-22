@@ -125,7 +125,8 @@ release PR.
 | M1.5 | `rusthour-viz`: render network, pan/zoom, native + browser | done | feat/M1.5-map-viewer |
 | M1.6 | Sample maps (see below): `assets` workflow publishes OSM extracts per area in `assets-*` pre-releases, recorded in `data/assets.toml` | done | feat/M1.6-asset-workflow |
 | M1.7 | `assets` workflow builds `.rhnet` files with `rusthour-import` (after M1.2), and a deploy job publishes the web viewer plus assets to GitHub Pages (needed for the M1 user trial; release assets can't be fetched cross-origin) | done | feat/M1.7-rhnet-assets |
-| M1.8 | `rusthour-viz` loads a Bensheim `.rhnet` map: loading progress, in-page errors for wasm/map load failures, OSM attribution text, startup-time check (3 s native / 5 s browser on bensheim-5km per ADR-0003), frame-time measurement per ADR-0003, street-name labels incl. ä/ö/ü/ß | todo | |
+| M1.8 | `rusthour-viz` loads a Bensheim `.rhnet` map: loading progress, in-page errors for wasm/map load failures, OSM attribution text, startup-time check (3 s native / 5 s browser on bensheim-5km per ADR-0003), frame-time measurement per ADR-0003, street-name labels incl. ä/ö/ü/ß | done | feat/M1.8-load-real-maps |
+| M1.9 | M1 user trial (AGENTS.md §8): measure startup (3 s native / 5 s browser) and frame time (ADR-0003 as amended) on bensheim-5km, touch on a real device, middle-click autoscroll suppression, wasm/JS load-failure and panic messages, WebGL2 on Firefox and Safari; results in docs/trials/M1.md | todo | |
 
 **Sample areas (M1.6):** named, square boxes in
 [`data/areas.toml`](data/areas.toml), selected by name in the importer
