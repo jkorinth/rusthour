@@ -1,8 +1,9 @@
 //! Intelligent Driver Model (Treiber et al.), exponent δ = 4 (ADR-0004).
 
 /// Per-vehicle IDM parameters; one value per vehicle so profiles and noise
-/// (M4) need no lookup table.
-#[derive(Clone, Copy, Debug, PartialEq)]
+/// (M4) need no lookup table. `Default` (all zeros) exists only to reset free
+/// slots; it is not a usable parameter set.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct IdmParams {
     /// `v0 = factor × road speed limit`.
     pub desired_speed_factor: f64,
