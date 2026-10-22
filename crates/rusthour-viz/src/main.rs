@@ -2,6 +2,7 @@
 
 mod camera;
 mod demo;
+mod labels;
 #[cfg_attr(
     not(target_arch = "wasm32"),
     allow(dead_code, reason = "used by the browser's loader, tested natively")
@@ -415,6 +416,8 @@ mod tests {
         assert_eq!(v.attribution_url, Some(map::OSM_COPYRIGHT_URL));
         assert_eq!(v.source_date.as_deref(), Some("2026-10-01"));
         assert!(v.note.is_none());
+        let names: Vec<&str> = v.world.labels.iter().map(|c| c.text.as_str()).collect();
+        assert_eq!(names, ["Schulgäßchen"]);
     }
 
     #[test]

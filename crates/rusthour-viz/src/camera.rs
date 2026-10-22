@@ -35,6 +35,12 @@ impl Camera {
         pos2(self.center.x + d.x, self.center.y - d.y)
     }
 
+    /// Screen position of a world point.
+    pub fn world_to_screen(&self, viewport: Rect, world: Pos2) -> Pos2 {
+        let d = (world - self.center) * self.scale;
+        viewport.center() + vec2(d.x, -d.y)
+    }
+
     /// Moves the map by `screen_delta` points, as when dragging it.
     pub fn pan(&mut self, screen_delta: Vec2) {
         self.center += vec2(-screen_delta.x, screen_delta.y) / self.scale;
@@ -94,6 +100,7 @@ mod tests {
             let s = to_screen(&cam, w);
             let tol = 1e-3 * (1.0 + (w - cam.center).length());
             prop_assert!(close(cam.screen_to_world(viewport(), s), w, tol));
+            prop_assert!(close(cam.world_to_screen(viewport(), w), s, 1e-3 * (1.0 + s.to_vec2().length())));
         }
 
         #[test]

@@ -3,10 +3,16 @@
 //! All world drawing lives here, so moving it to a wgpu pipeline later
 //! (ADR-0003 Decision §3) stays a local change.
 
-use eframe::egui::{self, Color32, Key, Mesh, Pos2, Rect, Sense, Shape, Ui, Vec2, epaint, pos2};
+use std::sync::Arc;
+
+use eframe::egui::{
+    self, Align2, Color32, FontId, Galley, Key, Mesh, Pos2, Rect, Sense, Shape, Ui, Vec2, epaint,
+    pos2,
+};
 use rusthour_api::{Network, Point};
 
 use crate::camera::{Camera, LANE_WIDTH_M};
+use crate::labels::{self, Candidate};
 
 /// Road and intersection fill: at least 3:1 against both egui themes' panel
 /// backgrounds (ADR-0003 accessibility minimum).
@@ -39,6 +45,12 @@ pub struct World {
     bounds: Rect,
     /// `None` until the first frame, and after "fit": then fit to the viewport.
     camera: Option<Camera>,
+    /// Street-name label candidates, found once per map.
+    pub labels: Vec<Candidate>,
+    /// Laid-out label text, per candidate, made when first needed; valid for
+    /// `galleys_ppp` pixels per point.
+    galleys: Vec<Option<Arc<Galley>>>,
+    galleys_ppp: f32,
 }
 
 impl World {
@@ -53,10 +65,14 @@ impl World {
             // Empty network: any non-degenerate view will do.
             Rect::from_center_size(Pos2::ZERO, Vec2::splat(100.0))
         };
+        let labels = labels::candidates(network);
         Self {
             mesh,
             bounds,
             camera: None,
+            galleys: vec![None; labels.len()],
+            galleys_ppp: 0.0,
+            labels,
         }
     }
 
@@ -150,9 +166,69 @@ impl World {
         // are measured in M1.8.
         let mut mesh = self.mesh.clone();
         mesh.transform(camera.mesh_transform(viewport));
-        ui.painter_at(viewport).add(Shape::mesh(mesh));
+        let painter = ui.painter_at(viewport);
+        painter.add(Shape::mesh(mesh));
+        let camera = *camera;
+        self.draw_labels(&painter, camera, viewport, ui.visuals());
+    }
+
+    /// Street names, with a halo for contrast over roads (ADR-0003).
+    fn draw_labels(
+        &mut self,
+        painter: &egui::Painter,
+        camera: Camera,
+        viewport: Rect,
+        visuals: &egui::Visuals,
+    ) {
+        let ppp = painter.pixels_per_point();
+        #[expect(clippy::float_cmp, reason = "any change invalidates the layout")]
+        if ppp != self.galleys_ppp {
+            self.galleys.fill(None);
+            self.galleys_ppp = ppp;
+        }
+        let font = FontId::proportional(labels::FONT_SIZE);
+        let (labels, galleys) = (&self.labels, &mut self.galleys);
+        let placed = labels::place(labels, &camera, viewport, |i| {
+            galleys[i]
+                .get_or_insert_with(|| {
+                    painter.layout_no_wrap(
+                        labels[i].text.clone(),
+                        font.clone(),
+                        Color32::PLACEHOLDER,
+                    )
+                })
+                .size()
+        });
+        let (text, halo) = (visuals.strong_text_color(), visuals.extreme_bg_color);
+        for p in placed {
+            let (galley, angle) = (
+                galleys[p.index].clone().expect("laid out by place"),
+                labels[p.index].angle,
+            );
+            // `pos` is the unrotated text's top-left corner; it turns about its center.
+            let shape = |center: Pos2, color| {
+                epaint::TextShape::new(center - galley.size() / 2.0, galley.clone(), color)
+                    .with_angle_and_anchor(angle, Align2::CENTER_CENTER)
+            };
+            for offset in HALO_OFFSETS {
+                painter.add(shape(p.center + offset, halo));
+            }
+            painter.add(shape(p.center, text));
+        }
     }
 }
+
+/// A one-point outline around label text, drawn under it.
+const HALO_OFFSETS: [Vec2; 8] = [
+    Vec2::new(-1.0, -1.0),
+    Vec2::new(0.0, -1.0),
+    Vec2::new(1.0, -1.0),
+    Vec2::new(-1.0, 0.0),
+    Vec2::new(1.0, 0.0),
+    Vec2::new(-1.0, 1.0),
+    Vec2::new(0.0, 1.0),
+    Vec2::new(1.0, 1.0),
+];
 
 /// Mesh position of a world point: `y` negated (see [`World::mesh`]).
 // f32 keeps millimeter precision across a few kilometers of local frame.
