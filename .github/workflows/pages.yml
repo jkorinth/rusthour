@@ -1,7 +1,8 @@
 name: Pages
 
 # Site layout: /main/ is the current main build, /<tag>/ each release's
-# rusthour-web-<tag>.zip, and / a frame with a version dropdown.
+# rusthour-web-<tag>.zip, and / a frame with a version dropdown. Each version
+# folder has its maps in maps/, listed in maps/manifest.json.
 
 on:
   push:
@@ -39,6 +40,12 @@ jobs:
         working-directory: crates/rusthour-viz
         run: trunk build --release
       - run: mkdir _site && mv crates/rusthour-viz/dist _site/main
+      # The newest map build in data/assets.toml matching this commit's
+      # network schema (ADR-0003: a viewer only meets maps it can read).
+      - name: Add main's maps
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 -I scripts/assets.py bundle data/assets.toml _site/main/maps
       - name: Add releases, versions.json and the frame
         env:
           GH_TOKEN: ${{ github.token }}
