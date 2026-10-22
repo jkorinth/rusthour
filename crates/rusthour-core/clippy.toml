@@ -1,0 +1,7 @@
+# ADR-0004: hash iteration order is not deterministic across runs; use
+# BTreeMap/BTreeSet or sorted Vecs in the core. Other crates are unaffected
+# because clippy reads this file per crate.
+disallowed-types = [
+  { path = "std::collections::HashMap", reason = "non-deterministic iteration order (ADR-0004)" },
+  { path = "std::collections::HashSet", reason = "non-deterministic iteration order (ADR-0004)" },
+]
