@@ -129,6 +129,12 @@ cargo run -p rusthour-import --features osm -- bensheim-5km \
     --input bensheim-5km.osm.pbf --output bensheim-5km.rhnet
 ```
 
+The importer keeps only the part of the network connected to the road
+nearest the area's center, and reports what it dropped: streets whose links
+lie outside the area form islands no trip can reach. Dropping more than 5% of
+the roads gives a warning; more than half is an error (the center may lie on
+an island) unless you pass `--allow-drop`.
+
 The importer stores the OpenStreetMap attribution in every `.rhnet` file;
 anything that shows the map must display it.
 

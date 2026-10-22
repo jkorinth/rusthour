@@ -5,7 +5,7 @@ use std::path::Path;
 
 use proptest::prelude::*;
 use proptest::sample::Index;
-use rusthour_api::{Config, InProcess, Network, Road, RoadId};
+use rusthour_api::{Config, InProcess, Network, Point, Road, RoadId};
 use rusthour_import::osm::{self, AreaError, Bbox, Member, MemberKind, OsmData, Relation, Way};
 use rusthour_import::rhnet::{self, Metadata};
 
@@ -368,6 +368,101 @@ proptest! {
         prop_assert!(movements(&network).is_subset(&movements(&base)));
         prop_assert_eq!(removed, expected);
     }
+}
+
+/// The OSM ref of the road passing closest to the area center, the origin.
+fn central_ref(network: &Network) -> Option<(i64, i64, i64)> {
+    let dist = |r: &Road| {
+        r.geometry
+            .windows(2)
+            .map(|w| osm::distance_to_segment(Point { x: 0.0, y: 0.0 }, w[0], w[1]))
+            .fold(f64::INFINITY, f64::min)
+    };
+    let r = network
+        .roads
+        .iter()
+        .min_by(|a, b| dist(a).total_cmp(&dist(b)))?;
+    r.osm.map(|o| (o.way, o.from_node, o.to_node))
+}
+
+proptest! {
+    /// The kept part is connected, holds the road nearest the center, and
+    /// keeps all of that road's part with its movements; the rest is counted.
+    #[test]
+    fn only_the_part_at_the_center_is_kept(data in extract()) {
+        let full = osm::import(&data, extract_bbox());
+        let (kept, dropped) = osm::keep_central_part(full.clone());
+        if let Err(e) = InProcess::with_network(Config::default(), 0, kept.clone()) {
+            prop_assert!(false, "invalid network: {e}");
+        }
+        prop_assert_eq!(kept.roads.len() + dropped.roads, full.roads.len());
+        let length = |n: &Network| n.roads.iter().map(osm::road_length_m).sum::<f64>();
+        prop_assert!((length(&kept) + dropped.length_m - length(&full)).abs() < 1e-6);
+        prop_assert_eq!(central_ref(&kept), central_ref(&full));
+
+        // One part: every node reaches every other along roads, either way.
+        let mut seen = vec![false; kept.nodes.len()];
+        let mut stack: Vec<usize> = (!kept.nodes.is_empty()).then_some(0).into_iter().collect();
+        while let Some(v) = stack.pop() {
+            if seen[v] { continue; }
+            seen[v] = true;
+            for r in &kept.roads {
+                let (a, b) = (r.from_node.0 as usize, r.to_node.0 as usize);
+                if a == v { stack.push(b); }
+                if b == v { stack.push(a); }
+            }
+        }
+        prop_assert!(seen.iter().all(|&s| s), "kept network is not connected");
+
+        // Movements between kept roads survive unchanged.
+        let key = |r: &Road| r.osm.map(|o| (o.way, o.from_node, o.to_node));
+        let refs = |n: &Network, m: &HashSet<Movement>| -> HashSet<_> {
+            m.iter().map(|&(f, t)| (key(&n.roads[f as usize]), key(&n.roads[t as usize]))).collect()
+        };
+        let kept_refs: HashSet<_> = kept.roads.iter().map(key).collect();
+        let expected: HashSet<_> = refs(&full, &movements(&full))
+            .into_iter()
+            .filter(|(f, t)| kept_refs.contains(f) && kept_refs.contains(t))
+            .collect();
+        prop_assert_eq!(refs(&kept, &movements(&kept)), expected);
+    }
+}
+
+#[test]
+fn a_small_part_at_the_center_wins_over_a_bigger_one() {
+    // A short street through the center, and a longer one 500 m east.
+    let node = |id: i64, x: f64| (id, (49.68, 8.6205 + x / 72_000.0));
+    let data = OsmData {
+        nodes: [
+            node(1, -10.0),
+            node(2, 10.0),
+            node(3, 500.0),
+            node(4, 600.0),
+            node(5, 700.0),
+        ]
+        .into_iter()
+        .collect(),
+        ways: [(10, vec![1, 2]), (11, vec![3, 4, 5])]
+            .into_iter()
+            .map(|(id, nodes)| Way {
+                id,
+                nodes,
+                tags: vec![("highway".into(), "residential".into())],
+            })
+            .collect(),
+        ..OsmData::default()
+    };
+    let full = osm::import(&data, bbox("[49.67, 8.60, 49.69, 8.64]"));
+    // Both streets are two-way: two roads each.
+    assert_eq!(full.roads.len(), 4);
+    let (kept, dropped) = osm::keep_central_part(full);
+    assert!(kept.roads.iter().all(|r| r.osm.unwrap().way == 10));
+    assert_eq!((kept.roads.len(), dropped.roads), (2, 2));
+    assert!(
+        (dropped.length_m - 400.0).abs() < 2.0,
+        "{}",
+        dropped.length_m
+    );
 }
 
 #[test]

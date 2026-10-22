@@ -28,6 +28,10 @@ struct Args {
     /// The areas file.
     #[arg(long, default_value = "data/areas.toml")]
     areas: PathBuf,
+    /// Write the map even if more than half of its roads are dropped (not
+    /// connected to the road nearest the area's center).
+    #[arg(long)]
+    allow_drop: bool,
 }
 
 fn main() -> ExitCode {
@@ -59,7 +63,7 @@ fn run(args: Args) -> Result<(), String> {
         format!("cannot read {}: {e}{hint}", args.input.display())
     })?;
 
-    let network = osm::import(&data, bbox);
+    let (network, dropped) = osm::keep_central_part(osm::import(&data, bbox));
     if network.roads.is_empty() {
         let Bbox {
             south,
@@ -76,6 +80,14 @@ fn run(args: Args) -> Result<(), String> {
             args.area,
             args.area
         ));
+    }
+    if let Some(warning) = check_dropped(
+        &args.area,
+        network.roads.len(),
+        dropped.roads,
+        args.allow_drop,
+    )? {
+        eprintln!("warning: {warning}");
     }
     if let Err(e) = InProcess::with_network(Config::default(), 0, network.clone()) {
         return Err(format!(
@@ -106,27 +118,55 @@ fn run(args: Args) -> Result<(), String> {
     std::fs::write(&output, rhnet::encode(&metadata, &network))
         .map_err(|e| format!("cannot write {}: {e}", output.display()))?;
 
-    let length_m: f64 = network
-        .roads
-        .iter()
-        .flat_map(|r| r.geometry.windows(2))
-        .map(|w| (w[1].x - w[0].x).hypot(w[1].y - w[0].y))
-        .sum();
+    let length_m: f64 = network.roads.iter().map(osm::road_length_m).sum();
     let source = match data.replication_timestamp {
         Some(_) => format!("OSM data of {}", metadata.source_date),
         None => "OSM data date unknown".to_owned(),
     };
     println!(
         "{}: {} nodes, {} directed roads ({:.1} km, both directions counted), {} connections, \
-         {source}\nwrote {}",
+         {source}\ndropped {} roads not connected to the area's center ({:.1} km)\nwrote {}",
         args.area,
         network.nodes.len(),
         network.roads.len(),
         length_m / 1000.0,
         network.connections.len(),
+        dropped.roads,
+        dropped.length_m / 1000.0,
         output.display()
     );
     Ok(())
+}
+
+/// Judges how much of the map [`osm::keep_central_part`] dropped: up to 5%
+/// is normal (driveways and streets cut by the area edge), more is worth a
+/// warning, more than half an error unless `allow`: the center likely sits
+/// on an island.
+fn check_dropped(
+    area: &str,
+    kept: usize,
+    dropped: usize,
+    allow: bool,
+) -> Result<Option<String>, String> {
+    let total = kept + dropped;
+    let share = format!(
+        "{dropped} of {total} roads ({}%) of area `{area}` are not connected to the road \
+         nearest its center",
+        dropped * 100 / total.max(1)
+    );
+    if dropped * 2 > total && !allow {
+        Err(format!(
+            "{share}, which may lie on an island; check the area's bbox in the areas file, \
+             or pass `--allow-drop` to write the map anyway"
+        ))
+    } else if dropped * 20 > total {
+        Ok(Some(format!(
+            "{share} and were dropped; check that the area's bbox in the areas file \
+             covers the streets you want"
+        )))
+    } else {
+        Ok(None)
+    }
 }
 
 /// `YYYY-MM-DD` (UTC) of a Unix timestamp in seconds.
@@ -146,6 +186,23 @@ fn iso_date(timestamp: i64) -> String {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn dropping_much_of_the_map_warns_then_fails() {
+        let check = |kept, dropped| super::check_dropped("x", kept, dropped, false);
+        assert_eq!(check(100, 0), Ok(None));
+        assert_eq!(check(95, 5), Ok(None));
+        let warning = check(94, 6).unwrap().unwrap();
+        assert!(warning.contains("6 of 100 roads (6%)"), "{warning}");
+        assert!(check(50, 50).unwrap().is_some());
+        let error = check(49, 51).unwrap_err();
+        assert!(
+            error.contains("51 of 100 roads (51%)") && error.contains("--allow-drop"),
+            "{error}"
+        );
+        let allowed = super::check_dropped("x", 49, 51, true).unwrap().unwrap();
+        assert!(allowed.contains("were dropped"), "{allowed}");
+    }
+
     #[test]
     fn iso_dates() {
         assert_eq!(super::iso_date(0), "1970-01-01");
