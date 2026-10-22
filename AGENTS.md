@@ -46,7 +46,27 @@ Direct commits to `main` are allowed. Conventional commits are still mandatory.
    `rusthour-cli` UX, output formats or `rusthour-api` public types. Reviewers post a
    comment ending with an explicit verdict: `VERDICT: APPROVE` or
    `VERDICT: REQUEST CHANGES` (agents may share a GitHub account, so formal
-   approvals may not be available).
+   approvals may not be available). The required `review-gate` status
+   (`scripts/review_gate.py`) reads these comments and must be green to
+   merge. It counts a comment only in this format:
+   - one role per comment;
+   - the first line is a bold heading starting with `**Architect` or `**UX`,
+     e.g. `**Architect review**`, `**UX re-check** (head abc1234)`;
+   - a line that is exactly `VERDICT: APPROVE`, or starts with
+     `VERDICT: REQUEST CHANGES`; the last such line counts, and a footer
+     after it is fine.
+
+   Each role's most recent such comment decides. UX is required when the PR
+   changes `crates/rusthour-{viz,cli,api,import}/`. Verdicts are not reset
+   by pushes: reviewers re-check after any substantive push, while a
+   trivial rebase or conflict resolution keeps the verdicts.
+
+   Release PRs (opened by release-please from this repo) are exempt, but
+   they are opened with `GITHUB_TOKEN` and so trigger no workflows: the
+   maintainer posts any comment on the release PR to get its status, or
+   bypasses the ruleset at milestone end. One-time maintainer setting:
+   Settings → Rules → the `main` ruleset → Require status checks to pass →
+   add `review-gate`.
 6. **Clean up history** before merging:
    `git rebase -i --autosquash origin/main`, then force-push your branch
    (`--force-with-lease`). Every remaining commit must be a meaningful,
