@@ -85,5 +85,6 @@ fn one_way(from: NodeId, to: NodeId, a: Point, b: Point, lanes: u8) -> Road {
         lanes,
         name: None,
         osm: None,
+        roundabout: false,
     }
 }

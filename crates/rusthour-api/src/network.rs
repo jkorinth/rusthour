@@ -11,8 +11,8 @@ use serde::{Deserialize, Serialize};
 /// incompatible change to these types.
 ///
 /// Version 2 added OSM source references ([`Node::osm_node`], [`Road::osm`])
-/// and [`Road::name`].
-pub const NETWORK_SCHEMA_VERSION: u32 = 2;
+/// and [`Road::name`]. Version 3 added [`Road::roundabout`].
+pub const NETWORK_SCHEMA_VERSION: u32 = 3;
 
 /// Index of a node in [`Network::nodes`]. Serializes as a plain number.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -67,6 +67,9 @@ pub struct Road {
     /// The part of an OpenStreetMap way this road was imported from, if any.
     /// `None` for hand-built networks.
     pub osm: Option<OsmWayPart>,
+    /// Part of a roundabout (OSM `junction=roundabout|circular`): traffic on
+    /// it has priority over roads entering it.
+    pub roundabout: bool,
 }
 
 /// Where a [`Road`] comes from in OpenStreetMap: the stretch of way `way`
@@ -134,6 +137,7 @@ pub struct Connection {
 ///         lanes: 2,
 ///         name: Some("Hauptstraße".into()),
 ///         osm: None,
+///         roundabout: false,
 ///     }],
 ///     connections: vec![],
 /// };
@@ -314,6 +318,14 @@ fn id(i: usize) -> u32 {
     i as u32
 }
 
+/// Unit vector along the segment `[a, b]`, which is non-degenerate. Basic
+/// IEEE operations only, like the length, so the state hash is portable.
+fn heading(segment: &[Point]) -> [f64; 2] {
+    let (dx, dy) = (segment[1].x - segment[0].x, segment[1].y - segment[0].y);
+    let len = (dx * dx + dy * dy).sqrt();
+    [dx / len, dy / len]
+}
+
 impl Network {
     /// Checks the network and builds the core's representation of it.
     ///
@@ -382,6 +394,9 @@ impl Network {
                 length_m,
                 speed_limit_mps: r.speed_limit_mps,
                 lanes: r.lanes,
+                start_dir: heading(&r.geometry[..2]),
+                end_dir: heading(&r.geometry[r.geometry.len() - 2..]),
+                roundabout: r.roundabout,
             });
         }
 
@@ -420,5 +435,47 @@ impl Network {
             roads,
             connections,
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn road(geometry: Vec<Point>, roundabout: bool) -> Network {
+        let nodes = [0, 1].map(|i| Node {
+            position: geometry[i * (geometry.len() - 1)],
+            osm_node: None,
+        });
+        Network {
+            nodes: nodes.to_vec(),
+            roads: vec![Road {
+                from_node: NodeId(0),
+                to_node: NodeId(1),
+                geometry,
+                speed_limit_mps: 10.0,
+                lanes: 1,
+                name: None,
+                osm: None,
+                roundabout,
+            }],
+            connections: vec![],
+        }
+    }
+
+    #[test]
+    #[allow(clippy::float_cmp)] // 3-4-5 triangle: exact
+    fn core_road_gets_unit_headings_of_first_and_last_segment() {
+        let p = |x, y| Point { x, y };
+        let core = road(
+            vec![p(0.0, 0.0), p(30.0, 0.0), p(30.0, -40.0), p(60.0, 0.0)],
+            true,
+        )
+        .to_core()
+        .unwrap();
+        let r = &core.roads[0];
+        assert_eq!(r.start_dir, [1.0, 0.0]);
+        assert_eq!(r.end_dir, [0.6, 0.8]);
+        assert!(r.roundabout);
     }
 }

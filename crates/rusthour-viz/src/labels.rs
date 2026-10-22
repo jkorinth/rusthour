@@ -209,6 +209,7 @@ mod tests {
             lanes: 1,
             name: name.map(Into::into),
             osm: None,
+            roundabout: false,
         };
         let network = Network {
             nodes: vec![

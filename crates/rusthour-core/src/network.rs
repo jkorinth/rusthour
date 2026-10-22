@@ -20,6 +20,14 @@ pub struct Road {
     pub speed_limit_mps: f64,
     /// Number of lanes.
     pub lanes: u8,
+    /// Unit vector `[x, y]` of the first geometry segment, the heading at the
+    /// road's start.
+    pub start_dir: [f64; 2],
+    /// Unit vector `[x, y]` of the last geometry segment, the heading at the
+    /// road's end.
+    pub end_dir: [f64; 2],
+    /// Part of a roundabout: traffic on it has priority over entering roads.
+    pub roundabout: bool,
 }
 
 /// The static road network.
@@ -48,6 +56,11 @@ impl Network {
             h.write_f64(r.length_m);
             h.write_f64(r.speed_limit_mps);
             h.write_u64(u64::from(r.lanes));
+            for d in [r.start_dir, r.end_dir] {
+                h.write_f64(d[0]);
+                h.write_f64(d[1]);
+            }
+            h.write_u64(u64::from(r.roundabout));
         }
         h.write_u64(self.connections.len() as u64);
         for &(from, to) in &self.connections {

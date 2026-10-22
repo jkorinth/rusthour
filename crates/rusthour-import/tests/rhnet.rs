@@ -22,9 +22,10 @@ fn network() -> impl Strategy<Value = Network> {
         any::<u8>(),
         any::<Option<String>>(),
         any::<Option<(i64, i64, i64)>>(),
+        any::<bool>(),
     )
         .prop_map(
-            |(from, to, geometry, speed_limit_mps, lanes, name, osm)| Road {
+            |(from, to, geometry, speed_limit_mps, lanes, name, osm, roundabout)| Road {
                 from_node: NodeId(from),
                 to_node: NodeId(to),
                 geometry,
@@ -36,6 +37,7 @@ fn network() -> impl Strategy<Value = Network> {
                     from_node,
                     to_node,
                 }),
+                roundabout,
             },
         );
     let connection = (any::<u32>(), any::<u32>()).prop_map(|(a, b)| Connection {

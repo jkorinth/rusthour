@@ -566,6 +566,7 @@ mod tests {
                 lanes: 1,
                 name: Some("Schulgäßchen".into()),
                 osm: None,
+                roundabout: false,
             }],
             connections: vec![],
         };

@@ -79,6 +79,7 @@ fn valid_network() -> impl Strategy<Value = Network> {
                         lanes,
                         name: None,
                         osm: None,
+                        roundabout: false,
                     }
                 })
                 .collect();
@@ -128,6 +129,7 @@ fn arbitrary_network() -> impl Strategy<Value = Network> {
             lanes,
             name: None,
             osm: None,
+            roundabout: false,
         });
     let connection = (0u32..8, 0u32..8).prop_map(|(a, b)| Connection {
         from_road: RoadId(a),
@@ -166,6 +168,13 @@ fn hash_after(network: &Network, seed: u64) -> u64 {
 }
 
 proptest! {
+    #[test]
+    fn the_roundabout_flag_is_part_of_the_state_hash(network in valid_network()) {
+        let mut flipped = network.clone();
+        flipped.roads[0].roundabout = !flipped.roads[0].roundabout;
+        prop_assert_ne!(hash_after(&network, 1), hash_after(&flipped, 1));
+    }
+
     #[test]
     fn valid_networks_load_and_come_back_unchanged(network in valid_network()) {
         let sim = load(network.clone()).unwrap();

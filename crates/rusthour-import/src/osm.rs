@@ -495,6 +495,7 @@ pub fn import(data: &OsmData, bbox: Bbox) -> Network {
                         from_node: from,
                         to_node: to,
                     }),
+                    roundabout: false,
                 });
                 twin.push(None);
             }
