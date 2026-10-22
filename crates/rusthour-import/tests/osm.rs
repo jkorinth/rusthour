@@ -157,7 +157,7 @@ fn extract() -> impl Strategy<Value = OsmData> {
         )
         .prop_map(|v| Some(("highway".to_owned(), v.to_owned()))),
         tag("oneway", &["yes", "-1", "no", "reversible", "bogus"]),
-        tag("junction", &["roundabout"]),
+        tag("junction", &["roundabout", "circular"]),
         tag("lanes", &["0", "1", "3", "255", "x"]),
         tag("lanes:forward", &["2", "0"]),
         tag(
@@ -339,6 +339,12 @@ proptest! {
             prop_assert!(false, "invalid network: {e}");
         }
 
+        // The roundabout flag follows the way's junction tag.
+        for r in &network.roads {
+            let way = data.ways.iter().find(|w| w.id == r.osm.unwrap().way).unwrap();
+            let junction = way.tags.iter().any(|(k, v)| k == "junction" && matches!(v.as_str(), "roundabout" | "circular"));
+            prop_assert_eq!(r.roundabout, junction);
+        }
         // OSM refs identify roads (M7.0) and match the end nodes.
         let mut refs = HashSet::new();
         for r in &network.roads {
@@ -352,7 +358,7 @@ proptest! {
             let tags = &data.ways.iter().find(|w| w.id == way).unwrap().tags;
             let has = |k: &str, v: &[&str]| tags.iter().any(|(tk, tv)| tk == k && v.contains(&tv.as_str()));
             !has("oneway", &["yes", "-1", "reversible"])
-                && !has("junction", &["roundabout"])
+                && !has("junction", &["roundabout", "circular"])
                 && !has("highway", &["motorway"])
         };
         for &(f, t) in &movements(&network) {
