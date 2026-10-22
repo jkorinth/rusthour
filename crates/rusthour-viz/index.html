@@ -47,6 +47,10 @@
       window.addEventListener("unhandledrejection", function (e) {
         fail(String(e.reason));
       });
+      // Middle-button drag pans the map; don't let the browser start autoscroll.
+      document.getElementById("rusthour_canvas").addEventListener("mousedown", function (e) {
+        if (e.button === 1) e.preventDefault();
+      });
     })();
   </script>
   <noscript><div id="noscript">Rust Hour needs JavaScript and WebAssembly. Turn on
