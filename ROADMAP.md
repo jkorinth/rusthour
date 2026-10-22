@@ -126,9 +126,10 @@ release PR.
 | M1.6 | Sample maps (see below): `assets` workflow publishes OSM extracts per area in `assets-*` pre-releases, recorded in `data/assets.toml` | done | feat/M1.6-asset-workflow |
 | M1.7 | `assets` workflow builds `.rhnet` files with `rusthour-import` (after M1.2), and a deploy job publishes the web viewer plus assets to GitHub Pages (needed for the M1 user trial; release assets can't be fetched cross-origin) | done | feat/M1.7-rhnet-assets |
 | M1.8 | `rusthour-viz` loads a Bensheim `.rhnet` map: loading progress, in-page errors for wasm/map load failures, OSM attribution text, startup-time check (3 s native / 5 s browser on bensheim-5km per ADR-0003), frame-time measurement per ADR-0003, street-name labels incl. ä/ö/ü/ß | done | feat/M1.8-load-real-maps |
-| M1.9 | M1 user trial (AGENTS.md §8): measure startup (3 s native / 5 s browser) and frame time (ADR-0003 as amended) on bensheim-5km, touch on a real device, middle-click autoscroll suppression, wasm/JS load-failure and panic messages, WebGL2 on Firefox and Safari; results in docs/trials/M1.md | todo | |
+| M1.9 | M1 user trial (AGENTS.md §8): measure startup (3 s native / 5 s browser) and frame time (ADR-0003 as amended) on bensheim-5km, touch on a real device, middle-click autoscroll suppression, wasm/JS load-failure and panic messages, WebGL2 on Firefox and Safari; results in docs/trials/M1.md | done | docs/M1.9-user-trial |
 | M1.10 | `rusthour-viz`: map selector in the browser listing the site's maps (`maps/manifest.json`), switching via a shareable `?map=`; the Pages version frame passes `?map=` through to the viewer and back | done | feat/M1.10-map-selector |
 | M1.11 | `rusthour-import`: drop islands, keeping only the part connected to the road nearest the area center; report dropped roads and km, warn above 5%, fail above 50% unless `--allow-drop`. Then rebuild the sample maps. One-way traps inside the kept part are left to routing (M2.4) | done | feat/M1.11-drop-islands |
+| M1.12 | M1 trial on real hardware (rest of M1.9, see docs/trials/M1.md "Not tested"): browser load-failure and panic messages, middle-click autoscroll suppression, touch gestures on a device, frame interval on real hardware, browser controls incl. map selector, native on a real GPU (thin minor roads at fit zoom?); results appended to docs/trials/M1.md; everything under "Not tested" there is carried to the M2 trial | done | docs/M1.9-user-trial |
 
 **Sample areas (M1.6):** named, square boxes in
 [`data/areas.toml`](data/areas.toml), selected by name in the importer
@@ -244,3 +245,7 @@ viewer, save it, and get a statistical before/after report from the CLI.
   data fetched client-side, e.g. from the Overpass API, within its usage
   policy. Not planned yet; the offline preparation step stays the default.
 - Pin GitHub Actions by commit SHA (currently pinned by version tag).
+- `rusthour-viz`: `--map` without a value should print the usage, not open
+  the demo grid (M1 trial).
+- `rusthour-import`: warn when the extract doesn't cover the area's bbox,
+  e.g. a 1 km extract imported for a 5 km area (M1 trial).
