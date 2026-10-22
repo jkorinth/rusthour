@@ -145,7 +145,10 @@ impl Engine {
             demand: RandomOd {
                 target_vehicles: config.target_vehicles,
             },
-            pending: vec![VecDeque::new(); network.roads.len()],
+            // Reserved so short queues need no allocation after construction.
+            pending: (0..network.roads.len())
+                .map(|_| VecDeque::with_capacity(4))
+                .collect(),
             waiting: 0,
             spawn_cursor: 0,
             new_trips: Vec::new(),
