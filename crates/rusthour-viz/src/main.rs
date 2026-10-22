@@ -2,6 +2,7 @@
 
 mod camera;
 mod demo;
+mod frame_stats;
 mod labels;
 #[cfg_attr(
     not(target_arch = "wasm32"),
@@ -18,6 +19,7 @@ use std::sync::{Arc, Mutex};
 use eframe::egui::{self, Align2, Key};
 use rusthour_api::{Config, InProcess, Simulation};
 
+use frame_stats::FrameTimes;
 use map::MapSource;
 use world::World;
 
@@ -80,14 +82,18 @@ struct Viewer {
     source_date: Option<String>,
     /// Why the demo network is shown, until dismissed.
     note: Option<String>,
+    /// For the debug overlay: area name, nodes, roads.
+    stats: (String, usize, usize),
 }
 
 impl Viewer {
     fn new(map: MapSource, note: Option<String>) -> Result<Self, String> {
         let sim = InProcess::with_network(Config::default(), 0, map.network)
             .map_err(|e| format!("The map “{}” is not a valid network: {e}.", map.name))?;
+        let net = sim.network();
         Ok(Self {
-            world: World::new(sim.network()),
+            stats: (map.name, net.nodes.len(), net.roads.len()),
+            world: World::new(net),
             attribution: map.attribution,
             attribution_url: map.attribution_url,
             source_date: map.source_date,
@@ -99,10 +105,36 @@ impl Viewer {
 /// Starts loading the map, again on "Retry".
 type Load = Box<dyn Fn() -> State>;
 
+/// The `F3` overlay: frame times and startup time, checked against
+/// ADR-0003's thresholds in the M1 trial.
+#[derive(Default)]
+struct Debug {
+    shown: bool,
+    /// Time between frames (egui's `unstable_dt`), capped by vsync.
+    interval: FrameTimes,
+    /// CPU time per frame (UI and rendering, without waiting for vsync).
+    cpu: FrameTimes,
+    /// Seconds from start to the first frame with a map.
+    startup_s: Option<f64>,
+}
+
+impl Debug {
+    /// Shows or hides the overlay, with fresh samples: the first interval
+    /// would include the idle time before.
+    fn toggle(&mut self) {
+        *self = Self {
+            shown: !self.shown,
+            startup_s: self.startup_s,
+            ..Self::default()
+        };
+    }
+}
+
 struct App {
     state: State,
     load: Load,
     show_help: bool,
+    debug: Debug,
 }
 
 impl App {
@@ -111,6 +143,7 @@ impl App {
             state,
             load,
             show_help: false,
+            debug: Debug::default(),
         }
     }
 }
@@ -121,8 +154,25 @@ enum FailedAction {
     Demo,
 }
 
+/// Native: since `main` started.
+#[cfg(not(target_arch = "wasm32"))]
+static START: std::sync::OnceLock<std::time::Instant> = std::sync::OnceLock::new();
+
+/// Seconds since `main` started.
+#[cfg(not(target_arch = "wasm32"))]
+fn seconds_since_start(_ctx: &egui::Context) -> f64 {
+    START.get().map_or(0.0, |t| t.elapsed().as_secs_f64())
+}
+
+/// Seconds since the page started loading: egui's time is
+/// `performance.now()` in the browser.
+#[cfg(target_arch = "wasm32")]
+fn seconds_since_start(ctx: &egui::Context) -> f64 {
+    ctx.input(|i| i.time)
+}
+
 impl eframe::App for App {
-    fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
+    fn ui(&mut self, ui: &mut egui::Ui, frame: &mut eframe::Frame) {
         let ctx = ui.ctx().clone();
         if let State::Loading(progress) = &self.state {
             let mut p = progress.lock().expect("not poisoned");
@@ -145,9 +195,73 @@ impl eframe::App for App {
                 Some(FailedAction::Demo) => self.state = State::from_loaded(Loaded::Demo(None)),
                 None => {}
             },
-            State::Ready(viewer) => show_ready(ui, viewer, &mut self.show_help),
+            State::Ready(viewer) => {
+                let d = &mut self.debug;
+                d.startup_s.get_or_insert_with(|| seconds_since_start(&ctx));
+                if !ctx.egui_wants_keyboard_input() && ctx.input(|i| i.key_pressed(Key::F3)) {
+                    d.toggle();
+                }
+                if d.shown {
+                    d.interval.push(ctx.input(|i| i.unstable_dt));
+                    d.cpu.extend(frame.info().cpu_usage);
+                    // Measure every frame, not only frames with input.
+                    ctx.request_repaint();
+                }
+                show_ready(ui, viewer, &mut self.show_help, d);
+                if d.shown {
+                    show_debug(&ctx, d, viewer);
+                }
+            }
         }
     }
+}
+
+fn show_debug(ctx: &egui::Context, d: &Debug, v: &Viewer) {
+    let ms = |t: &FrameTimes| match t.median_p95() {
+        Some((median, p95)) => format!(
+            "median {:.1} ms, p95 {:.1} ms ({} frames)",
+            median * 1e3,
+            p95 * 1e3,
+            t.len()
+        ),
+        None => "no frames yet".to_owned(),
+    };
+    egui::Area::new(egui::Id::unique("debug"))
+        .anchor(Align2::LEFT_BOTTOM, [8.0, -44.0])
+        .show(ctx, |ui| {
+            egui::Frame::popup(ui.style()).show(ui, |ui| {
+                egui::Grid::new("debug_grid").show(ui, |ui| {
+                    let (name, nodes, roads) = &v.stats;
+                    let rows = [
+                        ("Frame interval", ms(&d.interval)),
+                        ("CPU per frame", ms(&d.cpu)),
+                        (
+                            "Startup",
+                            d.startup_s.map_or_else(String::new, |s| {
+                                format!("{s:.2} s to first map frame")
+                            }),
+                        ),
+                        (
+                            "Map",
+                            format!(
+                                "{name}: {nodes} nodes, {roads} roads, {} named",
+                                v.world.labels.len()
+                            ),
+                        ),
+                    ];
+                    for (what, value) in rows {
+                        ui.label(what);
+                        ui.label(value);
+                        ui.end_row();
+                    }
+                });
+                ui.small(format!(
+                    "Last {} s at 60 Hz. ADR-0003: CPU per frame median ≤ 8 ms, p95 ≤ 16 ms; \
+                     frame interval p95 ≤ 1.5× refresh period.",
+                    frame_stats::WINDOW / 60
+                ));
+            });
+        });
 }
 
 /// A centered column about 60 characters wide, a third down the window.
@@ -210,7 +324,7 @@ fn show_failed(ui: &mut egui::Ui, message: &str) -> Option<FailedAction> {
     action
 }
 
-fn show_ready(ui: &mut egui::Ui, v: &mut Viewer, show_help: &mut bool) {
+fn show_ready(ui: &mut egui::Ui, v: &mut Viewer, show_help: &mut bool, debug: &mut Debug) {
     let ctx = ui.ctx().clone();
     if !ctx.egui_wants_keyboard_input() && ctx.input(|i| i.key_pressed(Key::Questionmark)) {
         *show_help = !*show_help;
@@ -283,6 +397,11 @@ fn show_ready(ui: &mut egui::Ui, v: &mut Viewer, show_help: &mut bool) {
                     ui.end_row();
                 }
             });
+            // Also reachable without a keyboard, e.g. on touch screens.
+            let mut shown = debug.shown;
+            if ui.checkbox(&mut shown, "Show frame times (F3)").changed() {
+                debug.toggle();
+            }
         });
 }
 
@@ -290,6 +409,7 @@ fn show_ready(ui: &mut egui::Ui, v: &mut Viewer, show_help: &mut bool) {
 fn main() -> eframe::Result {
     const USAGE: &str = "Usage: rusthour-viz [--map <file.rhnet>]\n\n\
                          Without --map, shows a demo network.";
+    START.get_or_init(std::time::Instant::now);
     let mut args = std::env::args_os().skip(1);
     let mut path = None;
     while let Some(arg) = args.next() {

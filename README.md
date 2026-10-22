@@ -54,7 +54,8 @@ an unknown area, it shows the demo town grid and says why.
 
 Controls: drag to pan, scroll or pinch to zoom, arrow keys or WASD to pan,
 `+`/`-` to zoom, `Home`, `F` or `0` to fit the map, `?` for the list of
-shortcuts.
+shortcuts. `F3` shows frame times (median and 95th percentile over the last
+10 s), the startup time and the map's size.
 
 The viewer embeds egui's default fonts. Their licenses (SIL OFL 1.1, Ubuntu
 Font Licence 1.0, MIT, Bitstream Vera) are in
