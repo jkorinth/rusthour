@@ -339,6 +339,9 @@ mod tests {
             length_m: 130.0,
             speed_limit_mps: 14.0,
             lanes,
+            start_dir: [1.0, 0.0],
+            end_dir: [1.0, 0.0],
+            roundabout: false,
         };
         Network {
             nodes: vec![[0.0, 0.0], [130.0, 0.0]],
