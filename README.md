@@ -7,22 +7,34 @@ with different vehicle types and driver personalities. Watch it interactively
 in the browser or natively, or run deterministic batch simulations from the
 command line and compare scenarios statistically.
 
-> **Status:** early scaffolding (milestone M0). See [ROADMAP.md](ROADMAP.md)
-> for what's planned and [AGENTS.md](AGENTS.md) for how work is done.
+> **Status:** milestone M1, a map viewer. Real OpenStreetMap areas load in
+> an interactive viewer, in the browser
+> ([try it](https://jkorinth.github.io/rusthour/)) or natively, and an
+> importer builds the maps. There is no traffic yet: vehicles arrive with M2.
+> See [ROADMAP.md](ROADMAP.md) for what's planned and
+> [AGENTS.md](AGENTS.md) for how work is done.
 
 ## Quick start
 
 Requires [rustup](https://rustup.rs). The toolchain version and the wasm
-target are pinned in `rust-toolchain.toml` and installed automatically.
+target are pinned in `rust-toolchain.toml` and installed automatically. The
+first build takes several minutes and a few GB of disk.
+
+Maps aren't in the repository: download a `.rhnet` file from the newest
+`assets-<date>` pre-release on the
+[Releases](https://github.com/jkorinth/rusthour/releases) page (named
+`<area>.<sha256>.rhnet`), or import one yourself (see "Map data" below).
 
 ```sh
-# Run a headless simulation and print its status as JSON
+# Step an empty simulation (no map or vehicles yet) and print its status as
+# JSON: a smoke test of the simulation core
 cargo run -p rusthour-cli -- run --seed 42 --steps 1000
 
-# Open the viewer on an imported map (without --map: a demo town grid)
+# Open the viewer on a downloaded or imported map (without --map: a demo town
+# grid)
 cargo run -p rusthour-viz --release -- --map bensheim-5km.rhnet
 
-# Import a map (see "Importing maps" below)
+# Import a map, from the repository root (see "Importing an area yourself")
 cargo run -p rusthour-import --features osm -- bensheim-5km \
     --input bensheim-5km.osm.pbf --output bensheim-5km.rhnet
 
