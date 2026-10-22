@@ -8,6 +8,8 @@
 compile_error!("the `server` feature is native-only");
 
 mod network;
+mod placement;
+mod snapshot;
 
 use serde::{Deserialize, Serialize};
 
@@ -15,7 +17,9 @@ pub use network::{
     Connection, NETWORK_SCHEMA_VERSION, Network, NetworkError, Node, NodeId, OsmWayPart, Point,
     Road, RoadId,
 };
+pub use placement::Placement;
 pub use rusthour_core::Config;
+pub use snapshot::{VehicleId, VehicleSnapshot};
 
 /// Version of the wire protocol. Bump on any incompatible change to the
 /// serialized types in this crate.
