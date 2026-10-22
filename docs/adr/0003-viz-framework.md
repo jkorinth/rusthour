@@ -3,6 +3,8 @@
 - **Status:** accepted
 - **Date:** 2026-10-21
 - **Decided by:** architect + UX designer (roadmap M1.1)
+- **Amended:** 2026-10-22, M1.8: frame-time threshold measured as CPU time per
+  frame; browser fetch via `web-sys` instead of `ehttp`
 
 ## Context
 
@@ -127,14 +129,22 @@ app built with **Trunk**. Charts use **egui_plot**.
    wgpu pipeline registered via `egui_wgpu::CallbackTrait` (static vertex
    buffer for roads, one instanced draw for vehicles, camera uniform; WGSL
    that runs on WebGL2). The trigger is a missed frame-time threshold:
-   - **Threshold:** median frame time above **8 ms**, or 95th percentile
-     above **16 ms**, over 10 s of continuous panning and zooming.
+   - **Threshold:** over 10 s of continuous panning and zooming, the **CPU
+     time per frame** (eframe's `frame.info().cpu_usage`: `App::ui`,
+     tessellation and render submission, without the vsync wait) has a median
+     above **8 ms** or a 95th percentile above **16 ms**; or the **frame
+     interval** (`ctx.input(|i| i.unstable_dt)`) has a 95th percentile above
+     **1.5× the display's refresh period** (25 ms at 60 Hz). With vsync the
+     interval cannot drop below the refresh period, so it only catches
+     dropped frames, including GPU-bound ones that CPU time does not show.
    - **Scenes:** bensheim-5km, whole map in view, in M1.5 (map only); and
      bensheim-5km with **5,000 vehicles** in M2.7.
-   - **Measure** with egui's frame time (`ctx.input(|i| i.unstable_dt)`)
-     logged by a debug overlay, natively (release build) and in the browser
-     (Chrome, release wasm, WebGL2 forced, since that is the slowest
-     backend).
+   - **Measure** both with the viewer's `F3` overlay (median and 95th
+     percentile by nearest rank over the last 600 frames), natively (release
+     build, vsync on) and in the browser (Chrome, release wasm, WebGL2
+     forced, since that is the slowest backend). The M1 trial records the
+     CPU and interval numbers, the display's refresh rate and the hardware in
+     `docs/trials/M1.md`.
    - **Reference setup:** a mid-range laptop with integrated graphics
      (e.g. 4-core x86-64 CPU from 2022 or later, Intel Iris Xe class GPU,
      1920×1080 at 100% scale). The measuring agent records its actual
@@ -148,7 +158,9 @@ app built with **Trunk**. Charts use **egui_plot**.
    a uniform grid is the next step. Picking is not part of M1.5. This works
    the same for an in-process or a remote simulation.
 5. **Map loading (ADR-0002):** natively the viewer reads the `.rhnet` file;
-   in the browser it fetches it with `ehttp` (async, callback-based). The
+   in the browser it fetches it with a `web-sys` streaming `fetch`, for
+   download progress (`ehttp`'s `streaming` feature would add `futures-util`
+   and `wasm-streams`). The
    bytes are decoded with `rusthour-import` (without the `osm` feature) and
    handed to `rusthour-api`; the viewer never touches `rusthour-core`. The app
    is a small state machine: `Loading { progress }` → `Ready(viewer)` or
