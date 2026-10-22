@@ -16,3 +16,50 @@
 # the end; the Pages site deploys the newest one matching its schema.
 #
 # Map data © OpenStreetMap contributors, ODbL 1.0 (see data/LICENSE).
+
+[[builds]]
+tag = "assets-2026-10-22"
+source = "https://download.geofabrik.de/europe/germany/hessen-latest.osm.pbf"
+source_dated = "https://download.geofabrik.de/europe/germany/hessen-261020.osm.pbf"
+source_timestamp = "2026-10-20T20:23:47Z"
+source_md5 = "11ea448cfdd8dd5abe818d72b5cb5d58"
+tool = "osmium version 1.19.0, libosmium version 2.23.0"
+importer = "rusthour-import 0.1.0"
+importer_commit = "8d1772c53ac335715b58bf3b6f07db5bd0ab4e02"
+network_schema_version = 2
+
+[[builds.files]]
+kind = "osm.pbf"
+area = "bensheim-1km"
+file = "bensheim-1km.osm.pbf"
+sha256 = "d433cf32000b2d5b5326bfa62fa75ca9b7ca169ddffb9c9ee8eb7fdb5335cd94"
+
+[[builds.files]]
+kind = "osm.pbf"
+area = "bensheim-2km"
+file = "bensheim-2km.osm.pbf"
+sha256 = "1e113a1fe2ac55f8d85c59b9fc5cd95b03c9302caf4cd97d98181390370197d4"
+
+[[builds.files]]
+kind = "osm.pbf"
+area = "bensheim-5km"
+file = "bensheim-5km.osm.pbf"
+sha256 = "111b992227b7ac01b0e9ce0b587304f3e04c7cd453d68240025584f3e36a8103"
+
+[[builds.files]]
+kind = "rhnet"
+area = "bensheim-1km"
+file = "bensheim-1km.ff048b6f466941c38cf2bbf85ba3f749c4e0a798b2d81e7cc702a681ab034ccb.rhnet"
+sha256 = "ff048b6f466941c38cf2bbf85ba3f749c4e0a798b2d81e7cc702a681ab034ccb"
+
+[[builds.files]]
+kind = "rhnet"
+area = "bensheim-2km"
+file = "bensheim-2km.02bb0f23e9d0cf70919d28f9072cae288fc7fe6f1d63d06ff24797ba137355df.rhnet"
+sha256 = "02bb0f23e9d0cf70919d28f9072cae288fc7fe6f1d63d06ff24797ba137355df"
+
+[[builds.files]]
+kind = "rhnet"
+area = "bensheim-5km"
+file = "bensheim-5km.33674ffd95105eb86fb8724060b309c3be9c5437da37d673257f2e02b9e84466.rhnet"
+sha256 = "33674ffd95105eb86fb8724060b309c3be9c5437da37d673257f2e02b9e84466"
