@@ -124,7 +124,7 @@ release PR.
 | M1.4 | `rusthour-api`: network data types, load a validated network into the simulation (bytes are decoded by `rusthour-import`, ADR-0002), query geometry for rendering | done | feat/M1.4-network-types |
 | M1.5 | `rusthour-viz`: render network, pan/zoom, native + browser | done | feat/M1.5-map-viewer |
 | M1.6 | Sample maps (see below): `assets` workflow publishes OSM extracts per area in `assets-*` pre-releases, recorded in `data/assets.toml` | done | feat/M1.6-asset-workflow |
-| M1.7 | `assets` workflow builds `.rhnet` files with `rusthour-import` (after M1.2), and a deploy job publishes the web viewer plus assets to GitHub Pages (needed for the M1 user trial; release assets can't be fetched cross-origin) | in-review | ci/pages-deploy |
+| M1.7 | `assets` workflow builds `.rhnet` files with `rusthour-import` (after M1.2), and a deploy job publishes the web viewer plus assets to GitHub Pages (needed for the M1 user trial; release assets can't be fetched cross-origin) | done | feat/M1.7-rhnet-assets |
 | M1.8 | `rusthour-viz` loads a Bensheim `.rhnet` map: loading progress, in-page errors for wasm/map load failures, OSM attribution text, startup-time check (3 s native / 5 s browser on bensheim-5km per ADR-0003), frame-time measurement per ADR-0003, street-name labels incl. ä/ö/ü/ß | todo | |
 
 **Sample areas (M1.6):** named, square boxes in

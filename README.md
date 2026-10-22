@@ -91,6 +91,16 @@ PR that records the build in [`data/assets.toml`](data/assets.toml). PRs
 opened by a workflow don't start CI: close and reopen that PR to run the
 checks.
 
+The browser viewer gets its maps from the GitHub Pages site: every deploy
+bundles, per area, the newest recorded map into each version's `maps/`
+folder (so a run for some areas keeps the others), and each release's web
+build keeps the maps of its own commit. Maps are rebuilt
+by running the assets workflow again (merge its PR, then rerun the Pages
+workflow). That is needed after a `NETWORK_SCHEMA_VERSION` bump: the Pages
+deploy skips maps of another schema, and the viewer then shows its demo grid.
+A map whose release was deleted is skipped with a warning; a map whose
+SHA-256 doesn't match fails the deploy.
+
 Map data © OpenStreetMap contributors, available under the
 [ODbL](https://www.openstreetmap.org/copyright); see
 [`data/LICENSE`](data/LICENSE).
