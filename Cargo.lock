@@ -3213,9 +3213,14 @@ name = "rusthour-viz"
 version = "0.1.0"
 dependencies = [
  "eframe",
+ "js-sys",
  "proptest",
  "rusthour-api",
+ "rusthour-import",
+ "serde",
+ "serde_json",
  "wasm-bindgen-futures",
+ "web-sys",
 ]
 
 [[package]]

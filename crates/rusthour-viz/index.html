@@ -13,13 +13,43 @@
     html, body { margin: 0; height: 100%; overflow: hidden; background: #1b1b1b; color: #e0e0e0; }
     /* The app handles touch pan and pinch; the page itself must not move. */
     #rusthour_canvas { position: absolute; inset: 0; width: 100%; height: 100%; touch-action: none; }
-    #status { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center;
-              padding: 2em; text-align: center; font: 18px sans-serif; }
+    #status, #noscript { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center;
+              padding: 2em; text-align: center; font: 18px sans-serif; white-space: pre-line;
+              background: #1b1b1b; overflow: auto; }
+    /* Above #status, whose loading text never changes without JavaScript. */
+    #noscript { z-index: 1; }
   </style>
 </head>
 <body>
   <canvas id="rusthour_canvas"></canvas>
   <div id="status">Loading Rust Hour…</div>
-  <noscript><p>Rust Hour needs JavaScript and WebAssembly.</p></noscript>
+  <script>
+    // Before the wasm runs, nothing else can report that it failed to download
+    // or start (the viewer replaces this text itself once it runs).
+    (function () {
+      var status = document.getElementById("status");
+      function fail(details) {
+        if (status.textContent !== "Loading Rust Hour…") return;
+        status.textContent = "Rust Hour could not be loaded. Check your connection and " +
+          "reload the page. Rust Hour needs a current Firefox, Chrome, Edge or Safari " +
+          "with WebAssembly enabled." + (details ? "\n\nDetails: " + details : "");
+      }
+      // Capture phase: a script that fails to download fires `error` on itself only.
+      window.addEventListener("error", function (e) {
+        var tag = e.target && e.target.tagName;
+        if (tag === "SCRIPT" || tag === "LINK") {
+          fail("");
+        } else if (e.filename && e.filename.indexOf(location.origin) === 0) {
+          // Only our own scripts: not images, nor browser extensions.
+          fail(e.message);
+        }
+      }, true);
+      window.addEventListener("unhandledrejection", function (e) {
+        fail(String(e.reason));
+      });
+    })();
+  </script>
+  <noscript><div id="noscript">Rust Hour needs JavaScript and WebAssembly. Turn on
+    JavaScript, or try a current Firefox, Chrome, Edge or Safari.</div></noscript>
 </body>
 </html>

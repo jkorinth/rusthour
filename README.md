@@ -19,8 +19,8 @@ target are pinned in `rust-toolchain.toml` and installed automatically.
 # Run a headless simulation and print its status as JSON
 cargo run -p rusthour-cli -- run --seed 42 --steps 1000
 
-# Open the viewer (a demo town grid until it loads real maps, M1.8)
-cargo run -p rusthour-viz --release
+# Open the viewer on an imported map (without --map: a demo town grid)
+cargo run -p rusthour-viz --release -- --map bensheim-5km.rhnet
 
 # Import a map (see "Importing maps" below)
 cargo run -p rusthour-import --features osm -- bensheim-5km \
@@ -32,9 +32,10 @@ cargo nextest run --workspace --all-features   # or: cargo test --workspace --al
 
 ## Viewer
 
-Natively, `cargo run -p rusthour-viz --release` opens a window. On Linux it
-needs a running X11 or Wayland session; no extra system packages are needed
-to build it.
+Natively, `cargo run -p rusthour-viz --release -- --map <file.rhnet>` opens a
+window showing that map (see "Importing an area yourself" below); without
+`--map` it shows a demo town grid. On Linux it needs a running X11 or Wayland
+session; no extra system packages are needed to build it.
 
 In the browser, build with [Trunk](https://trunkrs.dev)
 (`cargo install --locked trunk`):
@@ -46,7 +47,10 @@ trunk build --release   # static site in crates/rusthour-viz/dist/
 ```
 
 The browser needs WebGPU or WebGL2 (any current Firefox, Chrome, Edge or
-Safari).
+Safari). It loads the maps listed in `maps/manifest.json` next to the page:
+`bensheim-5km` by default, another area with `?map=<area>` (e.g.
+`?map=bensheim-1km`). Without that list (as with a plain `trunk serve`), or for
+an unknown area, it shows the demo town grid and says why.
 
 Controls: drag to pan, scroll or pinch to zoom, arrow keys or WASD to pan,
 `+`/`-` to zoom, `Home`, `F` or `0` to fit the map, `?` for the list of
