@@ -154,7 +154,7 @@ reproducible from the OSM extract.
 | --- | --- | --- | --- |
 | M2.0 | ADR-0004: vehicle state layout, step pipeline, module interfaces for M2 | done | docs/M2.0-adr-vehicles |
 | M2.1 | Fixed-timestep simulation loop, seeded RNG, sim clock: step pipeline per ADR-0004 (leaders across road ends, ballistic integration, transfers, arrivals), one RNG stream per subsystem, determinism test on wasm32 in CI | todo | |
-| M2.2 | Vehicle state as structure-of-arrays; per-lane sorted vehicle lists | todo | |
+| M2.2 | Vehicle state as structure-of-arrays; per-lane sorted vehicle lists | done | feat/M2.2-vehicle-store |
 | M2.3 | IDM car-following | done | feat/M2.3-idm |
 | M2.4 | Simple routing (A*) and random origin–destination spawning, origins and destinations within the largest strongly connected component | todo | |
 | M2.5 | Basic intersection passage (priority rule only, incl. circulating priority at roundabouts); first a road-attributes PR: road directions and a `roundabout` flag, network schema 3 (ADR-0004) | todo | |
