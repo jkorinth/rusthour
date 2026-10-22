@@ -8,6 +8,7 @@
 compile_error!("the `server` feature is native-only");
 
 mod network;
+mod pacer;
 mod placement;
 mod snapshot;
 
@@ -17,6 +18,7 @@ pub use network::{
     Connection, NETWORK_SCHEMA_VERSION, Network, NetworkError, Node, NodeId, OsmWayPart, Point,
     Road, RoadId,
 };
+pub use pacer::{DEFAULT_BUDGET_S, MAX_FRAME_S, Pacer, scale_from_slider, slider_from_scale};
 pub use placement::Placement;
 pub use rusthour_core::Config;
 pub use snapshot::{VehicleId, VehicleSnapshot};
