@@ -57,6 +57,16 @@ Font Licence 1.0, MIT, Bitstream Vera) are in
 [`crates/rusthour-viz/licenses/`](crates/rusthour-viz/licenses/) and must
 accompany every copy of the viewer; the web build copies them into `dist/`.
 
+### Web viewer
+
+The viewer is online at <https://jkorinth.github.io/rusthour/>, with a
+dropdown to switch versions: `main (development)`, the unreleased build redeployed on every push to
+`main`, and every milestone release after v0.1.0 (each release attaches its
+build as `rusthour-web-<tag>.zip`). Links are shareable (`?v=v0.2.0`), and each
+version also works on its own, e.g.
+<https://jkorinth.github.io/rusthour/main/> or `…/rusthour/v0.2.0/`.
+One-time repository setting: Settings → Pages → Source: "GitHub Actions".
+
 ## Map data
 
 Sample maps (the areas in [`data/areas.toml`](data/areas.toml)) are not
