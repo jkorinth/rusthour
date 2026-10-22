@@ -10,10 +10,30 @@ publish.workspace = true
 
 [dependencies]
 rusthour-api.workspace = true
+# Only the `.rhnet` decoder, never the `osm` feature (ADR-0002; CI checks).
+rusthour-import.workspace = true
 eframe = "0.37"
+serde.workspace = true
+serde_json.workspace = true
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 wasm-bindgen-futures = "0.4"
+# Already in eframe's tree; fetch with download progress needs streams.
+js-sys = "0.3"
+web-sys = { version = "0.3", features = [
+  "CssStyleDeclaration",
+  "Document",
+  "Element",
+  "HtmlElement",
+  "Location",
+  "ReadableStream",
+  "ReadableStreamDefaultReader",
+  "ReadableStreamReadResult",
+  "RequestCache",
+  "RequestInit",
+  "Response",
+  "Window",
+] }
 
 [dev-dependencies]
 proptest.workspace = true

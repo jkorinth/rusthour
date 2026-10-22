@@ -14,6 +14,8 @@ publish = false
 [workspace.dependencies]
 rusthour-core = { path = "crates/rusthour-core" }
 rusthour-api = { path = "crates/rusthour-api" }
+# Default features only outside the importer: `osm` is native-only (ADR-0002).
+rusthour-import = { path = "crates/rusthour-import" }
 rand_chacha = { version = "0.10", default-features = false }
 serde = { version = "1", features = ["derive"] }
 # `float_roundtrip`: exact f64 parsing, so network JSON round-trips losslessly.

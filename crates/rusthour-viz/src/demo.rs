@@ -1,9 +1,9 @@
-//! A small hand-built town grid, shown until `.rhnet` maps load (M1.8).
+//! A small hand-built town grid, shown when no `.rhnet` map is given or found.
 
 use rusthour_api::{Network, Node, NodeId, Point, Road};
 
-use crate::MapSource;
 use crate::camera::LANE_WIDTH_M;
+use crate::map::MapSource;
 
 /// Block size in meters.
 const BLOCK_M: f64 = 120.0;
@@ -49,13 +49,15 @@ pub fn map() -> MapSource {
     }
 
     MapSource {
+        name: "demo".to_owned(),
         network: Network {
             nodes,
             roads,
             connections: vec![],
         },
-        attribution: "Demo network",
+        attribution: "Demo network".to_owned(),
         attribution_url: None,
+        source_date: None,
     }
 }
 
