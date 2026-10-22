@@ -128,6 +128,7 @@ release PR.
 | M1.8 | `rusthour-viz` loads a Bensheim `.rhnet` map: loading progress, in-page errors for wasm/map load failures, OSM attribution text, startup-time check (3 s native / 5 s browser on bensheim-5km per ADR-0003), frame-time measurement per ADR-0003, street-name labels incl. ä/ö/ü/ß | done | feat/M1.8-load-real-maps |
 | M1.9 | M1 user trial (AGENTS.md §8): measure startup (3 s native / 5 s browser) and frame time (ADR-0003 as amended) on bensheim-5km, touch on a real device, middle-click autoscroll suppression, wasm/JS load-failure and panic messages, WebGL2 on Firefox and Safari; results in docs/trials/M1.md | todo | |
 | M1.10 | `rusthour-viz`: map selector in the browser listing the site's maps (`maps/manifest.json`), switching via a shareable `?map=`; the Pages version frame passes `?map=` through to the viewer and back | done | feat/M1.10-map-selector |
+| M1.11 | `rusthour-import`: drop islands, keeping only the part connected to the road nearest the area center; report dropped roads and km, warn above 5%, fail above 50% unless `--allow-drop`. Then rebuild the sample maps. One-way traps inside the kept part are left to routing (M2.4) | done | feat/M1.11-drop-islands |
 
 **Sample areas (M1.6):** named, square boxes in
 [`data/areas.toml`](data/areas.toml), selected by name in the importer
