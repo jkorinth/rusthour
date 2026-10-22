@@ -68,7 +68,9 @@ pub struct Vehicles {
     /// Tick the vehicle departed.
     pub depart_tick: Vec<u64>,
     free: Vec<u32>,
-    lanes: Vec<VecDeque<u32>>,
+    /// Per `LaneId`: slots, head first. Crate-visible so the engine can walk a
+    /// lane while writing the columns; change membership only via the methods.
+    pub(crate) lanes: Vec<VecDeque<u32>>,
     lane_first: Vec<u32>,
 }
 
@@ -85,8 +87,10 @@ impl Vehicles {
             lane_first.push(u32::try_from(lanes.len()).expect("lane count fits u32"));
             // Physical maximum: bumper to bumper (gap 0, which is reachable)
             // at the 4.5 m car length, so a lane queue never reallocates.
+            // Capped (about 18 km of road) so an absurd length that passed
+            // validation can't overflow the allocation; longer lanes just grow.
             #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
-            let cap = (r.length_m / 4.5).ceil() as usize;
+            let cap = (r.length_m / 4.5).ceil().min(4096.0) as usize;
             lanes.extend((0..r.lanes).map(|_| VecDeque::with_capacity(cap)));
         }
         Self {
