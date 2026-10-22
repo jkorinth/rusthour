@@ -2,7 +2,8 @@
 //! extract → [`Network`].
 //!
 //! [`read_pbf`] loads an extract into [`OsmData`], [`import`] turns that into
-//! a network clipped to an area's [`Bbox`]. Kept small on purpose: drivable
+//! a network clipped to an area's [`Bbox`], and [`keep_central_part`] drops
+//! the islands that clipping leaves. Kept small on purpose: drivable
 //! roads, lanes, speed limits and turn restrictions, nothing else yet.
 
 use std::collections::{HashMap, HashSet};
@@ -505,6 +506,113 @@ pub fn import(data: &OsmData, bbox: Bbox) -> Network {
     }
     connect(&mut network, &twin, &node_ids, &data.relations);
     network
+}
+
+/// What [`keep_central_part`] dropped.
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+pub struct Dropped {
+    /// Directed roads.
+    pub roads: usize,
+    /// Their total length in meters, both directions counted.
+    pub length_m: f64,
+}
+
+/// A road's length along its geometry, in meters.
+#[must_use]
+pub fn road_length_m(road: &Road) -> f64 {
+    road.geometry
+        .windows(2)
+        .map(|w| (w[1].x - w[0].x).hypot(w[1].y - w[0].y))
+        .sum()
+}
+
+/// Distance from `p` to the segment `a`–`b`.
+#[must_use]
+pub fn distance_to_segment(p: Point, a: Point, b: Point) -> f64 {
+    let (dx, dy) = (b.x - a.x, b.y - a.y);
+    let len2 = dx * dx + dy * dy;
+    let t = if len2 > 0.0 {
+        (((p.x - a.x) * dx + (p.y - a.y) * dy) / len2).clamp(0.0, 1.0)
+    } else {
+        0.0
+    };
+    (a.x + t * dx - p.x).hypot(a.y + t * dy - p.y)
+}
+
+/// Keeps only the part of `network` linked by roads (in either direction)
+/// to the road passing closest to the area center, the origin of
+/// [`import`]'s coordinates. Drops islands that no trip can reach: streets
+/// whose links run outside the area, or are not drivable.
+///
+/// shortcut: roads of the kept part that one-way streets make a trap
+/// (enter, never leave) stay; routing (M2.4) decides which of them are
+/// exits at the area edge.
+#[must_use]
+pub fn keep_central_part(network: Network) -> (Network, Dropped) {
+    let center = Point { x: 0.0, y: 0.0 };
+    let distance = |r: &Road| {
+        r.geometry
+            .windows(2)
+            .map(|w| distance_to_segment(center, w[0], w[1]))
+            .fold(f64::INFINITY, f64::min)
+    };
+    let Some(start) = network
+        .roads
+        .iter()
+        .min_by(|a, b| distance(a).total_cmp(&distance(b)))
+    else {
+        return (network, Dropped::default());
+    };
+
+    let mut adjacent = vec![vec![]; network.nodes.len()];
+    for r in &network.roads {
+        adjacent[r.from_node.0 as usize].push(r.to_node.0 as usize);
+        adjacent[r.to_node.0 as usize].push(r.from_node.0 as usize);
+    }
+    let mut kept_node = vec![false; network.nodes.len()];
+    let mut stack = vec![start.from_node.0 as usize];
+    while let Some(v) = stack.pop() {
+        if !std::mem::replace(&mut kept_node[v], true) {
+            stack.extend(&adjacent[v]);
+        }
+    }
+
+    // Same order as before, so imports stay reproducible.
+    let mut node_id = vec![None; network.nodes.len()];
+    let mut kept = Network::default();
+    for (i, node) in network.nodes.into_iter().enumerate() {
+        if kept_node[i] {
+            node_id[i] = Some(NodeId(index(kept.nodes.len())));
+            kept.nodes.push(node);
+        }
+    }
+    let mut road_id = vec![None; network.roads.len()];
+    let mut dropped = Dropped::default();
+    for (i, mut road) in network.roads.into_iter().enumerate() {
+        // A road's ends lie in the same part.
+        if let (Some(from), Some(to)) = (
+            node_id[road.from_node.0 as usize],
+            node_id[road.to_node.0 as usize],
+        ) {
+            (road.from_node, road.to_node) = (from, to);
+            road_id[i] = Some(RoadId(index(kept.roads.len())));
+            kept.roads.push(road);
+        } else {
+            dropped.roads += 1;
+            dropped.length_m += road_length_m(&road);
+        }
+    }
+    kept.connections = network
+        .connections
+        .iter()
+        .filter_map(|c| {
+            Some(Connection {
+                from_road: road_id[c.from_road.0 as usize]?,
+                to_road: road_id[c.to_road.0 as usize]?,
+            })
+        })
+        .collect();
+    (kept, dropped)
 }
 
 /// Adds a way segment to `out`, split at interior nodes until its ends
