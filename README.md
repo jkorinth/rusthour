@@ -67,6 +67,11 @@ version also works on its own, e.g.
 <https://jkorinth.github.io/rusthour/main/> or `…/rusthour/v0.2.0/`.
 One-time repository setting: Settings → Pages → Source: "GitHub Actions".
 
+If a release's web build fails, re-run the `web-build` job of its
+release-please run (or build it and `gh release upload <tag> <zip> --clobber`
+by hand), then Actions → Pages → Run workflow. Every deploy unpacks all
+releases; GitHub Pages caps a site at 1 GB.
+
 To try a pull request's web build before it merges, download the
 `rusthour-web-<sha>` artifact from the PR's CI run (kept 7 days), unzip it
 and serve the folder: `python3 -m http.server`, then open
