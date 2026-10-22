@@ -75,14 +75,19 @@ jobs:
       # complete_ways keeps every node of a way that crosses the box, so roads
       # at the edge stay whole instead of being cut off at the last inner node.
       - name: Extract areas
+        env:
+          TIMESTAMP: ${{ steps.source.outputs.timestamp }}
         run: |
           mkdir "$RUNNER_TEMP/out"
           src="$RUNNER_TEMP/src/$(basename "$SOURCE_URL")"
           while read -r area bbox; do
-            cmd="osmium extract -b $bbox --strategy complete_ways --set-bounds -o $area.osm.pbf $(basename "$src")"
+            # osmium extract drops the header's timestamp; keep it, so the maps
+            # record their data's date.
+            header="osmosis_replication_timestamp=$TIMESTAMP"
+            cmd="osmium extract -b $bbox --strategy complete_ways --set-bounds --output-header=$header -o $area.osm.pbf $(basename "$src")"
             echo "$cmd" | tee -a "$RUNNER_TEMP/commands"
             osmium extract -b "$bbox" --strategy complete_ways --set-bounds \
-              -o "$RUNNER_TEMP/out/$area.osm.pbf" "$src"
+              --output-header="$header" -o "$RUNNER_TEMP/out/$area.osm.pbf" "$src"
           done < "$RUNNER_TEMP/plan"
 
       # The importer comes from this run's commit, so each map matches the
