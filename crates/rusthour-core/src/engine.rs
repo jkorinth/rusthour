@@ -19,15 +19,33 @@ impl Default for Config {
     }
 }
 
+/// The engine's random streams, one per subsystem (ADR-0004).
+///
+/// All streams share the scenario seed and differ in the `ChaCha` stream id, so
+/// a new draw in one subsystem never shifts another's sequence. The
+/// discriminants are the stream ids; stream 0 is left unused.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(u64)]
+pub enum Stream {
+    /// Trip generation.
+    Demand = 1,
+    /// Driver behaviour noise (M4).
+    Behavior = 2,
+}
+
+const STREAMS: [Stream; 2] = [Stream::Demand, Stream::Behavior];
+
 /// A deterministic simulation instance.
 ///
 /// Time is an integer tick count, so there is no floating-point drift in the
-/// clock. All randomness must come from `rng`, seeded once at construction.
+/// clock. All randomness must come from the per-subsystem `rngs`, seeded once at
+/// construction.
 #[derive(Debug, Clone)]
 pub struct Engine {
     config: Config,
     tick: u64,
-    rng: ChaCha8Rng,
+    /// Indexed by `Stream as usize - 1`.
+    rngs: [ChaCha8Rng; 2],
     network: Network,
 }
 
@@ -44,7 +62,11 @@ impl Engine {
         Self {
             config,
             tick: 0,
-            rng: ChaCha8Rng::seed_from_u64(seed),
+            rngs: STREAMS.map(|stream| {
+                let mut rng = ChaCha8Rng::seed_from_u64(seed);
+                rng.set_stream(stream as u64);
+                rng
+            }),
             network,
         }
     }
@@ -54,6 +76,11 @@ impl Engine {
         for _ in 0..steps {
             self.tick += 1;
         }
+    }
+
+    /// The random stream of one subsystem.
+    pub fn rng(&mut self, stream: Stream) -> &mut ChaCha8Rng {
+        &mut self.rngs[stream as usize - 1]
     }
 
     /// Number of steps taken so far.
@@ -83,8 +110,11 @@ impl Engine {
         let mut h = StateHasher::new();
         h.write_u64(u64::from(self.config.dt_ms));
         h.write_u64(self.tick);
-        h.write_bytes(&self.rng.get_seed());
-        h.write_u128(self.rng.get_word_pos());
+        for (stream, rng) in STREAMS.iter().zip(&self.rngs) {
+            h.write_bytes(&rng.get_seed());
+            h.write_u64(*stream as u64);
+            h.write_u128(rng.get_word_pos());
+        }
         self.network.hash_into(&mut h);
         h.finish()
     }
