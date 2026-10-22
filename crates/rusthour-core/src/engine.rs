@@ -50,6 +50,10 @@ struct Entrant {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Config {
     /// Length of one simulation step in milliseconds.
+    ///
+    /// At large `dt` a car can wait one step behind a leader that is still
+    /// on the same road at the step start, even if that leader moves on
+    /// this step (ADR-0004, addendum M2.1b).
     pub dt_ms: u32,
     /// Vehicles (active plus waiting) that random demand keeps on the
     /// network; 0 means no demand. Until M5.1 scenarios replace it.
