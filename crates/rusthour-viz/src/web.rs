@@ -73,6 +73,7 @@ async fn fetch_map(progress: &Mutex<Progress>) -> Loaded {
             ));
         }
     };
+    progress.lock().expect("not poisoned").maps = manifest.iter().map(|e| e.area.clone()).collect();
     let search = web_sys::window()
         .and_then(|w| w.location().search().ok())
         .unwrap_or_default();
@@ -102,6 +103,15 @@ async fn fetch_map(progress: &Mutex<Progress>) -> Loaded {
              Details: {url}: {e}.",
             entry.area
         )),
+    }
+}
+
+/// Reloads the page with `?map=<area>`: the URL stays shareable, and Back
+/// returns to the previous map. The wasm itself comes from the HTTP cache.
+pub fn open_map(area: &str) {
+    if let Some(location) = web_sys::window().map(|w| w.location()) {
+        let search = location.search().unwrap_or_default();
+        let _ = location.set_search(&manifest::with_map(&search, area));
     }
 }
 

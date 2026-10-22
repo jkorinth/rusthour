@@ -42,6 +42,8 @@ pub struct Progress {
     pub received: u64,
     /// Expected size, `0` if unknown.
     pub total: u64,
+    /// Areas on this site the user can switch to, from `maps/manifest.json`.
+    pub maps: Vec<String>,
     /// Set when the loader is done.
     pub result: Option<Loaded>,
     /// "Preparing map…" has been shown: decoding blocks the (browser's only)
@@ -72,6 +74,15 @@ impl State {
             Err(message) => Self::Failed(message),
         }
     }
+
+    /// Takes the loader's result, keeping the map list for the selector.
+    fn finish(p: &mut Progress) -> Self {
+        let mut state = Self::from_loaded(p.result.take().unwrap_or(Loaded::Demo(None)));
+        if let Self::Ready(v) = &mut state {
+            v.maps = std::mem::take(&mut p.maps);
+        }
+        state
+    }
 }
 
 /// A loaded map and its view.
@@ -84,6 +95,8 @@ struct Viewer {
     note: Option<String>,
     /// For the debug overlay: area name, nodes, roads.
     stats: (String, usize, usize),
+    /// Areas the map selector offers; empty hides it.
+    maps: Vec<String>,
 }
 
 impl Viewer {
@@ -98,6 +111,7 @@ impl Viewer {
             attribution_url: map.attribution_url,
             source_date: map.source_date,
             note,
+            maps: Vec::new(),
         })
     }
 }
@@ -178,9 +192,10 @@ impl eframe::App for App {
             let mut p = progress.lock().expect("not poisoned");
             if p.result.is_some() && !p.preparing {
                 p.preparing = true;
-            } else if let Some(loaded) = p.result.take() {
+            } else if p.result.is_some() {
+                let state = State::finish(&mut p);
                 drop(p);
-                self.state = State::from_loaded(loaded);
+                self.state = state;
             }
         }
         match &mut self.state {
@@ -207,7 +222,13 @@ impl eframe::App for App {
                     // Measure every frame, not only frames with input.
                     ctx.request_repaint();
                 }
-                show_ready(ui, viewer, &mut self.show_help, d);
+                let chosen = show_ready(ui, viewer, &mut self.show_help, d);
+                #[cfg(target_arch = "wasm32")]
+                if let Some(area) = chosen {
+                    web::open_map(&area);
+                }
+                #[cfg(not(target_arch = "wasm32"))]
+                let _ = chosen; // Native has no map list (yet).
                 if d.shown {
                     show_debug(&ctx, d, viewer);
                 }
@@ -324,7 +345,15 @@ fn show_failed(ui: &mut egui::Ui, message: &str) -> Option<FailedAction> {
     action
 }
 
-fn show_ready(ui: &mut egui::Ui, v: &mut Viewer, show_help: &mut bool, debug: &mut Debug) {
+/// The map view and its controls; returns the area picked in the map
+/// selector, if the user switched maps.
+fn show_ready(
+    ui: &mut egui::Ui,
+    v: &mut Viewer,
+    show_help: &mut bool,
+    debug: &mut Debug,
+) -> Option<String> {
+    let mut chosen = None;
     let ctx = ui.ctx().clone();
     if !ctx.egui_wants_keyboard_input() && ctx.input(|i| i.key_pressed(Key::Questionmark)) {
         *show_help = !*show_help;
@@ -342,6 +371,27 @@ fn show_ready(ui: &mut egui::Ui, v: &mut Viewer, show_help: &mut bool, debug: &m
         .show(&ctx, |ui| {
             egui::Frame::popup(ui.style()).show(ui, |ui| {
                 ui.horizontal(|ui| {
+                    if !v.maps.is_empty() {
+                        let current = &v.stats.0;
+                        let shown = if v.maps.contains(current) {
+                            current.as_str()
+                        } else {
+                            "Choose a map"
+                        };
+                        egui::ComboBox::from_id_salt("map")
+                            .selected_text(shown)
+                            .show_ui(ui, |ui| {
+                                for area in &v.maps {
+                                    if ui.selectable_label(area == current, area).clicked()
+                                        && area != current
+                                    {
+                                        chosen = Some(area.clone());
+                                    }
+                                }
+                            })
+                            .response
+                            .on_hover_text("Switch to another map of this site");
+                    }
                     if ui.button("Fit map").clicked() {
                         v.world.fit();
                     }
@@ -403,6 +453,7 @@ fn show_ready(ui: &mut egui::Ui, v: &mut Viewer, show_help: &mut bool, debug: &m
                 debug.toggle();
             }
         });
+    chosen
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -538,6 +589,26 @@ mod tests {
         assert!(v.note.is_none());
         let names: Vec<&str> = v.world.labels.iter().map(|c| c.text.as_str()).collect();
         assert_eq!(names, ["Schulgäßchen"]);
+    }
+
+    #[test]
+    fn loaded_map_offers_the_other_maps() {
+        let mut p = Progress {
+            maps: vec!["bensheim-1km".into(), "bensheim-5km".into()],
+            result: Some(Loaded::Map(rhnet_bytes())),
+            ..Progress::default()
+        };
+        let State::Ready(v) = State::finish(&mut p) else {
+            panic!("not ready");
+        };
+        assert_eq!(v.maps, ["bensheim-1km", "bensheim-5km"]);
+        // The demo shown for an unknown `?map=` still offers the list.
+        p.result = Some(Loaded::Demo(Some("no such map".into())));
+        p.maps = vec!["bensheim-1km".into()];
+        let State::Ready(v) = State::finish(&mut p) else {
+            panic!("not ready");
+        };
+        assert_eq!(v.maps, ["bensheim-1km"]);
     }
 
     #[test]
