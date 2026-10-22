@@ -42,13 +42,26 @@ pub fn from_rhnet(bytes: &[u8]) -> Result<MapSource, String> {
             .contains("OpenStreetMap")
             .then_some(OSM_COPYRIGHT_URL),
         attribution: metadata.attribution,
-        source_date: Some(metadata.source_date).filter(|d| !d.is_empty()),
+        // The importer writes `unknown` for extracts without a timestamp.
+        source_date: Some(metadata.source_date).filter(|d| !d.is_empty() && d != "unknown"),
     })
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Found in the M1 user trial (docs/trials/M1.md, bug 1): maps with an
+    /// unknown source date showed "data of unknown".
+    #[test]
+    fn regression_m1_trial_unknown_source_date_is_hidden() {
+        let metadata = rusthour_import::rhnet::Metadata {
+            source_date: "unknown".into(),
+            ..Default::default()
+        };
+        let bytes = rusthour_import::rhnet::encode(&metadata, &rusthour_api::Network::default());
+        assert_eq!(from_rhnet(&bytes).unwrap().source_date, None);
+    }
 
     #[test]
     fn bad_bytes_give_the_decoders_message() {
