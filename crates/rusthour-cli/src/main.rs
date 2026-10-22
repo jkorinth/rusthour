@@ -30,7 +30,13 @@ enum Command {
 fn main() {
     match Cli::parse().command {
         Command::Run { seed, steps, dt_ms } => {
-            let mut sim = InProcess::new(Config { dt_ms }, seed);
+            let mut sim = InProcess::new(
+                Config {
+                    dt_ms,
+                    ..Config::default()
+                },
+                seed,
+            );
             sim.step(steps);
             match serde_json::to_string_pretty(&sim.status()) {
                 Ok(json) => println!("{json}"),

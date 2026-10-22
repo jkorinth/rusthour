@@ -166,3 +166,51 @@ proptest! {
         }
     }
 }
+
+/// A ring of four roads plus a one-way spur into it that routing excludes.
+fn ring_with_spur() -> Network {
+    let mut net = chain(&[60.0, 40.0, 8.0, 90.0]);
+    net.roads[3].to = 0;
+    net.nodes[4] = [-1.0, -1.0];
+    net.roads.push(road(4, 1, 50.0));
+    net.connections.extend([(3, 0), (4, 1)]);
+    net
+}
+
+#[test]
+fn demand_keeps_the_target_population_inside_the_routable_roads() {
+    let config = Config {
+        target_vehicles: 12,
+        ..Config::default()
+    };
+    let mut e = Engine::with_network(config, 3, ring_with_spur());
+    let mut entered_spur = false;
+    for _ in 0..3000 {
+        e.step(1);
+        let vs = e.vehicles();
+        // Topped up in phase 1; this step's arrivals (phase 7) are replaced next step.
+        let n = vs.live_count() + e.waiting() as usize;
+        assert!((8..=12).contains(&n), "{n} vehicles at tick {}", e.tick());
+        entered_spur |= (0..vs.slot_count()).any(|s| vs.is_live(s) && vs.road(s) == 4);
+    }
+    assert!(e.vehicles().live_count() > 0);
+    // Slots were freed by arrivals and reused by new trips.
+    assert!((0..e.vehicles().slot_count()).any(|s| e.vehicles().id(s).generation > 0));
+    assert!(
+        !entered_spur,
+        "the spur is outside the strongly connected part"
+    );
+}
+
+#[test]
+fn waiting_trips_enter_one_per_origin_road_and_step() {
+    let config = Config {
+        target_vehicles: 200,
+        ..Config::default()
+    };
+    let mut e = Engine::with_network(config, 3, ring_with_spur());
+    e.step(1);
+    // Four routable origins; the entry gap admits one vehicle on each.
+    assert_eq!(e.vehicles().live_count(), 4);
+    assert_eq!(e.waiting() as usize, 200 - e.vehicles().live_count());
+}
