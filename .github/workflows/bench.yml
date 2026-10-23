@@ -1,0 +1,46 @@
+name: Bench
+
+# Tracked, not gating (AGENTS.md §5): never a required check. Runs on main
+# and on demand to save CI minutes; the numbers go to the job summary.
+on:
+  push:
+    branches: [main]
+    paths:
+      - "crates/rusthour-core/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - ".github/workflows/bench.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: never
+
+jobs:
+  bench:
+    name: criterion
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - run: rustup toolchain install
+      - uses: Swatinem/rust-cache@v2
+      # Short runs: shared runners are noisy, so this tracks order of magnitude.
+      - name: Run benches
+        run: |
+          cargo bench -p rusthour-core --bench engine -- --warm-up-time 1 --measurement-time 3 | tee bench.txt
+          {
+            echo '### rusthour-core benches (ADR-0004: step <= 1 ms at 5,000 vehicles, route <= 0.25 ms/step)'
+            echo '```'
+            grep -E '^(step|route)|time:' bench.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: bench-${{ github.sha }}
+          path: target/criterion
+          retention-days: 30
