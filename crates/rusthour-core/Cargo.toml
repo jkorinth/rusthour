@@ -14,5 +14,7 @@ rand_chacha.workspace = true
 [dev-dependencies]
 proptest.workspace = true
 
-[lints]
-workspace = true
+# Native only: dhat and criterion need std features wasm32 lacks (the wasm
+# determinism job builds this crate's tests for wasm32-wasip1).
+[target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
+dhat.workspace = true

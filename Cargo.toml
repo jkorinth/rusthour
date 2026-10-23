@@ -20,6 +20,7 @@ rand_chacha = { version = "0.10", default-features = false }
 serde = { version = "1", features = ["derive"] }
 # `float_roundtrip`: exact f64 parsing, so network JSON round-trips losslessly.
 serde_json = { version = "1", features = ["float_roundtrip"] }
+dhat = "0.3"
 proptest = { version = "1", default-features = false, features = ["std"] }
 clap = { version = "4", features = ["derive"] }
 postcard = { version = "1", default-features = false, features = ["alloc"] }
