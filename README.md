@@ -69,7 +69,15 @@ Controls: drag to pan (left button, Shift + left or middle button; one finger on
 touch screens), scroll or pinch to zoom, arrow keys or WASD to pan,
 `+`/`-` to zoom, `Home`, `F` or `0` to fit the map, `?` for the list of
 shortcuts. `F3` shows frame times (median and 95th percentile over the last
-10 s), the startup time and the map's size.
+10 s), the startup time, the cost of a simulation step and the map's size.
+
+Traffic runs as soon as a map is shown, about one vehicle per 50 m of road
+(change the number in the controls; that starts over). `Space` plays or
+pauses, `.` (or "Step") advances one 0.1 s step. The speed slider goes from
+0.1× to 1000× real time; when the computer can't keep up, the readout shows
+the speed reached, e.g. "100× (running at 37×)". "Reset" starts over with the
+same seed, so the same traffic plays again. Below are the simulated time and
+the vehicles driving and waiting to enter the network.
 
 The viewer embeds egui's default fonts. Their licenses (SIL OFL 1.1, Ubuntu
 Font Licence 1.0, MIT, Bitstream Vera) are in
