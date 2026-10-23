@@ -233,6 +233,9 @@ viewer, save it, and get a statistical before/after report from the CLI.
 
 ## 7. Backlog (unscheduled)
 
+Longer ideas, such as a detailed maneuvering submodel (turning around in
+congestion, lateral positions), are in [docs/ideas.md](docs/ideas.md).
+
 - Crashes and near misses (reaction delay, perception error, distraction,
   time-to-collision metrics) — explicitly deferred.
 - Pedestrians, bikes, public transit.
