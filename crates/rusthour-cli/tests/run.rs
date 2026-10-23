@@ -26,3 +26,23 @@ fn run_prints_the_state_hash_and_the_counts() {
     assert_eq!(a["waiting"], 0);
     assert_eq!(a, run(&["--steps", "20"]), "same seed, same output");
 }
+
+#[test]
+fn a_missing_map_is_a_clear_error() {
+    let out = Command::new(env!("CARGO_BIN_EXE_rusthour"))
+        .args(["run", "--map", "/nonexistent.rhnet"])
+        .output()
+        .unwrap();
+    assert!(!out.status.success());
+    assert!(String::from_utf8_lossy(&out.stderr).contains("cannot read /nonexistent.rhnet"));
+}
+
+#[test]
+fn vehicles_without_a_map_is_an_error() {
+    let out = Command::new(env!("CARGO_BIN_EXE_rusthour"))
+        .args(["run", "--vehicles", "5"])
+        .output()
+        .unwrap();
+    assert!(!out.status.success());
+    assert!(String::from_utf8_lossy(&out.stderr).contains("--map"));
+}
