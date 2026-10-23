@@ -159,7 +159,7 @@ reproducible from the OSM extract.
 | M2.4 | Simple routing (A*) and random origin–destination spawning, origins and destinations within the largest strongly connected component | done | feat/M2.4-routing-demand |
 | M2.5 | Basic intersection passage (priority rule only, incl. circulating priority at roundabouts); first a road-attributes PR: road directions and a `roundabout` flag, network schema 3 (ADR-0004) | done | feat/M2.5b-priority |
 | M2.6 | `rusthour-api`: step, run/pause, time-scale, vehicle snapshot stream; `Placement` (road offset → world position), `state_hash` moves out of `Status` (ADR-0004) | done | feat/M2.6b-facade |
-| M2.7 | `rusthour-viz`: animated vehicles, play/pause, single step, speed slider (0.1×–100×+, log scale) showing the achieved speed, reset with the same seed, sim clock, active and waiting vehicle counts | todo | |
+| M2.7 | `rusthour-viz`: animated vehicles, play/pause, single step, speed slider (0.1×–100×+, log scale) showing the achieved speed, reset with the same seed, sim clock, active and waiting vehicle counts | done | feat/M2.7-animated-vehicles |
 | M2.8 | Benchmark (criterion): vehicles × steps/s, tracked in CI (non-gating) | done | feat/M2.8-bench |
 
 **Acceptance:** thousands of vehicles run in real time in the browser; same
