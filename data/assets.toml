@@ -157,3 +157,50 @@ kind = "rhnet"
 area = "bensheim-5km"
 file = "bensheim-5km.c83768d9a0a3a0196b530374ca4790e1f199701b0dd6505a14bc9df3af59f960.rhnet"
 sha256 = "c83768d9a0a3a0196b530374ca4790e1f199701b0dd6505a14bc9df3af59f960"
+
+[[builds]]
+tag = "assets-2026-10-23"
+source = "https://download.geofabrik.de/europe/germany/hessen-latest.osm.pbf"
+source_dated = "https://download.geofabrik.de/europe/germany/hessen-261022.osm.pbf"
+source_timestamp = "2026-10-22T20:21:33Z"
+source_md5 = "52760d903bf0eff0833c3bb82946b157"
+tool = "osmium version 1.19.0, libosmium version 2.23.0"
+importer = "rusthour-import 0.2.0"
+importer_commit = "c7d17eb250cd7b22bc71e865a4ee0e05ac9739bd"
+network_schema_version = 3
+
+[[builds.files]]
+kind = "osm.pbf"
+area = "bensheim-1km"
+file = "bensheim-1km.osm.pbf"
+sha256 = "6f7dfc202cad48b5beca8ab27ee319b5a461ed499a0bd68d90fabf6e4f7c0400"
+
+[[builds.files]]
+kind = "osm.pbf"
+area = "bensheim-2km"
+file = "bensheim-2km.osm.pbf"
+sha256 = "612f643fa813340a17e39ba9c94b71284d6dc70bed06287d67fdb80def62bbe8"
+
+[[builds.files]]
+kind = "osm.pbf"
+area = "bensheim-5km"
+file = "bensheim-5km.osm.pbf"
+sha256 = "885b086adfa6449af0bcce157e773b0a4a7d3501cbf3b3e0b6d3031a9f1b9f18"
+
+[[builds.files]]
+kind = "rhnet"
+area = "bensheim-1km"
+file = "bensheim-1km.090c982338068cf33902a32474162e41d4f7853252994ef898bef282fb7eafc5.rhnet"
+sha256 = "090c982338068cf33902a32474162e41d4f7853252994ef898bef282fb7eafc5"
+
+[[builds.files]]
+kind = "rhnet"
+area = "bensheim-2km"
+file = "bensheim-2km.4f2fe2bfe7c510ac956b1a9d072a3306cfd49d092b4b6f431dc6e44c069bed1c.rhnet"
+sha256 = "4f2fe2bfe7c510ac956b1a9d072a3306cfd49d092b4b6f431dc6e44c069bed1c"
+
+[[builds.files]]
+kind = "rhnet"
+area = "bensheim-5km"
+file = "bensheim-5km.eeddc5bb38cece2a48c6e33f52bf5df933218487b9de4f3d5a9bc7b9f9be647f.rhnet"
+sha256 = "eeddc5bb38cece2a48c6e33f52bf5df933218487b9de4f3d5a9bc7b9f9be647f"
