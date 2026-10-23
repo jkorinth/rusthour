@@ -160,7 +160,7 @@ reproducible from the OSM extract.
 | M2.5 | Basic intersection passage (priority rule only, incl. circulating priority at roundabouts); first a road-attributes PR: road directions and a `roundabout` flag, network schema 3 (ADR-0004) | done | feat/M2.5b-priority |
 | M2.6 | `rusthour-api`: step, run/pause, time-scale, vehicle snapshot stream; `Placement` (road offset → world position), `state_hash` moves out of `Status` (ADR-0004) | claimed | feat/M2.6a-snapshot-placement |
 | M2.7 | `rusthour-viz`: animated vehicles, play/pause, single step, speed slider (0.1×–100×+, log scale) showing the achieved speed, reset with the same seed, sim clock, active and waiting vehicle counts | todo | |
-| M2.8 | Benchmark (criterion): vehicles × steps/s, tracked in CI (non-gating) | todo | |
+| M2.8 | Benchmark (criterion): vehicles × steps/s, tracked in CI (non-gating) | done | feat/M2.8-bench |
 
 **Acceptance:** thousands of vehicles run in real time in the browser; same
 seed ⇒ identical state hash.
@@ -243,6 +243,8 @@ congestion, lateral positions), are in [docs/ideas.md](docs/ideas.md).
 - Actuated/adaptive traffic signals.
 - Multi-threaded core (spatial partitioning) and wasm threads.
 - Calibration against real counts.
+- core: flat route pool, so `step` stops allocating right after spawn ramp-up
+  (M2.8 alloc test needs a 20k-step warm-up).
 - **Outlook: import in the browser.** Pick any area on a map in the viewer and
   simulate it, running the `osm` pipeline of `rusthour-import` compiled to
   wasm (osm2streets already runs in the browser for its own demo). Needs OSM
