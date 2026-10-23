@@ -164,7 +164,7 @@ fn load(network: Network) -> Result<InProcess, NetworkError> {
 fn hash_after(network: &Network, seed: u64) -> u64 {
     let mut sim = InProcess::with_network(Config::default(), seed, network.clone()).unwrap();
     sim.step(100);
-    sim.status().state_hash
+    sim.state_hash()
 }
 
 proptest! {

@@ -38,7 +38,10 @@ fn main() {
                 seed,
             );
             sim.step(steps);
-            match serde_json::to_string_pretty(&sim.status()) {
+            // The hash is on demand, not part of `Status`; keep it in the output.
+            let mut out = serde_json::to_value(sim.status()).expect("status is plain data");
+            out["state_hash"] = sim.state_hash().into();
+            match serde_json::to_string_pretty(&out) {
                 Ok(json) => println!("{json}"),
                 Err(err) => {
                     eprintln!("error: could not serialize status: {err}");
