@@ -125,10 +125,22 @@ jobs:
         with:
           persist-credentials: false
       - run: rustup toolchain install
-      - uses: EmbarkStudios/cargo-deny-action@v2
       - uses: taiki-e/install-action@v2
         with:
-          tool: cargo-shear
+          # Pinned (Dependabot doesn't bump it).
+          tool: cargo-deny@0.20.2,cargo-shear
+      # Failures as annotations: job logs aren't readable everywhere.
+      - run: |
+          if ! cargo deny --color never check 2> deny.log; then
+            { grep -E '^error|^\s*(Error|Caused by)' deny.log; tail -n 3 deny.log; } \
+              | sed -n '1,20s/^/::error::/p'
+            # Keep log lines from being read as workflow commands.
+            token=$(openssl rand -hex 16)
+            echo "::stop-commands::$token"
+            cat deny.log
+            echo "::$token::"
+            exit 1
+          fi
       - run: cargo shear
 
   text-lint:
