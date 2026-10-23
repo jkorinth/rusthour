@@ -1,6 +1,6 @@
 //! A small hand-built town grid, shown when no `.rhnet` map is given or found.
 
-use rusthour_api::{Network, Node, NodeId, Point, Road};
+use rusthour_api::{Connection, Network, Node, NodeId, Point, Road, RoadId};
 
 use crate::camera::LANE_WIDTH_M;
 use crate::map::MapSource;
@@ -13,7 +13,7 @@ const ROWS: u32 = 4;
 const SPEED_MPS: f64 = 50.0 / 3.6;
 
 /// A 5 × 4 grid of two-way streets; the middle east–west street has two
-/// lanes per direction, all others one.
+/// lanes per direction, all others one. Every turn but a U-turn is allowed.
 pub fn map() -> MapSource {
     let id = |col: u32, row: u32| NodeId(row * COLUMNS + col);
     let pos = |n: NodeId| Point {
@@ -48,12 +48,26 @@ pub fn map() -> MapSource {
         }
     }
 
+    // Every turn at every node, except U-turns.
+    let mut connections = Vec::new();
+    for (i, from) in roads.iter().enumerate() {
+        for (j, to) in roads.iter().enumerate() {
+            if to.from_node == from.to_node && to.to_node != from.from_node {
+                let id = |k: usize| RoadId(u32::try_from(k).expect("a small grid"));
+                connections.push(Connection {
+                    from_road: id(i),
+                    to_road: id(j),
+                });
+            }
+        }
+    }
+
     MapSource {
         name: "demo".to_owned(),
         network: Network {
             nodes,
             roads,
-            connections: vec![],
+            connections,
         },
         attribution: "Demo network".to_owned(),
         attribution_url: None,

@@ -10,6 +10,7 @@ mod labels;
 )]
 mod manifest;
 mod map;
+mod traffic;
 #[cfg(target_arch = "wasm32")]
 mod web;
 mod world;
@@ -17,10 +18,10 @@ mod world;
 use std::sync::{Arc, Mutex};
 
 use eframe::egui::{self, Align2, Key};
-use rusthour_api::{Config, InProcess, Simulation};
 
 use frame_stats::FrameTimes;
 use map::MapSource;
+use traffic::Traffic;
 use world::World;
 
 /// What a loader hands to the app.
@@ -85,9 +86,12 @@ impl State {
     }
 }
 
-/// A loaded map and its view.
+/// A loaded map, its traffic and its view.
 struct Viewer {
     world: World,
+    traffic: Traffic,
+    /// The population field's value, applied once editing ends.
+    vehicles_edit: u32,
     attribution: String,
     attribution_url: Option<&'static str>,
     source_date: Option<String>,
@@ -101,12 +105,14 @@ struct Viewer {
 
 impl Viewer {
     fn new(map: MapSource, note: Option<String>) -> Result<Self, String> {
-        let sim = InProcess::with_network(Config::default(), 0, map.network)
+        let traffic = Traffic::new(map.network)
             .map_err(|e| format!("The map “{}” is not a valid network: {e}.", map.name))?;
-        let net = sim.network();
+        let net = traffic.network();
         Ok(Self {
             stats: (map.name, net.nodes.len(), net.roads.len()),
             world: World::new(net),
+            vehicles_edit: traffic.target_vehicles(),
+            traffic,
             attribution: map.attribution,
             attribution_url: map.attribution_url,
             source_date: map.source_date,
@@ -222,6 +228,12 @@ impl eframe::App for App {
                     // Measure every frame, not only frames with input.
                     ctx.request_repaint();
                 }
+                viewer
+                    .traffic
+                    .frame(f64::from(ctx.input(|i| i.unstable_dt)));
+                if !viewer.traffic.pacer.is_paused() {
+                    ctx.request_repaint();
+                }
                 let chosen = show_ready(ui, viewer, &mut self.show_help, d);
                 #[cfg(target_arch = "wasm32")]
                 if let Some(area) = chosen {
@@ -261,6 +273,14 @@ fn show_debug(ctx: &egui::Context, d: &Debug, v: &Viewer) {
                             d.startup_s.map_or_else(String::new, |s| {
                                 format!("{s:.2} s to first map frame")
                             }),
+                        ),
+                        (
+                            "Simulation",
+                            format!(
+                                "{} steps last frame, {:.3} ms per step",
+                                v.traffic.last_steps,
+                                v.traffic.step_cost_s * 1e3
+                            ),
                         ),
                         (
                             "Map",
@@ -345,6 +365,91 @@ fn show_failed(ui: &mut egui::Ui, message: &str) -> Option<FailedAction> {
     action
 }
 
+/// Space plays or pauses, `.` steps once.
+fn sim_keys(ctx: &egui::Context, t: &mut Traffic) {
+    // A focused button takes Space itself.
+    if ctx.egui_wants_keyboard_input() || ctx.memory(|m| m.focused().is_some()) {
+        return;
+    }
+    if ctx.input(|i| i.key_pressed(Key::Space)) {
+        t.toggle_pause();
+    }
+    if ctx.input(|i| i.key_pressed(Key::Period)) {
+        t.step_once();
+    }
+}
+
+/// Play/pause, step, speed, reset, population and the readouts.
+fn show_sim_controls(ui: &mut egui::Ui, v: &mut Viewer) {
+    let t = &mut v.traffic;
+    let paused = t.pacer.is_paused();
+    ui.horizontal_wrapped(|ui| {
+        let (icon, tip) = if paused {
+            ("▶ Play", "Run the simulation (Space)")
+        } else {
+            ("⏸ Pause", "Pause the simulation (Space)")
+        };
+        if ui.button(icon).on_hover_text(tip).clicked() {
+            t.toggle_pause();
+        }
+        if ui
+            .button("Step")
+            .on_hover_text("Pause and advance one step, 0.1 s (.)")
+            .clicked()
+        {
+            t.step_once();
+        }
+        let mut exp = rusthour_api::slider_from_scale(t.pacer.scale());
+        let speed = ui
+            .add(
+                egui::Slider::new(&mut exp, traffic::SLIDER_RANGE)
+                    .show_value(false)
+                    .text("speed"),
+            )
+            .on_hover_text("Simulated time per real second, 0.1× to 1000×");
+        if speed.changed() {
+            t.pacer.set_scale(traffic::scale_at(exp));
+        }
+        ui.label(traffic::speed_label(
+            t.pacer.scale(),
+            t.pacer.achieved_scale(),
+            paused,
+        ));
+        if ui
+            .button("Reset")
+            .on_hover_text("Start over with the same seed: the same traffic again")
+            .clicked()
+        {
+            t.reset();
+        }
+        // One group, so the wrap never splits the number from its unit.
+        let field = ui
+            .horizontal(|ui| {
+                let field = ui
+                    .add(egui::DragValue::new(&mut v.vehicles_edit).range(0..=100_000))
+                    .on_hover_text("Vehicles on the map; changing it restarts the simulation");
+                ui.label("vehicles (restarts)");
+                field
+            })
+            .inner;
+        if v.vehicles_edit != t.target_vehicles() && !field.dragged() && !field.has_focus() {
+            t.set_target_vehicles(v.vehicles_edit);
+        }
+    });
+    let status = t.status();
+    ui.horizontal_wrapped(|ui| {
+        ui.monospace(traffic::format_clock(status.sim_time_ms))
+            .on_hover_text("Simulated time since the start");
+        if paused {
+            ui.strong("paused");
+        }
+        ui.label(format!(
+            "· {} driving · {} waiting to enter",
+            status.vehicles, status.waiting
+        ));
+    });
+}
+
 /// The map view and its controls; returns the area picked in the map
 /// selector, if the user switched maps.
 fn show_ready(
@@ -361,10 +466,12 @@ fn show_ready(
     if *show_help && ctx.input(|i| i.key_pressed(Key::Escape)) {
         *show_help = false;
     }
+    sim_keys(&ctx, &mut v.traffic);
 
+    let ahead_s = v.traffic.ahead_s();
     egui::CentralPanel::default()
         .frame(egui::Frame::central_panel(ui.style()).inner_margin(0.0))
-        .show(ui, |ui| v.world.show(ui));
+        .show(ui, |ui| v.world.show(ui, &v.traffic.snapshot, ahead_s));
 
     egui::Area::new(egui::Id::unique("view_controls"))
         .anchor(Align2::LEFT_TOP, [8.0, 8.0])
@@ -399,6 +506,7 @@ fn show_ready(
                         *show_help = !*show_help;
                     }
                 });
+                show_sim_controls(ui, v);
             });
         });
 

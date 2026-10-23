@@ -15,6 +15,8 @@ rusthour-import.workspace = true
 eframe = "0.37"
 serde.workspace = true
 serde_json.workspace = true
+# Already in eframe's tree: `Instant` that also works in the browser.
+web-time = "1.1"
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 wasm-bindgen-futures = "0.4"
