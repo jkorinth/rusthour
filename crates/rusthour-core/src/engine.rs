@@ -7,6 +7,8 @@ use rand_chacha::ChaCha8Rng;
 use rand_chacha::rand_core::SeedableRng;
 
 use crate::StateHasher;
+use crate::control::priority::Priority;
+use crate::control::{Approach, Controller, NodeControl};
 use crate::demand::{DemandContext, RandomOd, Trip};
 use crate::network::Network;
 use crate::routing::Router;
@@ -101,6 +103,18 @@ pub struct Engine {
     /// Per `LaneId`: how far the head may move this step without passing
     /// its leader on a later road (phase 4 writes, phase 5 reads).
     head_limit_m: Vec<f64>,
+    /// Per `LaneId`: the head was told to stop at the road end (phase 3
+    /// writes, phase 4 reads).
+    stop: Vec<bool>,
+    /// One controller per node.
+    controls: Vec<NodeControl>,
+    /// Roads by end node, ascending: node `n`'s are
+    /// `incoming[incoming_first[n]..incoming_first[n + 1]]`.
+    incoming: Vec<u32>,
+    incoming_first: Vec<u32>,
+    /// Phase 3 scratch, reused every step.
+    approaches: Vec<Approach>,
+    go: Vec<bool>,
     /// Phase 6 scratch, reused every step.
     entrants: Vec<Entrant>,
     router: Router,
@@ -125,8 +139,27 @@ impl Engine {
     }
 
     /// Creates an engine at time zero running on `network`.
+    ///
+    /// # Panics
+    /// If the network has more than `u32::MAX` roads.
     #[must_use]
     pub fn with_network(config: Config, seed: u64, network: Network) -> Self {
+        let lanes = network.roads.iter().map(|r| usize::from(r.lanes)).sum();
+        let mut incoming: Vec<u32> = (0..network.roads.len())
+            .map(|r| u32::try_from(r).expect("road id fits u32"))
+            .collect();
+        incoming.sort_by_key(|&r| (network.roads[r as usize].to, r));
+        let incoming_first: Vec<u32> = (0..=network.nodes.len())
+            .map(|n| {
+                let n = u32::try_from(n).expect("node id fits u32");
+                let before = incoming.partition_point(|&r| network.roads[r as usize].to < n);
+                u32::try_from(before).expect("road id fits u32")
+            })
+            .collect();
+        let controls = incoming_first
+            .windows(2)
+            .map(|w| NodeControl::Priority(Priority::new(&incoming[w[0] as usize..w[1] as usize])))
+            .collect();
         Self {
             config,
             tick: 0,
@@ -136,10 +169,13 @@ impl Engine {
                 rng
             }),
             vehicles: Vehicles::new(&network),
-            head_limit_m: vec![
-                f64::INFINITY;
-                network.roads.iter().map(|r| usize::from(r.lanes)).sum()
-            ],
+            head_limit_m: vec![f64::INFINITY; lanes],
+            stop: vec![false; lanes],
+            controls,
+            incoming,
+            incoming_first,
+            approaches: Vec::new(),
+            go: Vec::new(),
             entrants: Vec::new(),
             router: Router::new(&network),
             demand: RandomOd {
@@ -162,8 +198,7 @@ impl Engine {
         for _ in 0..steps {
             self.spawn_trips();
             // 2. Route updates: none in M2 (M5.5).
-            // 3. Intersection decisions: none until M2.5b, so there is no
-            //    stop line and every head may pass its road end.
+            self.decide();
             self.accelerations();
             self.integrate();
             self.transfer();
@@ -254,6 +289,47 @@ impl Engine {
         &self.vehicles
     }
 
+    /// Phase 3: each node's controller decides for the lane heads within
+    /// their look-ahead of its end; heads told to stop get a stop line.
+    fn decide(&mut self) {
+        self.stop.fill(false);
+        let (net, vs) = (&self.network, &self.vehicles);
+        for (n, control) in self.controls.iter_mut().enumerate() {
+            let roads = self.incoming_first[n] as usize..self.incoming_first[n + 1] as usize;
+            self.approaches.clear();
+            for &r in &self.incoming[roads] {
+                let Some(&s) = vs.lane(vs.lane_id(r, 0)).front() else {
+                    continue;
+                };
+                let u = s as usize;
+                // The destination's end is no node passage (it arrives there).
+                let Some(&to_road) = vs.route[u].get(vs.route_pos[u] as usize + 1) else {
+                    continue;
+                };
+                let (p, v) = (&vs.params[u], vs.speed_mps[u]);
+                let dist_m = net.roads[r as usize].length_m - vs.pos_m[u];
+                if dist_m > horizon(p, v) {
+                    continue;
+                }
+                self.approaches.push(Approach {
+                    from_road: r,
+                    to_road,
+                    slot: s,
+                    dist_m,
+                    speed_mps: v,
+                    min_gap_m: p.min_gap_m,
+                    can_stop: dist_m >= v * v / (2.0 * p.comfort_decel_mps2),
+                });
+            }
+            self.go.clear();
+            self.go.resize(self.approaches.len(), false);
+            control.decide(net, self.tick, &self.approaches, &mut self.go);
+            for (a, &go) in self.approaches.iter().zip(&self.go) {
+                self.stop[vs.lane_id(a.from_road, 0)] = !go;
+            }
+        }
+    }
+
     /// Phase 4: IDM accelerations from start-of-step state, lane by lane.
     fn accelerations(&mut self) {
         // Taken out so the rest of the store stays readable; no allocation.
@@ -270,6 +346,14 @@ impl Engine {
                     Some(Leader {
                         gap_m: (vs.pos_m[l] - vs.params[l].length_m - vs.pos_m[s]).max(0.0),
                         speed_mps: vs.speed_mps[l],
+                    })
+                } else if self.stop[q] {
+                    // Stop line: a standing obstacle at the road end. The
+                    // clamp keeps the head `s0` short of it, never across.
+                    self.head_limit_m[q] = road.length_m - p.min_gap_m;
+                    Some(Leader {
+                        gap_m: road.length_m - vs.pos_m[s],
+                        speed_mps: 0.0,
                     })
                 } else {
                     let leader = leader_ahead(net, vs, s, road.length_m - vs.pos_m[s]);
@@ -435,6 +519,9 @@ impl Engine {
         }
         self.network.hash_into(&mut h);
         self.vehicles.hash_into(&mut h);
+        for c in &self.controls {
+            c.hash_into(&mut h);
+        }
         for q in &self.pending {
             h.write_u64(q.len() as u64);
             for t in q {
@@ -461,9 +548,7 @@ pub fn run_and_hash(config: Config, seed: u64, steps: u64) -> u64 {
 /// the next route road that has one, within `50 m + v²/b` (ADR-0004 §2). The
 /// destination's end is free road.
 fn leader_ahead(net: &Network, vs: &Vehicles, slot: usize, mut dist_m: f64) -> Option<Leader> {
-    let p = &vs.params[slot];
-    let v = vs.speed_mps[slot];
-    let horizon = LOOK_AHEAD_M + v * v / p.comfort_decel_mps2;
+    let horizon = horizon(&vs.params[slot], vs.speed_mps[slot]);
     let route = &vs.route[slot];
     for &r in &route[vs.route_pos[slot] as usize + 1..] {
         if dist_m > horizon {
@@ -481,6 +566,11 @@ fn leader_ahead(net: &Network, vs: &Vehicles, slot: usize, mut dist_m: f64) -> O
     None
 }
 
+/// How far ahead a vehicle at speed `v` looks: `50 m + v²/b`.
+fn horizon(p: &IdmParams, v: f64) -> f64 {
+    LOOK_AHEAD_M + v * v / p.comfort_decel_mps2
+}
+
 /// A vehicle entering `route[0]` at offset 0, lane 0, with speed `v`.
 fn entering(route: &[u32], params: IdmParams, v: f64, tick: u64) -> NewVehicle<'_> {
     NewVehicle {
@@ -493,3 +583,6 @@ fn entering(route: &[u32], params: IdmParams, v: f64, tick: u64) -> NewVehicle<'
         depart_tick: tick,
     }
 }
+
+#[cfg(test)]
+mod tests;

@@ -13,8 +13,10 @@ use rusthour_core::{Config, Engine, Stream, run_and_hash};
 /// now includes the network. Changed in M2.1a: one random stream per
 /// subsystem, each hashed. Changed in M2.1b: the golden run is now the
 /// traffic scenario below (step pipeline, random demand and routing), and
-/// the hash includes the vehicle store and the waiting trips.
-const GOLDEN_HASH: u64 = 15_891_696_688_621_766_271;
+/// the hash includes the vehicle store and the waiting trips. Changed in
+/// M2.5b: heads yield at nodes by the priority rule, and the hash includes
+/// each node's controller state.
+const GOLDEN_HASH: u64 = 5_873_231_017_195_465_414;
 
 /// A four-road ring with a short road and a merging side road that routing
 /// excludes. Random demand keeps 10 vehicles on the ring, and hand-placed
