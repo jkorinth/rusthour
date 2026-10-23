@@ -62,6 +62,18 @@ impl Placement {
         Self { roads }
     }
 
+    /// Whether `road` has a twin, so its lanes lie right of its geometry
+    /// rather than centered on it; frontends draw such roads shifted the same
+    /// way.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `road` is not in the network this was built from.
+    #[must_use]
+    pub fn has_twin(&self, road: RoadId) -> bool {
+        self.roads[road.0 as usize].twin
+    }
+
     /// World position and unit heading `[x, y]` of a vehicle's front bumper at
     /// `offset_m` on `lane` of `road`. The offset is clamped to the road. Lane 0 is rightmost; the
     /// lanes are `lane_width_m` wide.
@@ -183,6 +195,7 @@ mod tests {
         let (west, head) = twin.place(RoadId(1), 0, 90.0, 3.5);
         assert!((east.y + 1.75).abs() < 1e-9 && (west.y - 1.75).abs() < 1e-9);
         assert!((west.x - east.x).abs() < 1e-9 && head[0] < 0.0);
+        assert!(twin.has_twin(RoadId(1)) && !solo.has_twin(RoadId(0)));
     }
 
     #[test]
