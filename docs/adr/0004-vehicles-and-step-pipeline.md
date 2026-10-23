@@ -395,3 +395,13 @@ The step pipeline as merged deviates from §2 in three accepted ways:
 - **Route cap:** at most 8 trips are routed and inserted per step, starting
   at a rotating origin; the rest wait. The value is a `shortcut:` until
   M2.8 times routing.
+
+## Addendum (M2.5b)
+
+- **`Approach.min_gap_m`:** the arriving test `dist ≤ 3 s · v + 2·s0`
+  uses each vehicle's own `s0`, so `Approach` carries it.
+- **Sticky deadlock winner:** `Priority` keeps the slot that won the last
+  deadlock, and that slot wins again while it is a candidate. The pointer
+  turns only when a new winner is picked, i.e. once per vehicle served.
+  Rotating it every tick let no head reach `!can_stop` when heads arrived
+  together.
