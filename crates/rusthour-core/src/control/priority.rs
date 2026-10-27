@@ -67,6 +67,11 @@ fn arriving(a: &Approach) -> bool {
     a.dist_m <= 3.0 * a.speed_mps + 2.0 * a.min_gap_m
 }
 
+/// Arriving and able to enter: the heads others yield to.
+fn competing(a: &Approach) -> bool {
+    arriving(a) && !a.blocked
+}
+
 impl Controller for Priority {
     fn decide(&mut self, net: &Network, tick: u64, aps: &[Approach], go: &mut [bool]) {
         // Forget heads that left; note new arrivals.
@@ -93,7 +98,7 @@ impl Controller for Priority {
         // the right, or opposite/merging (|cross| ≤ 0.5) and there first.
         let yields = |i: usize, j: usize| {
             let (a, b) = (&aps[i], &aps[j]);
-            if i == j || !arriving(b) {
+            if i == j || !competing(b) {
                 return false;
             }
             match class(net, b).partial_cmp(&class(net, a)) {
@@ -111,14 +116,14 @@ impl Controller for Priority {
         };
         for (i, g) in go.iter_mut().enumerate() {
             *g = self.arms[self.arm(&aps[i])].released == aps[i].slot
-                || !(0..aps.len()).any(|j| yields(i, j));
+                || !aps[i].blocked && !(0..aps.len()).any(|j| yields(i, j));
         }
 
-        // Deadlock: every arriving head yields. The top class's earliest
+        // Deadlock: every competing head yields. The top class's earliest
         // arrival goes, ties to the first arm from the rotating pointer.
-        let stuck = (0..aps.len()).all(|i| !(go[i] && arriving(&aps[i])));
-        let top = (0..aps.len()).filter(|&i| arriving(&aps[i])).filter(|&i| {
-            !(0..aps.len()).any(|j| arriving(&aps[j]) && class(net, &aps[j]) > class(net, &aps[i]))
+        let stuck = (0..aps.len()).all(|i| !(go[i] && competing(&aps[i])));
+        let top = (0..aps.len()).filter(|&i| competing(&aps[i])).filter(|&i| {
+            !(0..aps.len()).any(|j| competing(&aps[j]) && class(net, &aps[j]) > class(net, &aps[i]))
         });
         let n = self.arms.len();
         let turn = |i: usize| (self.arm(&aps[i]) + n - self.pointer as usize) % n;
@@ -194,6 +199,7 @@ mod tests {
             speed_mps,
             min_gap_m: 2.0,
             can_stop: dist_m >= speed_mps * speed_mps / 4.0,
+            blocked: false,
         }
     }
 
@@ -261,18 +267,19 @@ mod tests {
     }
 
     fn arriving(a: &Approach) -> bool {
-        a.dist_m <= 3.0 * a.speed_mps + 2.0 * a.min_gap_m
+        a.dist_m <= 3.0 * a.speed_mps + 2.0 * a.min_gap_m && !a.blocked
     }
 
     proptest! {
-        /// On every tick: if any head is arriving, an arriving head gets
-        /// `go` (no deadlock), and a head told to stop always has an
-        /// arriving head of at least its class (no major waits for a minor).
+        /// On every tick: if any unblocked head is arriving, one of them
+        /// gets `go` (no deadlock), and an unblocked head told to stop
+        /// always has such a head of at least its class (no major waits for
+        /// a minor, nor for a head that can't enter).
         #[test]
         fn some_arrival_goes_and_no_head_waits_for_a_lower_class(
             classes in prop::array::uniform4((any::<bool>(), prop::sample::select(vec![8.3, 13.9]), 1..=2u8)),
             ticks in prop::collection::vec(
-                prop::array::uniform4(prop::option::of((0..3u32, 0.0..60.0f64, 0.0..14.0f64))),
+                prop::array::uniform4(prop::option::of((0..3u32, 0.0..60.0f64, 0.0..14.0f64, prop::bool::weighted(0.2)))),
                 1..12,
             ),
         ) {
@@ -281,13 +288,13 @@ mod tests {
             for (tick, heads) in (0u64..).zip(&ticks) {
                 let aps: Vec<Approach> = (0..4u32)
                     .zip(heads)
-                    .filter_map(|(r, h)| h.map(|(s, d, v)| ap(r, r * 4 + s, d, v)))
+                    .filter_map(|(r, h)| h.map(|(s, d, v, blocked)| Approach { blocked, ..ap(r, r * 4 + s, d, v) }))
                     .collect();
                 let go = decide(&mut p, &net, tick, &aps);
                 if aps.iter().any(arriving) {
                     prop_assert!(aps.iter().zip(&go).any(|(a, &g)| g && arriving(a)), "deadlock: {aps:?}");
                 }
-                for (a, _) in aps.iter().zip(&go).filter(|&(_, &g)| !g) {
+                for (a, _) in aps.iter().zip(&go).filter(|&(a, &g)| !g && !a.blocked) {
                     let held_by_equal_or_higher = aps.iter().any(|b| {
                         b.slot != a.slot && arriving(b) && class(&net, b) >= class(&net, a)
                     });

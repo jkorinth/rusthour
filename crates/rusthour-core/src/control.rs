@@ -25,6 +25,9 @@ pub struct Approach {
     pub min_gap_m: f64,
     /// `dist ≥ v²/(2b)`: it can still stop at the road end.
     pub can_stop: bool,
+    /// No room for the whole car on `to_road`: it must not enter the node
+    /// (don't block the box), and no one yields to it.
+    pub blocked: bool,
 }
 
 /// Decides which approaches of one node may pass.

@@ -405,3 +405,34 @@ The step pipeline as merged deviates from §2 in three accepted ways:
   turns only when a new winner is picked, i.e. once per vehicle served.
   Rotating it every tick let no head reach `!can_stop` when heads arrived
   together.
+
+## Addendum (M2 trial)
+
+The M2 trial froze traffic at every density, with no vehicle ever arriving
+again. Cause: a priority winner whose next road was full still held every
+approach that yields to it. At split junctions (two nodes joined by short
+links, common in OSM), that closed a cycle of "yields to" and "waits for
+room behind": the cars freeze and no arrival ever comes.
+
+- **Don't block the box:** `Approach.blocked` is set when the next route
+  road's tail leaves less than the head's own length behind it. A blocked
+  head never gets `go` unless it was already released, and no one yields
+  to it (it is not *competing*: arriving and not blocked). It stays in the
+  approach list, so its arm keeps its arrival time. The deadlock rule picks
+  only among competing heads.
+- **Stop line and leader:** a head told to stop also respects the next
+  road's tail when that tail's rear still sticks out over the road end (an
+  entrant blocked at a merge), so it never overlaps it.
+- **Route capacity:** a slot's route `Vec` reserves the longest route so
+  far, rounded up to a power of two. With traffic flowing, per-slot growth
+  no longer keeps the allocation count above zero after warm-up.
+- **Saturated roundabout test:** entries also wait for room on the full
+  ring now, so their bound is the minute of §2 (was 30 s). "Circulating
+  roads never stop" counts only stops while the next ring road has room.
+- **Known limit:** spillback can still fill a ring of one-lane roads whose
+  heads each wait for room on the next one. That is a physical gridlock: on
+  bensheim-5km it forms at 500 vehicles after about 30 min, and at 5,000
+  within minutes. Detecting and recovering from it is M3.5. Looking ahead
+  through roads too short to stop on was tried and rejected: cars already
+  on such a road (spawned there, or held) then wait for a long road whose
+  head waits for them.
