@@ -4,7 +4,7 @@ members = ["crates/*"]
 
 [workspace.package]
 # Bumped by release-please (see release-please-config.json). Do not edit by hand.
-version = "0.2.0"
+version = "0.3.0"
 edition = "2024"
 rust-version = "1.97"
 repository = "https://github.com/jkorinth/rusthour"

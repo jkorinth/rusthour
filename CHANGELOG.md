@@ -1,5 +1,46 @@
 # Changelog
 
+## [0.3.0](https://github.com/jkorinth/rusthour/compare/v0.2.0...v0.3.0) (2026-10-27)
+
+
+### ⚠ BREAKING CHANGES
+
+* **api:** `Status::state_hash` is removed (use `Simulation::state_hash`), `Simulation` has two new required methods, and `PROTOCOL_VERSION` is 2.
+* **api:** NETWORK_SCHEMA_VERSION is 3 and Road has a new roundabout field; .rhnet maps of schema 2 must be rebuilt.
+
+### Features
+
+* **api:** Pacer for real-time stepping ([5dc8ca7](https://github.com/jkorinth/rusthour/commit/5dc8ca7d97feca90e4cb31cb6d956f40d6e339b2))
+* **api:** road headings and roundabout flag, network schema 3 ([0999138](https://github.com/jkorinth/rusthour/commit/09991386e558a23c41ad50a6c3143173282c99ac))
+* **api:** stream vehicle snapshots and move the state hash out of Status ([07641d3](https://github.com/jkorinth/rusthour/commit/07641d3b79c0fb1698ebc902d782f890bc324e48))
+* **api:** tell whether a road has a twin, so frontends draw it shifted ([9572eef](https://github.com/jkorinth/rusthour/commit/9572eef6c940f55909a6f31807239c4ceb0e5df3))
+* **api:** vehicle snapshot types and Placement ([e23975e](https://github.com/jkorinth/rusthour/commit/e23975e0ccf756735b9b751e4c06feff83067cd9))
+* **cli:** run on a map with --map and --vehicles ([ca40c7d](https://github.com/jkorinth/rusthour/commit/ca40c7d410737f19ed522e421f0c6d9a0bb823b4))
+* **core:** A* routing and random origin–destination demand ([7cdf529](https://github.com/jkorinth/rusthour/commit/7cdf529a7de7ac43df13508a9b62f070c50a0915))
+* **core:** IDM car-following acceleration ([b6700ee](https://github.com/jkorinth/rusthour/commit/b6700ee4d35db717a85161592c7e1c29cc542c65))
+* **core:** one random stream per subsystem ([bd99e8d](https://github.com/jkorinth/rusthour/commit/bd99e8de9e8759e20e9c8f31d23b788d70278b70))
+* **core:** priority rule for intersections and roundabouts ([cde4f84](https://github.com/jkorinth/rusthour/commit/cde4f846991d16bce93d0ebb3116231a83c93e64))
+* **core:** spawn random demand trips through the router each step ([ad39137](https://github.com/jkorinth/rusthour/commit/ad39137a3e98b92ddc810eff60b24d09abaac596))
+* **core:** step pipeline with IDM, integration, road transfers and arrivals ([23ffbed](https://github.com/jkorinth/rusthour/commit/23ffbeda264457ed86a2e056a74c27c0aa540751))
+* **core:** vehicle store with generational slots and per-lane sorted lists ([a30fe13](https://github.com/jkorinth/rusthour/commit/a30fe13e283a0f4b3f26bccbf836856fcc4bce35))
+* **core:** yield at intersections and stop at the line when told to ([e74936c](https://github.com/jkorinth/rusthour/commit/e74936cb38ae19d84dc182f5d52cd3465a7d14f1))
+* **import:** set roundabout from junction=roundabout|circular ([dc466bd](https://github.com/jkorinth/rusthour/commit/dc466bdb52cf7f96c7b996220bb0c91f246821b3))
+* **viz:** animate vehicles with play, pause, step and a speed slider ([8358007](https://github.com/jkorinth/rusthour/commit/8358007439ec2b4c81f31418ffa5c3f71f6848c6))
+
+
+### Bug Fixes
+
+* **core:** document IDM gap and desired-speed contract, test gap monotonicity ([68da855](https://github.com/jkorinth/rusthour/commit/68da855040805c6ff065c5986827674254564a90))
+* **core:** don't let a car with no room ahead hold the junction ([5fa8122](https://github.com/jkorinth/rusthour/commit/5fa8122caa5fb91487d8a0e94bf41f7020416e29))
+* **core:** give the vehicle test roads the new heading fields ([cf9f081](https://github.com/jkorinth/rusthour/commit/cf9f0816a07626ffe17fffc4deaf1c5dc2cecacf))
+
+
+### Performance Improvements
+
+* **core:** add criterion benchmarks for stepping and routing ([2fc5ead](https://github.com/jkorinth/rusthour/commit/2fc5ead1e157da824b0b7f30081684e8d62d4d3e))
+* **core:** pre-reserve each road's pending-trip queue ([cbfdc29](https://github.com/jkorinth/rusthour/commit/cbfdc29585767d2284393c927cd7a72d17211da4))
+* **core:** size route buffers by the longest route so far ([c6d7779](https://github.com/jkorinth/rusthour/commit/c6d77795951400e76f814c2f0fd9c7b87825596c))
+
 ## [0.2.0](https://github.com/jkorinth/rusthour/compare/v0.1.0...v0.2.0) (2026-10-22)
 
 
