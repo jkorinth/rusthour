@@ -25,7 +25,7 @@ struct Watch {
     max_wait: u64,
     /// Longest run of ticks without its head leaving.
     max_no_discharge: u64,
-    /// Whether its head was ever told to stop.
+    /// Whether its head was ever told to stop while its next road had room.
     stopped: bool,
 }
 
@@ -49,6 +49,11 @@ fn saturate(
                 trips += 1;
             }
         }
+        // Whether each watched head waits for room, as phase 3 will see it.
+        let full: Vec<bool> = (watch.iter())
+            .map(|&r| e.vehicles.lane(e.vehicles.lane_id(r, 0)).front())
+            .map(|f| f.is_some_and(|&s| no_room(&e.vehicles, s as usize)))
+            .collect();
         e.step(1);
         let t = e.tick();
         for (i, &r) in watch.iter().enumerate() {
@@ -66,7 +71,7 @@ fn saturate(
                 last_go[i] = last_go[i].max(t);
             }
             let w = &mut out[i];
-            w.stopped |= e.stop[q];
+            w.stopped |= e.stop[q] && !full[i];
             w.max_wait = w.max_wait.max(t.saturating_sub(last_go[i]));
             w.max_no_discharge = w.max_no_discharge.max(t.saturating_sub(last_leave[i]));
         }
@@ -156,8 +161,9 @@ fn saturated_roundabout_keeps_circulating_priority_and_serves_every_entry() {
         } else {
             assert!(w.stopped, "entry {r} never yielded: {w:?}");
         }
+        // Entries also wait for room on the full ring: ADR-0004's minute.
         assert!(
-            w.max_wait <= 300 && w.max_no_discharge <= 300,
+            w.max_wait <= MINUTE && w.max_no_discharge <= MINUTE,
             "road {r} starved: {w:?}"
         );
     }

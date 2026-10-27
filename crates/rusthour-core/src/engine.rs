@@ -319,6 +319,7 @@ impl Engine {
                     speed_mps: v,
                     min_gap_m: p.min_gap_m,
                     can_stop: dist_m >= v * v / (2.0 * p.comfort_decel_mps2),
+                    blocked: no_room(vs, u),
                 });
             }
             self.go.clear();
@@ -347,17 +348,23 @@ impl Engine {
                         gap_m: (vs.pos_m[l] - vs.params[l].length_m - vs.pos_m[s]).max(0.0),
                         speed_mps: vs.speed_mps[l],
                     })
-                } else if self.stop[q] {
-                    // Stop line: a standing obstacle at the road end. The
-                    // clamp keeps the head `s0` short of it, never across.
-                    self.head_limit_m[q] = road.length_m - p.min_gap_m;
-                    Some(Leader {
-                        gap_m: road.length_m - vs.pos_m[s],
-                        speed_mps: 0.0,
-                    })
                 } else {
-                    let leader = leader_ahead(net, vs, s, road.length_m - vs.pos_m[s]);
-                    self.head_limit_m[q] = leader.map_or(f64::INFINITY, |l| vs.pos_m[s] + l.gap_m);
+                    let dist_m = road.length_m - vs.pos_m[s];
+                    let mut leader = leader_ahead(net, vs, s, dist_m);
+                    let mut limit = leader.map_or(f64::INFINITY, |l| vs.pos_m[s] + l.gap_m);
+                    if self.stop[q] {
+                        // Stop line: a standing obstacle at the road end, unless
+                        // the next road's tail still sticks out nearer. The
+                        // clamp keeps the head `s0` short of it, never across.
+                        limit = limit.min(road.length_m - p.min_gap_m);
+                        if leader.is_none_or(|l| l.gap_m >= dist_m) {
+                            leader = Some(Leader {
+                                gap_m: dist_m,
+                                speed_mps: 0.0,
+                            });
+                        }
+                    }
+                    self.head_limit_m[q] = limit;
                     leader
                 };
                 let v0 = p.desired_speed_factor * road.speed_limit_mps;
@@ -564,6 +571,18 @@ fn leader_ahead(net: &Network, vs: &Vehicles, slot: usize, mut dist_m: f64) -> O
         dist_m += net.roads[r as usize].length_m;
     }
     None
+}
+
+/// Don't block the box: lane head `slot`'s next road has no room for the
+/// whole car yet.
+fn no_room(vs: &Vehicles, slot: usize) -> bool {
+    let Some(&next) = vs.route[slot].get(vs.route_pos[slot] as usize + 1) else {
+        return false;
+    };
+    vs.lane(vs.lane_id(next, 0)).back().is_some_and(|&t| {
+        let t = t as usize;
+        vs.pos_m[t] - vs.params[t].length_m < vs.params[slot].length_m
+    })
 }
 
 /// How far ahead a vehicle at speed `v` looks: `50 m + v²/b`.
