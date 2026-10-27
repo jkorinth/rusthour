@@ -19,10 +19,10 @@ fn no_allocations_in_steady_state() {
         ..Config::default()
     };
     let mut e = Engine::with_network(config, 7, grid::grid(12));
-    // Warm-up: each slot's route Vec grows to the longest route it has met, so
-    // allocations die out only after many reuses (ADR-0004: a flat route pool
-    // would remove this). A change that shifts the trajectory (demand, routing,
-    // the car) may need a longer warm-up.
+    // Warm-up: columns, scratch buffers and route Vecs (sized by the longest
+    // route so far) reach their peaks within about 7,500 steps; traffic still
+    // flows when the window is measured. A change that shifts the trajectory
+    // (demand, routing, the car) may need another warm-up.
     e.step(20_000);
     let _profiler = dhat::Profiler::builder().testing().build();
     let before = dhat::HeapStats::get().total_blocks;

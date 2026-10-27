@@ -72,6 +72,10 @@ pub struct Vehicles {
     /// lane while writing the columns; change membership only via the methods.
     pub(crate) lanes: Vec<VecDeque<u32>>,
     lane_first: Vec<u32>,
+    /// Longest route spawned so far, rounded up to a power of two. Every route
+    /// `Vec` reserves this much, so a reused slot reallocates only after a
+    /// new record, not whenever it meets a longer trip.
+    longest_route: usize,
 }
 
 impl Vehicles {
@@ -107,6 +111,7 @@ impl Vehicles {
             free: Vec::new(),
             lanes,
             lane_first,
+            longest_route: 0,
         }
     }
 
@@ -208,6 +213,8 @@ impl Vehicles {
         let s = slot as usize;
         self.params[s] = v.params;
         self.speed_mps[s] = v.speed_mps;
+        self.longest_route = self.longest_route.max(v.route.len().next_power_of_two());
+        self.route[s].reserve(self.longest_route);
         self.route[s].extend_from_slice(v.route);
         self.depart_tick[s] = v.depart_tick;
         self.push_tail(slot, v.road, v.lane, v.pos_m);
