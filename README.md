@@ -7,10 +7,12 @@ with different vehicle types and driver personalities. Watch it interactively
 in the browser or natively, or run deterministic batch simulations from the
 command line and compare scenarios statistically.
 
-> **Status:** milestone M1, a map viewer. Real OpenStreetMap areas load in
-> an interactive viewer, in the browser
-> ([try it](https://jkorinth.github.io/rusthour/)) or natively, and an
-> importer builds the maps. There is no traffic yet: vehicles arrive with M2.
+> **Status:** milestone M2, first traffic. Vehicles drive on real
+> OpenStreetMap areas with car-following (IDM), right-of-way at junctions and
+> roundabouts, and routes that avoid jams. Watch them in the browser
+> ([try it](https://jkorinth.github.io/rusthour/)) or natively, or run them
+> headless from the command line. Lane changes and traffic lights come with
+> M3, driver and vehicle types with M4.
 > See [ROADMAP.md](ROADMAP.md) for what's planned and
 > [AGENTS.md](AGENTS.md) for how work is done.
 
@@ -26,9 +28,10 @@ Maps aren't in the repository: download a `.rhnet` file from the newest
 `<area>.<sha256>.rhnet`), or import one yourself (see "Map data" below).
 
 ```sh
-# Step an empty simulation (no map or vehicles yet) and print its status as
-# JSON: a smoke test of the simulation core
-cargo run -p rusthour-cli -- run --seed 42 --steps 1000
+# Run 1,000 vehicles on a map for 6,000 steps (10 simulated minutes) and print
+# the status as JSON, including the state hash: same seed, same hash
+cargo run -p rusthour-cli --release -- run --map bensheim-5km.rhnet \
+  --vehicles 1000 --steps 6000 --seed 42
 
 # Open the viewer on a downloaded or imported map (without --map: a demo town
 # grid)
@@ -71,13 +74,14 @@ touch screens), scroll or pinch to zoom, arrow keys or WASD to pan,
 shortcuts. `F3` shows frame times (median and 95th percentile over the last
 10 s), the startup time, the cost of a simulation step and the map's size.
 
-Traffic runs as soon as a map is shown, about one vehicle per 60 m of road
-(change the number in the controls; that starts over). `Space` plays or
-pauses, `.` (or "Step") advances one 0.1 s step. The speed slider goes from
-0.1× to 1000× real time; when the computer can't keep up, the readout shows
-the speed reached, e.g. "100× (running at 37×)". "Reset" starts over with the
-same seed, so the same traffic plays again. Below are the simulated time and
-the vehicles driving and waiting to enter the network.
+Traffic runs as soon as a map is shown, about one vehicle per 60 m of directed
+road, where a two-way street counts twice (change the number in the controls; that
+starts over). `Space` plays or pauses, `.` (or "Step") advances one 0.1 s
+step. The speed slider goes from 0.1× to 1000× real time; when the computer
+can't keep up, the readout shows the speed reached, e.g. "100× (running at
+37×)". "Reset" starts over with the same seed, so the same traffic plays
+again. Below are the simulated time and the vehicles driving and waiting to
+enter the network.
 
 The viewer embeds egui's default fonts. Their licenses (SIL OFL 1.1, Ubuntu
 Font Licence 1.0, MIT, Bitstream Vera) are in
