@@ -161,6 +161,7 @@ reproducible from the OSM extract.
 | M2.6 | `rusthour-api`: step, run/pause, time-scale, vehicle snapshot stream; `Placement` (road offset → world position), `state_hash` moves out of `Status` (ADR-0004) | done | feat/M2.6b-facade |
 | M2.7 | `rusthour-viz`: animated vehicles, play/pause, single step, speed slider (0.1×–100×+, log scale) showing the achieved speed, reset with the same seed, sim clock, active and waiting vehicle counts | done | feat/M2.7-animated-vehicles |
 | M2.8 | Benchmark (criterion): vehicles × steps/s, tracked in CI (non-gating) | done | feat/M2.8-bench |
+| M2.9 | Congestion-aware routing: current travel times, staggered rerouting (perfect information; pulled from M5.5) | done | feat/M2.9-congestion-routing |
 | M2.10 | Stuck-vehicle safety net: remove vehicles stuck > 300 s and count them (minimal part of M3.5) | done | feat/M2.10-stuck-removal |
 
 **Acceptance:** thousands of vehicles run in real time in the browser; same
@@ -196,7 +197,7 @@ seed ⇒ identical state hash.
 | M5.2 | Agents with activity chains (home, work, shop, school, leisure) | todo | |
 | M5.3 | Time-of-day × weekday departure profiles | todo | |
 | M5.4 | Boundary/highway through-traffic and network exits | todo | |
-| M5.5 | Rerouting on observed travel times | todo | |
+| M5.5 | Imperfect route knowledge: share of drivers with navigation, information delay, local-only observation | todo | |
 | M5.6 | `rusthour-viz`: clock & day display, jump to time, scenario picker | todo | |
 
 ### M6 — Statistics & batch CLI → `v0.7.0`
