@@ -163,6 +163,7 @@ reproducible from the OSM extract.
 | M2.8 | Benchmark (criterion): vehicles × steps/s, tracked in CI (non-gating) | done | feat/M2.8-bench |
 | M2.9 | Congestion-aware routing: current travel times, staggered rerouting (perfect information; pulled from M5.5) | done | feat/M2.9-congestion-routing |
 | M2.10 | Stuck-vehicle safety net: remove vehicles stuck > 300 s and count them (minimal part of M3.5) | done | feat/M2.10-stuck-removal |
+| M2.11 | M2 user trial (docs/trials/M2.md): two rounds native/CLI, browser on iPad; gridlock fixed (#49, M2.9, M2.10, #54) | done | docs/M2-user-trial |
 
 **Acceptance:** thousands of vehicles run in real time in the browser; same
 seed ⇒ identical state hash.
@@ -175,7 +176,7 @@ seed ⇒ identical state hash.
 | ID | Item | Status | Owner |
 | --- | --- | --- | --- |
 | M3.1 | MOBIL lane changing (incentive + safety criteria, politeness) | todo | |
-| M3.2 | Intersection controller trait + priority/yield and stop controllers | todo | |
+| M3.2 | Stop and yield-sign controllers (the controller trait and the priority rule exist since M2.5) | todo | |
 | M3.3 | Traffic signal controller (fixed-time plans) | todo | |
 | M3.4 | Turn lanes and lane selection ahead of intersections | todo | |
 | M3.5 | Rest of gridlock handling: exposing the count, smarter recovery (ADR) | todo | |
@@ -237,6 +238,23 @@ viewer, save it, and get a statistical before/after report from the CLI.
 
 Longer ideas, such as a detailed maneuvering submodel (turning around in
 congestion, lateral positions), are in [docs/ideas.md](docs/ideas.md).
+
+From the M2 user trial (docs/trials/M2.md):
+
+- `rusthour-import`: check how the OSM ways of roundabout approaches that
+  split into two lanes (e.g. Berliner Ring, Bensheim) become roads; a short,
+  wide approach slows traffic where the real road is straight.
+- Roundabouts: the 4-arm roundabout on Berliner Ring causes many
+  stuck-vehicle removals. Partly a rule artefact (the "no room" rule also
+  holds circulating heads, from start-of-step positions); try exempting
+  heads already on the ring (M3.5), and re-check with lanes and turn lanes
+  (M3.1, M3.4).
+- `rusthour-viz`: don't draw nodes as large circles at high zoom; limit zoom
+  so vehicles don't become screen-sized.
+- `rusthour-viz`: a schema mismatch shouldn't open with "not a Rust Hour map,
+  or damaged".
+- Faster start-up fill of large maps (currently at most 8 new trips per
+  step).
 
 - Crashes and near misses (reaction delay, perception error, distraction,
   time-to-collision metrics) — explicitly deferred.
