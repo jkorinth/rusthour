@@ -24,6 +24,13 @@ const LOOK_AHEAD_M: f64 = 50.0;
 const MAX_ROUTES_PER_STEP: u32 = 8;
 /// Below this speed a vehicle counts as standing (m/s).
 const STUCK_SPEED_MPS: f64 = 0.1;
+/// Simulated time between updates of the routing travel-time estimates.
+const COST_PERIOD_MS: u64 = 5_000;
+/// Simulated time between two re-plans of the same vehicle (ADR-0004, M2.9).
+const REROUTE_PERIOD_MS: u64 = 180_000;
+/// Most vehicles re-planned per step, on top of `MAX_ROUTES_PER_STEP`.
+// shortcut: due vehicles past the cap skip a period; never binds below 4 × 1,800 = 7,200 slots at dt = 100 ms.
+const MAX_REROUTES_PER_STEP: u32 = 4;
 
 /// The M2 car, the same for every vehicle until M4 driver profiles.
 fn car() -> IdmParams {
@@ -215,7 +222,7 @@ impl Engine {
     pub fn step(&mut self, steps: u64) {
         for _ in 0..steps {
             self.spawn_trips();
-            // 2. Route updates: none in M2 (M5.5).
+            self.update_routes();
             self.decide();
             self.accelerations();
             self.integrate();
@@ -299,6 +306,48 @@ impl Engine {
                 self.vehicles.spawn(new);
             }
         }
+    }
+
+    /// Phase 2: refresh the travel-time estimates every `COST_PERIOD_MS`;
+    /// then each vehicle whose turn it is re-plans from its current road to
+    /// its destination, keeping that road. Turns are staggered by slot, so a
+    /// step re-plans at most `ceil(slots / period)` vehicles. Returns how
+    /// many it re-planned.
+    fn update_routes(&mut self) -> u32 {
+        let dt = u64::from(self.config.dt_ms);
+        if self.tick.is_multiple_of((COST_PERIOD_MS / dt).max(1)) {
+            self.router.observe(&self.network, &self.vehicles);
+        }
+        let period = (REROUTE_PERIOD_MS / dt).max(1);
+        let vs = &mut self.vehicles;
+        let mut n = 0;
+        // The slots with `(tick + slot) % period == 0`.
+        let first = (period - self.tick % period) % period;
+        for s in
+            (first..vs.slot_count() as u64).step_by(usize::try_from(period).unwrap_or(usize::MAX))
+        {
+            if n == MAX_REROUTES_PER_STEP {
+                break;
+            }
+            let s = usize::try_from(s).expect("slot fits usize");
+            let k = vs.route_pos[s] as usize;
+            let route = &mut vs.route[s];
+            if k + 1 >= route.len() {
+                continue; // free slot (empty route) or on its destination
+            }
+            let trip = Trip {
+                origin: route[k],
+                destination: route[route.len() - 1],
+            };
+            n += 1;
+            if self.router.route(&self.network, trip, &mut self.route) {
+                // Drop the roads already driven, so a detour needs less room.
+                route.clear();
+                route.extend_from_slice(&self.route);
+                vs.route_pos[s] = 0;
+            }
+        }
+        n
     }
 
     /// The vehicle store.
@@ -579,6 +628,7 @@ impl Engine {
             }
         }
         h.write_u64(self.spawn_cursor as u64);
+        self.router.hash_into(&mut h);
         h.finish()
     }
 }

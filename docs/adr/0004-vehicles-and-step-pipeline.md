@@ -454,3 +454,57 @@ As a safety net:
   trip, so they bias throughput and trip-time statistics. The count is a
   symptom, not a fix, and should be near zero with good routing. The API
   exposes it with M3.5, which also owns smarter recovery.
+
+## Addendum (M2.9)
+
+The M2 trial routed every trip once, at spawn, on free-flow costs, so most
+trips on bensheim-5km crossed the same ring of short one-lane roads in the
+centre, which filled and froze. M2.9 routes on current traffic. This is
+**user-optimal routing with perfect, current information**: every driver
+sees every road's present state. Imperfect knowledge (a share of drivers
+with navigation, information delay, local-only observation) is M5.5.
+
+- **Travel-time estimate (`routing`):** `Router` keeps a per-road travel
+  time, hashed with the state. Every 5 simulated seconds `Router::observe`
+  moves it towards `length / max(mean speed, 0.01 m/s)` over the road's
+  vehicles, or the free-flow time on an empty road: an EMA with weight 0.2
+  (time constant about 25 s). It is clamped to `≥ free`, so the
+  straight-line free-flow heuristic stays admissible and A* stays exact.
+- **The low speed floor is the point:** a road whose cars all stand gets a
+  near-prohibitive cost, so routes leave a forming gridlock before it
+  closes. A queue model (`free + 2 s` per slowed car) was tried first: it
+  doubled arrivals but left 64% teleports per arrival at 5,000 vehicles,
+  because a full ring of short roads looked only seconds slower. Floors of
+  1, 0.3, 0.1, 0.03 and 0.01 m/s gave 42%, 23%, 14%, 9.5% and 7.3%. The
+  price is that one car waiting at a stop line makes its road look slow
+  until the EMA forgets it.
+- **New trips** are routed on the current estimates.
+- **Rerouting (phase 2):** each vehicle re-plans every 180 simulated
+  seconds, when `(tick + slot) % period == 0`. The phase visits only those
+  slots, so a step re-plans at most `ceil(slots / period)` vehicles (3 at
+  5,000), and turns are spread, which avoids everyone switching at once.
+  A vehicle re-plans from its current road to its destination and keeps
+  that road; a vehicle on its destination road doesn't re-plan. The route
+  `Vec` is replaced by the new route, current road first (`route_pos = 0`),
+  so the driven prefix doesn't take room; with the prefix kept, detours
+  grew route `Vec`s after warm-up and the alloc test failed. A 120 s or
+  300 s period did no better.
+- **Route cap:** rerouting has its own cap of 4 per step on top of the 8
+  new trips; it binds only above `4 × period` = 7,200 slots, where due
+  vehicles past the cap skip one period (`shortcut:`).
+- **Budget:** about 22 µs per A* query on the 24 × 24 bench grid, so at
+  5,000 vehicles the average is about 2.5 new trips plus 2.8 re-plans,
+  0.12 ms per step; the worst step (8 + 4 queries) is about 0.26 ms, at the
+  0.25 ms target. `step/5000` on the bench grid went from about 0.27 ms to
+  0.49 ms, mostly because far more vehicles keep moving; still within 1 ms.
+- **Effect** (two simulated hours, with the M2.10 safety net):
+
+  | bensheim-5km | main arrivals/h | main teleports/h | M2.9 arrivals/h | M2.9 teleports/h |
+  | --- | ---: | ---: | ---: | ---: |
+  | 500 vehicles | 2,392 | 122 | 4,692 | 0 |
+  | 4,000 vehicles | 1,042 | 2,059 | 4,798 | 169 (3.5%) |
+  | 5,000 vehicles | 888 | 2,677 | 4,545 | 332 (7.3%) |
+
+  At the viewer's default density (about one vehicle per 50 m, 5,000 here)
+  teleports stay above the 5% target; at about one per 60 m (4,000) they
+  are below it. The rest is gridlock recovery, M3.5.
