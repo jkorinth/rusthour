@@ -71,7 +71,7 @@ touch screens), scroll or pinch to zoom, arrow keys or WASD to pan,
 shortcuts. `F3` shows frame times (median and 95th percentile over the last
 10 s), the startup time, the cost of a simulation step and the map's size.
 
-Traffic runs as soon as a map is shown, about one vehicle per 50 m of road
+Traffic runs as soon as a map is shown, about one vehicle per 60 m of road
 (change the number in the controls; that starts over). `Space` plays or
 pauses, `.` (or "Step") advances one 0.1 s step. The speed slider goes from
 0.1× to 1000× real time; when the computer can't keep up, the readout shows

@@ -9,9 +9,11 @@ use web_time::Instant;
 
 /// Every map starts from this seed, so a reset replays the same traffic.
 pub const SEED: u64 = 0;
-/// Road length per vehicle in the default population: about 5,000 vehicles
-/// on bensheim-5km (250 km of directed roads), the ADR-0003 test scene.
-const ROAD_M_PER_VEHICLE: f64 = 50.0;
+/// Road length per vehicle in the default population: about 4,000 vehicles
+/// on bensheim-5km (250 km of directed roads). At 50 m (5,000 vehicles, the
+/// ADR-0003 performance scene) the central ring still jams: 7.3% teleports per arrival
+/// (stuck-vehicle net), against 3.5% here (ADR-0004, M2.9 addendum).
+const ROAD_M_PER_VEHICLE: f64 = 60.0;
 /// Speed slider range, as exponents of ten: 0.1× to 1000×.
 pub const SLIDER_RANGE: std::ops::RangeInclusive<f64> = -1.0..=3.0;
 /// Below this share of the wanted speed, the readout shows the achieved one.
