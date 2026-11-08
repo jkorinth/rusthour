@@ -2,17 +2,27 @@
 //!
 //! The road graph has roads as vertices and `connections` as edges, so turn
 //! restrictions are honored by construction. The cost of a route is the sum of
-//! `length / speed limit` over its roads, origin and destination included.
+//! each road's current travel-time estimate, origin and destination included:
+//! `length / speed limit` on an empty road, `length / mean speed` of its
+//! vehicles otherwise ([`Router::observe`], M2.9).
 //! M2 traffic stays inside the largest strongly connected component (SCC), so
 //! every origin–destination pair taken from [`Router::routable`] has a route
 //! (ADR-0004).
 
 use std::collections::BinaryHeap;
 
+use crate::StateHasher;
 use crate::demand::Trip;
 use crate::network::Network;
+use crate::vehicle::Vehicles;
 
 const UNSEEN: u32 = u32::MAX;
+/// Floor of the mean speed in the travel-time estimate (m/s). Low on
+/// purpose: a road whose cars all stand gets a near-prohibitive cost, which
+/// keeps routes out of forming gridlocks (ADR-0004, addendum M2.9).
+const MIN_SPEED_MPS: f64 = 0.01;
+/// Weight of a new observation in the travel-time estimate (an EMA).
+const SMOOTHING: f64 = 0.2;
 
 /// A* router with scratch buffers reused across calls (no allocation per
 /// route after warm-up). Must be used with the network it was built from.
@@ -22,6 +32,11 @@ pub struct Router {
     first: Vec<u32>,
     succ: Vec<u32>,
     routable: Vec<u32>,
+    /// Per road: travel time at the speed limit (s).
+    free_s: Vec<f64>,
+    /// Per road: smoothed current travel time (s), never below `free_s`, so
+    /// the free-flow heuristic stays admissible.
+    travel_s: Vec<f64>,
     /// Seconds per meter of straight-line distance that no route can beat.
     h_per_m: f64,
     cost: Vec<f64>,
@@ -95,11 +110,16 @@ impl Router {
             vmax = vmax.max(r.speed_limit_mps);
         }
         let h_per_m = if vmax > 0.0 { scale / vmax } else { 0.0 };
+        let free_s: Vec<f64> = (net.roads.iter())
+            .map(|r| r.length_m / r.speed_limit_mps)
+            .collect();
 
         Self {
             first,
             succ,
             routable,
+            travel_s: free_s.clone(),
+            free_s,
             h_per_m,
             cost: vec![0.0; n],
             prev: vec![0; n],
@@ -163,12 +183,7 @@ impl Router {
             let r = &net.roads[road as usize];
             dist(net.nodes[r.to as usize], goal) * h_per_m
         };
-        let time = |road: u32| {
-            let r = &net.roads[road as usize];
-            r.length_m / r.speed_limit_mps
-        };
-
-        let g0 = time(origin);
+        let g0 = self.travel_s[origin as usize];
         self.set(origin, g0, UNSEEN);
         let f0 = g0 + h(origin);
         self.heap.push(Entry {
@@ -192,7 +207,7 @@ impl Router {
             let (a, b) = (self.first[road as usize], self.first[road as usize + 1]);
             for i in a..b {
                 let nb = self.succ[i as usize];
-                let g2 = g + time(nb);
+                let g2 = g + self.travel_s[nb as usize];
                 if self.stamp[nb as usize] != self.epoch || g2 < self.cost[nb as usize] {
                     self.set(nb, g2, road);
                     self.heap.push(Entry {
@@ -204,6 +219,34 @@ impl Router {
             }
         }
         false
+    }
+
+    /// Moves each road's travel-time estimate towards what its vehicles
+    /// show now: `length / mean speed`, or the free-flow time on an empty road.
+    pub fn observe(&mut self, net: &Network, vs: &Vehicles) {
+        for (r, road) in (0u32..).zip(&net.roads) {
+            let (mut n, mut sum) = (0u32, 0.0);
+            for lane in 0..road.lanes {
+                for &s in vs.lane(vs.lane_id(r, lane)) {
+                    n += 1;
+                    sum += vs.speed_mps[s as usize];
+                }
+            }
+            let (free, t) = (self.free_s[r as usize], &mut self.travel_s[r as usize]);
+            let now = if n == 0 {
+                free
+            } else {
+                road.length_m / (sum / f64::from(n)).max(MIN_SPEED_MPS)
+            };
+            *t = (*t + SMOOTHING * (now - *t)).max(free);
+        }
+    }
+
+    /// Feeds the travel-time estimates into `h` (the rest is fixed or scratch).
+    pub fn hash_into(&self, h: &mut StateHasher) {
+        for &t in &self.travel_s {
+            h.write_f64(t);
+        }
     }
 
     fn set(&mut self, road: u32, cost: f64, prev: u32) {

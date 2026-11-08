@@ -61,7 +61,8 @@ pub struct Vehicles {
     pub accel_mps2: Vec<f64>,
     /// IDM parameters.
     pub params: Vec<IdmParams>,
-    /// Road ids, origin..=destination; the `Vec` is reused per slot.
+    /// Road ids, origin (or the road of the last re-plan)..=destination; the
+    /// `Vec` is reused per slot.
     pub route: Vec<Vec<u32>>,
     /// Index of the current road in `route`.
     pub route_pos: Vec<u32>,
