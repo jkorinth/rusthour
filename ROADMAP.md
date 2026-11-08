@@ -161,6 +161,7 @@ reproducible from the OSM extract.
 | M2.6 | `rusthour-api`: step, run/pause, time-scale, vehicle snapshot stream; `Placement` (road offset → world position), `state_hash` moves out of `Status` (ADR-0004) | done | feat/M2.6b-facade |
 | M2.7 | `rusthour-viz`: animated vehicles, play/pause, single step, speed slider (0.1×–100×+, log scale) showing the achieved speed, reset with the same seed, sim clock, active and waiting vehicle counts | done | feat/M2.7-animated-vehicles |
 | M2.8 | Benchmark (criterion): vehicles × steps/s, tracked in CI (non-gating) | done | feat/M2.8-bench |
+| M2.10 | Stuck-vehicle safety net: remove vehicles stuck > 300 s and count them (minimal part of M3.5) | done | feat/M2.10-stuck-removal |
 
 **Acceptance:** thousands of vehicles run in real time in the browser; same
 seed ⇒ identical state hash.
@@ -176,7 +177,7 @@ seed ⇒ identical state hash.
 | M3.2 | Intersection controller trait + priority/yield and stop controllers | todo | |
 | M3.3 | Traffic signal controller (fixed-time plans) | todo | |
 | M3.4 | Turn lanes and lane selection ahead of intersections | todo | |
-| M3.5 | Gridlock detection and recovery strategy (ADR) | todo | |
+| M3.5 | Rest of gridlock handling: exposing the count, smarter recovery (ADR) | todo | |
 
 ### M4 — Drivers & vehicles → `v0.5.0`
 
