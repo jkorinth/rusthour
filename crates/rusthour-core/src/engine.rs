@@ -22,6 +22,8 @@ const LOOK_AHEAD_M: f64 = 50.0;
 /// Most trips routed and inserted per step; the rest wait (ADR-0004 §2).
 // shortcut: a fixed guess (~3× the steady-state rate at 5,000 vehicles), tune when M2.8 times routing.
 const MAX_ROUTES_PER_STEP: u32 = 8;
+/// Below this speed a vehicle counts as standing (m/s).
+const STUCK_SPEED_MPS: f64 = 0.1;
 
 /// The M2 car, the same for every vehicle until M4 driver profiles.
 fn car() -> IdmParams {
@@ -60,6 +62,10 @@ pub struct Config {
     /// Vehicles (active plus waiting) that random demand keeps on the
     /// network; 0 means no demand. Until M5.1 scenarios replace it.
     pub target_vehicles: u32,
+    /// A vehicle that has not moved (below 0.1 m/s) for this many simulated
+    /// seconds is removed and counted in [`Engine::teleported`]; 0 disables
+    /// it (ADR-0004, addendum M2.10).
+    pub stuck_timeout_s: u32,
 }
 
 impl Default for Config {
@@ -67,6 +73,7 @@ impl Default for Config {
         Self {
             dt_ms: 100,
             target_vehicles: 0,
+            stuck_timeout_s: 300,
         }
     }
 }
@@ -129,6 +136,10 @@ pub struct Engine {
     /// Phase 1 scratch, reused every step.
     new_trips: Vec<Trip>,
     route: Vec<u32>,
+    /// Vehicles removed by the stuck-vehicle safety net so far.
+    teleported: u32,
+    /// `stuck_timeout_s` in ticks; 0 = off.
+    stuck_limit: u32,
 }
 
 impl Engine {
@@ -189,6 +200,13 @@ impl Engine {
             spawn_cursor: 0,
             new_trips: Vec::new(),
             route: Vec::new(),
+            teleported: 0,
+            stuck_limit: match config.stuck_timeout_s {
+                0 => 0,
+                s => u32::try_from(u64::from(s) * 1000 / u64::from(config.dt_ms))
+                    .unwrap_or(u32::MAX)
+                    .max(1),
+            },
             network,
         }
     }
@@ -484,6 +502,28 @@ impl Engine {
                 vs.despawn(vs.id(s));
             }
         }
+        // Safety net: gridlock can still happen (ADR-0004, M2.10). Slot order.
+        for s in 0..vs.slot_count() {
+            if !vs.is_live(s) {
+                continue;
+            }
+            if vs.speed_mps[s] >= STUCK_SPEED_MPS {
+                vs.stuck_ticks[s] = 0;
+                continue;
+            }
+            vs.stuck_ticks[s] += 1;
+            if self.stuck_limit > 0 && vs.stuck_ticks[s] >= self.stuck_limit {
+                vs.despawn(vs.id(s));
+                self.teleported += 1;
+            }
+        }
+    }
+
+    /// Vehicles removed so far for standing still longer than
+    /// `Config::stuck_timeout_s`. A symptom of gridlock, not a result.
+    #[must_use]
+    pub fn teleported(&self) -> u32 {
+        self.teleported
     }
 
     /// The random stream of one subsystem.
@@ -518,6 +558,8 @@ impl Engine {
         let mut h = StateHasher::new();
         h.write_u64(u64::from(self.config.dt_ms));
         h.write_u64(u64::from(self.config.target_vehicles));
+        h.write_u64(u64::from(self.config.stuck_timeout_s));
+        h.write_u64(u64::from(self.teleported));
         h.write_u64(self.tick);
         for (stream, rng) in STREAMS.iter().zip(&self.rngs) {
             h.write_bytes(&rng.get_seed());

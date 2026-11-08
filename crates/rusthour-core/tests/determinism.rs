@@ -18,7 +18,9 @@ use rusthour_core::{Config, Engine, Stream, run_and_hash};
 /// each node's controller state. Changed in the M2 trial fix: a head whose
 /// next road has no room waits at its line and no one yields to it (don't
 /// block the box), and a stopped head also respects a leader on the next road.
-const GOLDEN_HASH: u64 = 16_548_874_311_830_203_811;
+/// Changed in M2.10: the hash includes each slot's stuck counter, the
+/// stuck timeout and the teleport count (the run itself is unchanged).
+const GOLDEN_HASH: u64 = 15_057_843_974_468_511_448;
 
 /// A four-road ring with a short road and a merging side road that routing
 /// excludes. Random demand keeps 10 vehicles on the ring, and hand-placed

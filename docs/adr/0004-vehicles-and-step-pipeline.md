@@ -436,3 +436,21 @@ room behind": the cars freeze and no arrival ever comes.
   through roads too short to stop on was tried and rejected: cars already
   on such a road (spawned there, or held) then wait for a long road whose
   head waits for them.
+
+## Addendum (M2.10)
+
+A physical gridlock (for example a ring of short roads that are all full)
+can still happen at high density, because the don't-block-the-box rule only
+stops the cycles it knows. Real drivers bend the rules; we do not model that.
+As a safety net:
+
+- **`stuck_ticks` column:** counts consecutive steps below 0.1 m/s and
+  resets otherwise; reset on spawn and despawn; hashed.
+- **Removal:** when it reaches `Config::stuck_timeout_s` (default 300 s, in
+  ticks of `dt_ms`; 0 disables), the arrivals phase despawns the vehicle,
+  in slot order, and increments `Engine::teleported()` (hashed). The freed
+  room breaks the cycle. There is no placement past the jam.
+- **Reading the count:** teleports remove vehicles that did not finish their
+  trip, so they bias throughput and trip-time statistics. The count is a
+  symptom, not a fix, and should be near zero with good routing. The API
+  exposes it with M3.5, which also owns smarter recovery.

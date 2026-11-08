@@ -47,6 +47,7 @@ fn main() {
             let config = Config {
                 dt_ms,
                 target_vehicles: vehicles,
+                ..Config::default()
             };
             let mut sim = match map.map(|path| load(&path)) {
                 None => InProcess::new(config, seed),

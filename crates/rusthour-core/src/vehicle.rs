@@ -67,6 +67,8 @@ pub struct Vehicles {
     pub route_pos: Vec<u32>,
     /// Tick the vehicle departed.
     pub depart_tick: Vec<u64>,
+    /// Consecutive steps below 0.1 m/s, kept by the engine's arrivals phase.
+    pub stuck_ticks: Vec<u32>,
     free: Vec<u32>,
     /// Per `LaneId`: slots, head first. Crate-visible so the engine can walk a
     /// lane while writing the columns; change membership only via the methods.
@@ -108,6 +110,7 @@ impl Vehicles {
             route: Vec::new(),
             route_pos: Vec::new(),
             depart_tick: Vec::new(),
+            stuck_ticks: Vec::new(),
             free: Vec::new(),
             lanes,
             lane_first,
@@ -208,6 +211,7 @@ impl Vehicles {
             self.route.push(Vec::new());
             self.route_pos.push(0);
             self.depart_tick.push(0);
+            self.stuck_ticks.push(0);
             slot
         };
         let s = slot as usize;
@@ -256,6 +260,7 @@ impl Vehicles {
         self.route[s].clear();
         self.route_pos[s] = 0;
         self.depart_tick[s] = 0;
+        self.stuck_ticks[s] = 0;
         self.free.push(id.slot);
         true
     }
@@ -323,6 +328,7 @@ impl Vehicles {
             }
             h.write_u64(u64::from(self.route_pos[s]));
             h.write_u64(self.depart_tick[s]);
+            h.write_u64(u64::from(self.stuck_ticks[s]));
         }
         h.write_u64(self.free.len() as u64);
         for &f in &self.free {
