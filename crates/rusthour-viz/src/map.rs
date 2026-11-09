@@ -26,13 +26,43 @@ const DECODE_NEXT_STEP: &str = "Choose a .rhnet file made by rusthour-import.";
 const DECODE_NEXT_STEP: &str =
     "Reload the page; if this keeps happening, the map file on the server is damaged.";
 
+/// What to do about a map made for a newer viewer.
+#[cfg(not(target_arch = "wasm32"))]
+const NEWER_NEXT_STEP: &str = "Update Rust Hour to open it.";
+#[cfg(target_arch = "wasm32")]
+const NEWER_NEXT_STEP: &str = "Reload the page to get the latest viewer.";
+/// What to do about a map made for an older viewer.
+#[cfg(not(target_arch = "wasm32"))]
+const OLDER_NEXT_STEP: &str = "Re-import it with rusthour-import to open it here.";
+#[cfg(target_arch = "wasm32")]
+const OLDER_NEXT_STEP: &str = "Reload the page; the maps on the server may still be being updated, so try again in a few \
+     minutes.";
+
 /// Decodes a `.rhnet` file into a map, or a message for the user: plain
 /// words and a next step first, the decoder's details last.
 pub fn from_rhnet(bytes: &[u8]) -> Result<MapSource, String> {
-    let (metadata, network) = rusthour_import::rhnet::decode(bytes).map_err(|e| {
-        format!(
+    use rusthour_import::rhnet::DecodeError;
+    let (metadata, network) = rusthour_import::rhnet::decode(bytes).map_err(|e| match e {
+        DecodeError::UnsupportedSchemaVersion { found, supported }
+        | DecodeError::UnsupportedContainerVersion { found, supported } => {
+            let what = if matches!(e, DecodeError::UnsupportedSchemaVersion { .. }) {
+                "schema"
+            } else {
+                "container version"
+            };
+            let (age, next) = if found > supported {
+                ("newer", NEWER_NEXT_STEP)
+            } else {
+                ("older", OLDER_NEXT_STEP)
+            };
+            format!(
+                "This map is {age} than this viewer: it uses map {what} {found}, and this \
+                 viewer reads {what} {supported}. {next}"
+            )
+        }
+        _ => format!(
             "This is not a Rust Hour map, or it is damaged. {DECODE_NEXT_STEP}\n\nDetails: {e}."
-        )
+        ),
     })?;
     Ok(MapSource {
         name: metadata.area,
@@ -61,6 +91,30 @@ mod tests {
         };
         let bytes = rusthour_import::rhnet::encode(&metadata, &rusthour_api::Network::default());
         assert_eq!(from_rhnet(&bytes).unwrap().source_date, None);
+    }
+
+    /// M2 trial (docs/trials/M2.md, UX finding 7): a map of another schema
+    /// read "not a Rust Hour map, or damaged".
+    #[test]
+    fn other_schema_says_which_and_what_to_do() {
+        let v = rusthour_api::NETWORK_SCHEMA_VERSION;
+        let open = |schema: u32| {
+            let mut bytes = rusthour_import::rhnet::encode(
+                &rusthour_import::rhnet::Metadata::default(),
+                &rusthour_api::Network::default(),
+            );
+            bytes[12..16].copy_from_slice(&schema.to_le_bytes());
+            from_rhnet(&bytes).err().unwrap()
+        };
+        for (schema, word) in [(v - 1, "older"), (v + 1, "newer")] {
+            let e = open(schema);
+            assert!(!e.contains("damaged"), "{e}");
+            assert!(e.contains(word), "{e}");
+            assert!(e.contains(&format!("schema {schema}")), "{e}");
+            assert!(e.contains(&format!("reads schema {v}")), "{e}");
+        }
+        assert!(open(v - 1).contains(OLDER_NEXT_STEP));
+        assert!(open(v + 1).contains(NEWER_NEXT_STEP));
     }
 
     #[test]
