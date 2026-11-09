@@ -2,7 +2,7 @@
 //! [`Pacer`], one snapshot per frame, reset with the same seed (ADR-0004 §3).
 
 use rusthour_api::{
-    Config, InProcess, Network, NetworkError, Pacer, Simulation, Status, VehicleSnapshot,
+    Config, InProcess, Network, NetworkError, Pacer, RoadId, Simulation, Status, VehicleSnapshot,
     scale_from_slider,
 };
 use web_time::Instant;
@@ -11,7 +11,7 @@ use web_time::Instant;
 pub const SEED: u64 = 0;
 /// Road length per vehicle in the default population: about 4,000 vehicles
 /// on bensheim-5km (250 km of directed roads). At 50 m (5,000 vehicles, the
-/// ADR-0003 performance scene) the central ring still jams: 7.3% teleports per arrival
+/// ADR-0003 performance scene) the central ring still jams: 7.3% stuck removals per arrival
 /// (stuck-vehicle net), against 3.5% here (ADR-0004, M2.9 addendum).
 const ROAD_M_PER_VEHICLE: f64 = 60.0;
 /// Speed slider range, as exponents of ten: 0.1× to 1000×.
@@ -26,6 +26,8 @@ pub struct Traffic {
     pub pacer: Pacer,
     /// Taken once per frame, after stepping.
     pub snapshot: VehicleSnapshot,
+    /// Roads with stuck removals and their counts, refreshed with the snapshot.
+    pub stuck_roads: Vec<(RoadId, u32)>,
     /// Smoothed real seconds per step, `0` until measured.
     pub step_cost_s: f64,
     /// Steps run in the last frame.
@@ -44,6 +46,7 @@ impl Traffic {
             config,
             pacer: Pacer::new(config.dt_ms),
             snapshot: VehicleSnapshot::default(),
+            stuck_roads: Vec::new(),
             step_cost_s: 0.0,
             last_steps: 0,
         })
@@ -71,6 +74,7 @@ impl Traffic {
         self.sim = InProcess::with_network(self.config, SEED, network)
             .expect("validated when the map was loaded");
         self.sim.snapshot_into(&mut self.snapshot);
+        self.sim.stuck_by_road_into(&mut self.stuck_roads);
     }
 
     /// Changes the population, which restarts the simulation.
@@ -96,6 +100,7 @@ impl Traffic {
             };
         }
         self.sim.snapshot_into(&mut self.snapshot);
+        self.sim.stuck_by_road_into(&mut self.stuck_roads);
     }
 
     /// Sim seconds to extrapolate the snapshot by when drawing: at 1× or
@@ -124,6 +129,29 @@ impl Traffic {
         self.pacer.pause();
         self.pacer.step_once();
     }
+}
+
+/// The "removed (stuck)" counter text, and whether it is tinted: any removal
+/// means a gridlock was broken by the safety net (ADR-0005 §8).
+pub fn stuck_counter(status: &Status) -> (String, bool) {
+    (
+        format!("{} removed (stuck)", status.removed_stuck),
+        status.removed_stuck > 0,
+    )
+}
+
+/// Opacity of a hot road's tint: from a visible floor for one removal up to
+/// opaque for the road with the most.
+pub fn hot_road_alpha(removed: u32, max: u32) -> u8 {
+    const FLOOR: f64 = 90.0;
+    let share = f64::from(removed) / f64::from(max.max(1));
+    #[expect(
+        clippy::cast_possible_truncation,
+        clippy::cast_sign_loss,
+        reason = "0..=255"
+    )]
+    let alpha = (FLOOR + (255.0 - FLOOR) * share.min(1.0)).round() as u8;
+    alpha
 }
 
 /// One vehicle per [`ROAD_M_PER_VEHICLE`] of road, at least one.
@@ -263,5 +291,24 @@ mod tests {
         run(&mut t, 3);
         assert!(t.pacer.is_paused());
         assert_eq!(t.status().tick, 7);
+    }
+
+    #[test]
+    fn the_stuck_counter_is_tinted_only_above_zero() {
+        let base = traffic().status();
+        assert_eq!(stuck_counter(&base), ("0 removed (stuck)".into(), false));
+        let status = Status {
+            removed_stuck: 12,
+            ..base
+        };
+        assert_eq!(stuck_counter(&status), ("12 removed (stuck)".into(), true));
+    }
+
+    #[test]
+    fn hot_roads_tint_stronger_with_more_removals() {
+        assert_eq!(hot_road_alpha(10, 10), 255);
+        assert!(hot_road_alpha(1, 10) < hot_road_alpha(5, 10));
+        assert!(hot_road_alpha(1, 1000) >= 90, "one removal stays visible");
+        assert_eq!(hot_road_alpha(0, 0), 90, "no division by zero");
     }
 }

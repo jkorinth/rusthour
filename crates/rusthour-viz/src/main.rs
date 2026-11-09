@@ -447,7 +447,26 @@ fn show_sim_controls(ui: &mut egui::Ui, v: &mut Viewer) {
             "· {} driving · {} waiting to enter",
             status.vehicles, status.waiting
         ));
+        // One group, so a wrapped line never ends in a dangling separator.
+        ui.horizontal(|ui| {
+            ui.label(format!("· {} arrived ·", status.arrived));
+            let (text, tinted) = traffic::stuck_counter(&status);
+            if tinted {
+                ui.colored_label(ui.visuals().warn_fg_color, text)
+                    .on_hover_text(
+                        "Gridlocked vehicles removed by the safety net; red roads show where",
+                    );
+            } else {
+                ui.label(text);
+            }
+        });
     });
+}
+
+/// The map with its vehicles and the roads that had stuck removals.
+fn show_world(ui: &mut egui::Ui, v: &mut Viewer, ahead_s: f32) {
+    let hot = (v.traffic.network(), v.traffic.stuck_roads.as_slice());
+    v.world.show(ui, &v.traffic.snapshot, ahead_s, hot);
 }
 
 /// The map view and its controls; returns the area picked in the map
@@ -471,7 +490,7 @@ fn show_ready(
     let ahead_s = v.traffic.ahead_s();
     egui::CentralPanel::default()
         .frame(egui::Frame::central_panel(ui.style()).inner_margin(0.0))
-        .show(ui, |ui| v.world.show(ui, &v.traffic.snapshot, ahead_s));
+        .show(ui, |ui| show_world(ui, v, ahead_s));
 
     egui::Area::new(egui::Id::unique("view_controls"))
         .anchor(Align2::LEFT_TOP, [8.0, 8.0])
