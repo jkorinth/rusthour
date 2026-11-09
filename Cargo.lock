@@ -3327,7 +3327,7 @@ dependencies = [
 
 [[package]]
 name = "rusthour-api"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "proptest",
  "rusthour-core",
@@ -3337,7 +3337,7 @@ dependencies = [
 
 [[package]]
 name = "rusthour-cli"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "clap",
  "rusthour-api",
@@ -3347,7 +3347,7 @@ dependencies = [
 
 [[package]]
 name = "rusthour-core"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "criterion",
  "dhat",
@@ -3357,7 +3357,7 @@ dependencies = [
 
 [[package]]
 name = "rusthour-import"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "clap",
  "lz4_flex",
@@ -3372,7 +3372,7 @@ dependencies = [
 
 [[package]]
 name = "rusthour-viz"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "eframe",
  "js-sys",

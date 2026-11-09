@@ -65,7 +65,7 @@ fn disabled_ring_stays_frozen() {
     let (live, pos) = (e.vehicles().live_count(), positions(&e));
     assert!(live >= 4);
     e.step(10_000); // 1000 s
-    assert_eq!(e.teleported(), 0);
+    assert_eq!(e.removed_stuck(), 0);
     assert_eq!(e.vehicles().live_count(), live);
     assert_eq!(positions(&e), pos, "the ring should be frozen");
 }
@@ -75,10 +75,10 @@ fn stuck_vehicles_are_removed_only_after_the_timeout() {
     let mut e = gridlocked(Config::default());
     let live = e.vehicles().live_count();
     e.step(2_000); // frozen for 200 s of the 300 s
-    assert_eq!(e.teleported(), 0, "removed too early");
+    assert_eq!(e.removed_stuck(), 0, "removed too early");
     assert_eq!(e.vehicles().live_count(), live);
     e.step(1_500);
-    let t = e.teleported();
+    let t = e.removed_stuck();
     assert!(t > 0, "nobody was removed");
     assert_eq!(e.vehicles().live_count() as u64 + u64::from(t), live as u64);
     // Removals free room and the jam dissolves: a new car enters and drives.
@@ -97,8 +97,28 @@ fn removal_is_deterministic() {
     let hash = || {
         let mut e = gridlocked(Config::default());
         e.step(3_500);
-        assert!(e.teleported() > 0);
+        assert!(e.removed_stuck() > 0);
         e.state_hash()
     };
     assert_eq!(hash(), hash());
+}
+
+#[test]
+fn removals_are_counted_per_road_and_arrivals_separately() {
+    let mut e = gridlocked(Config::default());
+    assert_eq!(e.arrived(), 0, "nobody reaches a destination on this ring");
+    e.step(3_500);
+    let per_road = e.stuck_by_road();
+    assert_eq!(per_road.len(), 4);
+    assert_eq!(per_road.iter().sum::<u32>(), e.removed_stuck());
+    assert!(e.removed_stuck() > 0);
+}
+
+#[test]
+fn arrivals_are_counted() {
+    let mut e = Engine::with_network(Config::default(), 1, ring());
+    e.spawn(&[0, 1], car()).expect("room");
+    e.step(600);
+    assert_eq!((e.arrived(), e.removed_stuck()), (1, 0));
+    assert_eq!(e.vehicles().live_count(), 0);
 }
