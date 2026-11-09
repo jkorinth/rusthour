@@ -132,9 +132,15 @@ pub turn_lanes: Vec<Turns>,   // empty = unknown, else one per lane, rightmost (
     the road's direction. Without it, a sign applies to the direction whose
     end is nearer, or to both directions when the road is shorter than
     60 m and the sign sits in its middle; a signal applies to both.
-  - Tagged nodes with exactly one incoming and one outgoing road are way
-    boundaries, not junctions, and are ignored, so the 30 m rule can't turn
-    them into spurious stops.
+  - Where a road ends at a node that is no junction and exactly one way
+    continues (a way boundary, often where a way is split at the sign),
+    the 30 m search continues along that way to the next junction (added
+    in M3.2: Berliner Ring's give-way signs sit just before such splits).
+  - A tagged node that is no junction (a way boundary or dead end) is
+    treated like a vertex on a road's interior, at distance 0 from the
+    roads ending there. It applies only where a junction lies within 30 m,
+    so the 30 m rule can't turn it into a spurious stop (changed in M3.2;
+    such nodes were ignored before).
   - Mid-block signals further than 30 m from an end are ignored: they are
     pedestrian crossings, and there are no pedestrians.
   - A tagged *junction node* applies a signal to all incoming roads. A

@@ -1,11 +1,11 @@
 //! The OSM importer (M1.2).
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::path::Path;
 
 use proptest::prelude::*;
 use proptest::sample::Index;
-use rusthour_api::{Config, InProcess, Network, Point, Road, RoadId};
+use rusthour_api::{Config, EndControl, InProcess, Network, Point, Road, RoadClass, RoadId, Turns};
 use rusthour_import::osm::{self, AreaError, Bbox, Member, MemberKind, OsmData, Relation, Way};
 use rusthour_import::rhnet::{self, Metadata};
 
@@ -135,15 +135,13 @@ fn imports_are_byte_identical() {
     assert_eq!(asset(), asset());
 }
 
-/// Random small extracts: nodes on a coarse grid (so positions collide) that
-/// reaches past the area, ways with random and malformed tags and dangling
-/// node references, and usually one turn restriction.
-fn extract() -> impl Strategy<Value = OsmData> {
+/// Tags of a random way of [`extract`], often malformed.
+fn way_tags() -> impl Strategy<Value = Vec<(String, String)>> {
     let tag = |key: &'static str, values: &'static [&'static str]| {
         prop::option::of(prop::sample::select(values))
             .prop_map(move |v| v.map(|v| (key.to_owned(), v.to_owned())))
     };
-    let tags = (
+    (
         prop::sample::select(
             &[
                 "residential",
@@ -176,14 +174,30 @@ fn extract() -> impl Strategy<Value = OsmData> {
         ),
         tag("maxspeed:backward", &["70", "NaN", "inf"]),
         tag("name", &["Müllerweg", ""]),
+        tag(
+            "turn:lanes",
+            &[
+                "left|through;right",
+                "through",
+                "left|bogus",
+                "reverse;left||right",
+            ],
+        ),
+        tag("priority_road", &["designated", "no"]),
     )
         .prop_map(|t| {
-            [t.0, t.1, t.2, t.3, t.4, t.5, t.6, t.7]
+            [t.0, t.1, t.2, t.3, t.4, t.5, t.6, t.7, t.8, t.9]
                 .into_iter()
                 .flatten()
                 .collect::<Vec<_>>()
-        });
-    let way = (prop::collection::vec(1i64..14, 1..7), tags);
+        })
+}
+
+/// Random small extracts: nodes on a coarse grid (so positions collide) that
+/// reaches past the area, ways with random and malformed tags and dangling
+/// node references, and usually one turn restriction.
+fn extract() -> impl Strategy<Value = OsmData> {
+    let way = (prop::collection::vec(1i64..14, 1..7), way_tags());
     // One restriction, usually well formed, with its via node on the from-way.
     let restriction = (
         prop::sample::select(
@@ -203,8 +217,9 @@ fn extract() -> impl Strategy<Value = OsmData> {
         prop::collection::vec((0..5u8, 0..5u8), 12),
         prop::collection::vec(way, 0..10),
         prop::option::weighted(0.9, restriction),
+        signs(),
     )
-        .prop_map(|(cells, ways, restriction)| {
+        .prop_map(|(cells, ways, restriction, signs)| {
             let ways: Vec<Way> = (100..)
                 .zip(ways)
                 .map(|(id, (nodes, tags))| Way { id, nodes, tags })
@@ -229,9 +244,29 @@ fn extract() -> impl Strategy<Value = OsmData> {
                     .collect(),
                 ways,
                 relations,
+                node_tags: signs,
                 replication_timestamp: None,
             }
         })
+}
+
+/// Signs and signals on random nodes of [`extract`], some with a direction.
+fn signs() -> impl Strategy<Value = HashMap<i64, Vec<(String, String)>>> {
+    let sign = (
+        1i64..14,
+        prop::sample::select(&["give_way", "stop", "traffic_signals"][..]),
+        prop::option::of(prop::sample::select(&["forward", "backward", "both"][..])),
+    );
+    prop::collection::vec(sign, 0..5).prop_map(|signs| {
+        signs
+            .into_iter()
+            .map(|(id, highway, direction)| {
+                let mut tags = vec![("highway".to_owned(), highway.to_owned())];
+                tags.extend(direction.map(|d| ("direction".to_owned(), d.to_owned())));
+                (id, tags)
+            })
+            .collect()
+    })
 }
 
 /// A restriction relation from a way of `ways`, via one of its nodes, to the
@@ -344,6 +379,9 @@ proptest! {
             let way = data.ways.iter().find(|w| w.id == r.osm.unwrap().way).unwrap();
             let junction = way.tags.iter().any(|(k, v)| k == "junction" && matches!(v.as_str(), "roundabout" | "circular"));
             prop_assert_eq!(r.roundabout, junction);
+            let designated = way.tags.iter().any(|(k, v)| k == "priority_road" && v == "designated");
+            prop_assert_eq!(r.priority_road, designated);
+            prop_assert_ne!(r.class, RoadClass::Unknown);
         }
         // OSM refs identify roads (M7.0) and match the end nodes.
         let mut refs = HashSet::new();
@@ -496,4 +534,179 @@ fn german_speed_limit_values() {
         let network = osm::import(&data, bbox("[49.6, 8.6, 49.7, 8.7]"));
         assert_eq!(kmh(&network.roads[0]), expected, "{value}");
     }
+}
+
+/// OSM node `id` at `(dy, dx)` meters from 49.68° N, 8.62° E.
+fn at(id: i64, dy: f64, dx: f64) -> (i64, (f64, f64)) {
+    (id, (49.68 + dy / 111_195.0, 8.62 + dx / 71_950.0))
+}
+
+fn way(id: i64, nodes: &[i64], tags: &[(&str, &str)]) -> Way {
+    Way {
+        id,
+        nodes: nodes.to_vec(),
+        tags: tags
+            .iter()
+            .map(|&(k, v)| (k.to_owned(), v.to_owned()))
+            .collect(),
+    }
+}
+
+fn highway(value: &str) -> Vec<(String, String)> {
+    vec![("highway".to_owned(), value.to_owned())]
+}
+
+fn end_control(network: &Network, way: i64, from: i64, to: i64) -> EndControl {
+    road(network, way, from, to).unwrap().1.end_control
+}
+
+#[test]
+fn signs_and_signals_resolve_to_road_ends() {
+    // A minor street (11, 13) meets a main road (10, 12) at node 2 from the
+    // south, with a give-way sign 10 m before the junction, on way 11 that
+    // ends 4 m before it (as on Berliner Ring in Bensheim). Node 3, 20 m east
+    // of the junction, only joins ways 10 and 12 and carries a stop sign;
+    // dead end 6 carries a give-way sign, far from any junction.
+    let data = OsmData {
+        nodes: [
+            at(1, 0.0, -100.0),
+            at(2, 0.0, 0.0),
+            at(3, 0.0, 20.0),
+            at(6, 0.0, 200.0),
+            at(4, -100.0, 0.0),
+            at(5, -10.0, 0.0),
+            at(16, -4.0, 0.0),
+        ]
+        .into(),
+        ways: vec![
+            way(10, &[1, 2, 3], &[("highway", "secondary")]),
+            way(12, &[3, 6], &[("highway", "secondary")]),
+            way(11, &[4, 5, 16], &[("highway", "residential")]),
+            way(13, &[16, 2], &[("highway", "residential")]),
+        ],
+        node_tags: [
+            (5, highway("give_way")),
+            (3, highway("stop")),
+            (6, highway("give_way")),
+        ]
+        .into(),
+        ..OsmData::default()
+    };
+    let (network, report) = osm::import_with_report(&data, bbox("[49.6, 8.6, 49.7, 8.7]"));
+    assert_eq!(end_control(&network, 13, 16, 2), EndControl::GiveWay);
+    let signed = network
+        .roads
+        .iter()
+        .filter(|r| r.end_control != EndControl::None)
+        .count();
+    assert_eq!(end_control(&network, 10, 3, 2), EndControl::Stop);
+    assert_eq!(signed, 2, "the give-way at the dead end is ignored");
+    assert_eq!(
+        road(&network, 11, 4, 16).unwrap().1.class,
+        RoadClass::Residential
+    );
+    assert_eq!((report.give_ways, report.stops), (1, 1));
+    assert_eq!(report.ignored_signs.len(), 1);
+    assert_eq!(report.ignored_signs[0].way, 12);
+
+    // Split junction: signalled nodes 7 and 8 are 15 m apart; the link
+    // between them gets no signal, the approaches do.
+    let data = OsmData {
+        nodes: [
+            at(7, 0.0, 0.0),
+            at(8, 0.0, 15.0),
+            at(9, -100.0, 0.0),
+            at(13, 100.0, 0.0),
+            at(10, -100.0, 15.0),
+            at(14, 100.0, 15.0),
+            at(15, 0.0, -100.0),
+        ]
+        .into(),
+        ways: vec![
+            way(20, &[15, 7, 8], &[("highway", "primary")]),
+            way(21, &[9, 7, 13], &[("highway", "tertiary")]),
+            way(22, &[10, 8, 14], &[("highway", "tertiary")]),
+        ],
+        node_tags: [
+            (7, highway("traffic_signals")),
+            (8, highway("traffic_signals")),
+        ]
+        .into(),
+        ..OsmData::default()
+    };
+    let (network, report) = osm::import_with_report(&data, bbox("[49.6, 8.6, 49.7, 8.7]"));
+    assert_eq!(end_control(&network, 20, 7, 8), EndControl::None);
+    assert_eq!(end_control(&network, 20, 8, 7), EndControl::None);
+    assert_eq!(end_control(&network, 20, 15, 7), EndControl::Signals);
+    assert_eq!(end_control(&network, 21, 9, 7), EndControl::Signals);
+    assert_eq!(end_control(&network, 22, 14, 8), EndControl::Signals);
+    assert_eq!((report.signal_nodes, report.signal_clusters), (2, 1));
+    // (signalled, all) approaches: the links' ends lost their signals.
+    assert_eq!(report.signal_approaches, [((2, 3), 1), ((3, 4), 1)].into());
+}
+
+#[test]
+fn inconsistent_turn_lanes_are_dropped_and_reported() {
+    let data = OsmData {
+        nodes: [
+            at(1, 0.0, 0.0),
+            at(2, 0.0, 100.0),
+            at(3, 0.0, 200.0),
+            at(4, 0.0, 300.0),
+        ]
+        .into(),
+        ways: vec![
+            way(
+                30,
+                &[1, 2],
+                &[
+                    ("highway", "primary"),
+                    ("oneway", "yes"),
+                    ("lanes", "2"),
+                    ("turn:lanes", "left|through;right"),
+                    ("traffic_sign", "DE:306;DE:1020-30"),
+                ],
+            ),
+            way(
+                31,
+                &[2, 3],
+                &[
+                    ("highway", "primary_link"),
+                    ("oneway", "yes"),
+                    ("lanes", "2"),
+                    ("turn:lanes", "left|through|right"),
+                    ("name", "Zubringer"),
+                ],
+            ),
+            way(
+                32,
+                &[3, 4],
+                &[("highway", "primary"), ("oneway", "yes"), ("lanes", "20")],
+            ),
+        ],
+        ..OsmData::default()
+    };
+    let (network, report) = osm::import_with_report(&data, bbox("[49.6, 8.6, 49.7, 8.7]"));
+    InProcess::with_network(Config::default(), 0, network.clone()).unwrap();
+    let (_, parsed) = road(&network, 30, 1, 2).unwrap();
+    assert!(parsed.priority_road, "DE:306 is the priority road sign");
+    assert_eq!(report.priority_sign_ways, 1);
+    assert_eq!(
+        parsed.turn_lanes,
+        [Turns::THROUGH | Turns::RIGHT, Turns::LEFT]
+    );
+    let (_, dropped) = road(&network, 31, 2, 3).unwrap();
+    assert!(dropped.turn_lanes.is_empty());
+    assert_eq!(
+        dropped.class,
+        RoadClass::Primary,
+        "a link takes its parent's class"
+    );
+    assert_eq!(road(&network, 32, 3, 4).unwrap().1.lanes, 16);
+    assert_eq!(report.turn_lanes, 1);
+    assert_eq!(report.ignored_turn_lanes.len(), 1);
+    assert_eq!(report.ignored_turn_lanes[0].way, 31);
+    assert_eq!(report.clamped_lanes.len(), 1);
+    let text = report.to_string();
+    assert!(text.contains("Zubringer (way 31)"), "{text}");
 }
