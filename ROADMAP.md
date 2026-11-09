@@ -175,11 +175,17 @@ seed ⇒ identical state hash.
 
 | ID | Item | Status | Owner |
 | --- | --- | --- | --- |
-| M3.1 | MOBIL lane changing (incentive + safety criteria, politeness) | todo | |
-| M3.2 | Stop and yield-sign controllers (the controller trait and the priority rule exist since M2.5) | todo | |
-| M3.3 | Traffic signal controller (fixed-time plans) | todo | |
-| M3.4 | Turn lanes and lane selection ahead of intersections | todo | |
-| M3.5 | Rest of gridlock handling: exposing the count, smarter recovery (ADR) | todo | |
+| M3.0 | ADR-0005: movements and turn costs, right of way from the map (schema 4), signals, lanes and MOBIL, gridlock follow-ups, work split for M3 | done | docs/M3.0-adr-lanes-intersections |
+| M3.1 | Turn costs in routing: static penalty per movement by turn type, plus observed stop-line delay per movement in the congestion costs, decaying from a yield/stop/signal prior; A* stays exact (first in M3) | todo | |
+| M3.2 | Right of way from the map, network schema 4: road class, `priority_road`, give-way/stop/signal at road ends (from OSM node tags, direction-aware), `turn:lanes`; inconsistent tags dropped and reported, never failing a map; no signals on short links of split junctions; importer report of applied and ignored signs, signals and turn lanes; merged with or after the asset rebuild | todo | |
+| M3.3 | Right of way v2: rank from signs, `priority_road`, class, speed, lanes, then right before left; per-lane approaches; only conflicting movements yield; left turns yield to oncoming traffic; stop signs (the controller trait exists since M2.5) | todo | |
+| M3.4 | Traffic signal controller: default fixed-time plans from geometry, permissive turns, signal states with seconds to the next change for the viewer | todo | |
+| M3.5 | Multi-lane roads: mid-lane insertion in the vehicle store, lane sets per movement (default rule, `turn:lanes`), entry lanes on transfer, zipper at lane drops | todo | |
+| M3.6 | MOBIL lane changing, European asymmetric: keep-right bias, no overtaking on the right outside towns above 60 km/h, politeness; lane-change animation; multi-lane benchmark | todo | |
+| M3.7 | Lane choice ahead of intersections: route incentive, lane sets enforced at the line, fallback re-plan (capped per step) | todo | |
+| M3.8 | Gridlock follow-ups: exempt circulating heads from "no room", expose arrivals, stuck removals and removals per arrival in `Status`, the CLI and the viewer; per-road removals through the facade and in the CLI JSON (road id, name, OSM way); re-measure bensheim-5km and Berliner Ring after M3.7 (gate at 5,000: ≤ 5% removals per arrival and ≥ 4,545 arrivals/h) | todo | |
+| M3.9 | `rusthour-viz`: lane dividers, lane-change animation, signal states at stop lines (distinct shapes, neutral above ~30×), stop/give-way marks when zoomed in, capped node discs, min/max zoom and a scale bar, arrived and removed counters, roads with removals marked | todo | |
+| M3.10 | M3 user trial (docs/trials/M3.md), including what M2 left untested | todo | |
 
 ### M4 — Drivers & vehicles → `v0.5.0`
 
@@ -244,13 +250,6 @@ From the M2 user trial (docs/trials/M2.md):
 - `rusthour-import`: check how the OSM ways of roundabout approaches that
   split into two lanes (e.g. Berliner Ring, Bensheim) become roads; a short,
   wide approach slows traffic where the real road is straight.
-- Roundabouts: the 4-arm roundabout on Berliner Ring causes many
-  stuck-vehicle removals. Partly a rule artefact (the "no room" rule also
-  holds circulating heads, from start-of-step positions); try exempting
-  heads already on the ring (M3.5), and re-check with lanes and turn lanes
-  (M3.1, M3.4).
-- `rusthour-viz`: don't draw nodes as large circles at high zoom; limit zoom
-  so vehicles don't become screen-sized.
 - `rusthour-viz`: a schema mismatch shouldn't open with "not a Rust Hour map,
   or damaged".
 - Faster start-up fill of large maps (currently at most 8 new trips per
