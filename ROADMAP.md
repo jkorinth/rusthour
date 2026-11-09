@@ -176,7 +176,7 @@ seed ⇒ identical state hash.
 | ID | Item | Status | Owner |
 | --- | --- | --- | --- |
 | M3.0 | ADR-0005: movements and turn costs, right of way from the map (schema 4), signals, lanes and MOBIL, gridlock follow-ups, work split for M3 | done | docs/M3.0-adr-lanes-intersections |
-| M3.1 | Turn costs in routing: static penalty per movement by turn type, plus observed stop-line delay per movement in the congestion costs, decaying from a yield/stop/signal prior; A* stays exact (first in M3) | todo | |
+| M3.1 | Turn costs in routing: static penalty per movement by turn type, plus observed stop-line delay per movement in the congestion costs, decaying from a yield/stop/signal prior; A* stays exact (first in M3) | done | feat/M3.1-turn-costs |
 | M3.2 | Right of way from the map, network schema 4: road class, `priority_road`, give-way/stop/signal at road ends (from OSM node tags, direction-aware), `turn:lanes`; inconsistent tags dropped and reported, never failing a map; no signals on short links of split junctions; importer report of applied and ignored signs, signals and turn lanes; merged with or after the asset rebuild | todo | |
 | M3.3 | Right of way v2: rank from signs, `priority_road`, class, speed, lanes, then right before left; per-lane approaches; only conflicting movements yield; left turns yield to oncoming traffic; stop signs (the controller trait exists since M2.5) | todo | |
 | M3.4 | Traffic signal controller: default fixed-time plans from geometry, permissive turns, signal states with seconds to the next change for the viewer | todo | |

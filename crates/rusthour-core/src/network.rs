@@ -7,6 +7,8 @@
 
 use crate::StateHasher;
 
+pub mod movement;
+
 /// A directed road between two intersections, all lanes in travel direction.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Road {
