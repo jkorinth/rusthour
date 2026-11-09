@@ -70,7 +70,7 @@ pub fn incoming(net: &Network) -> (Vec<u32>, Vec<u32>) {
 mod tests {
     use super::Turn::*;
     use super::*;
-    use crate::network::Road;
+    use crate::network::{EndControl, Road};
 
     #[test]
     fn four_arm_turn_types() {
@@ -86,6 +86,10 @@ mod tests {
             start_dir: d,
             end_dir: d,
             roundabout: false,
+            class: 0,
+            priority_road: false,
+            end_control: EndControl::None,
+            turn_lanes: vec![],
         };
         let mut net = Network {
             nodes: vec![[0.0, 0.0]; 2],

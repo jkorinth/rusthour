@@ -135,6 +135,10 @@ mod tests {
             name: None,
             osm: None,
             roundabout: false,
+            class: crate::RoadClass::Unknown,
+            priority_road: false,
+            end_control: crate::EndControl::None,
+            turn_lanes: vec![],
         }
     }
 

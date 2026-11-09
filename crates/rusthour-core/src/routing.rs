@@ -480,7 +480,7 @@ fn largest_scc(first: &[u32], succ: &[u32]) -> Vec<bool> {
 #[allow(clippy::cast_possible_truncation)] // tiny generated networks
 mod tests {
     use super::*;
-    use crate::network::Road;
+    use crate::network::{EndControl, Road};
     use proptest::prelude::*;
 
     fn road(from: u32, to: u32, length_m: f64) -> Road {
@@ -493,6 +493,10 @@ mod tests {
             start_dir: [1.0, 0.0],
             end_dir: [1.0, 0.0],
             roundabout: false,
+            class: 0,
+            priority_road: false,
+            end_control: EndControl::None,
+            turn_lanes: vec![],
         }
     }
 

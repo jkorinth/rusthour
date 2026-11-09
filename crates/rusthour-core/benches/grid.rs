@@ -1,6 +1,6 @@
 //! A synthetic grid network shared by the benchmarks and the allocation test.
 
-use rusthour_core::network::{Network, Road};
+use rusthour_core::network::{EndControl, Network, Road};
 
 /// An `n × n` grid of nodes 100 m apart, two one-lane roads (one per
 /// direction) between neighbours, and every movement except U-turns.
@@ -27,6 +27,10 @@ pub fn grid(n: u32) -> Network {
             start_dir: dir,
             end_dir: dir,
             roundabout: false,
+            class: 0,
+            priority_road: false,
+            end_control: EndControl::None,
+            turn_lanes: vec![],
         });
     };
     for y in 0..n {

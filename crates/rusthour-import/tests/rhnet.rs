@@ -3,9 +3,22 @@
 use proptest::prelude::*;
 use proptest::sample::Index;
 use rusthour_api::{
-    Connection, NETWORK_SCHEMA_VERSION, Network, Node, NodeId, OsmWayPart, Point, Road, RoadId,
+    Connection, EndControl, NETWORK_SCHEMA_VERSION, Network, Node, NodeId, OsmWayPart, Point, Road,
+    RoadClass, RoadId, Turns,
 };
 use rusthour_import::rhnet::{DecodeError, Metadata, decode, encode};
+
+const CLASSES: [RoadClass; 3] = [
+    RoadClass::Unknown,
+    RoadClass::Primary,
+    RoadClass::LivingStreet,
+];
+const CONTROLS: [EndControl; 4] = [
+    EndControl::None,
+    EndControl::GiveWay,
+    EndControl::Stop,
+    EndControl::Signals,
+];
 
 /// Any network the format must carry, valid or not (validation is the API's
 /// job). Floats cover everything but NaN, which `==` can't compare; sign of
@@ -23,9 +36,15 @@ fn network() -> impl Strategy<Value = Network> {
         any::<Option<String>>(),
         any::<Option<(i64, i64, i64)>>(),
         any::<bool>(),
+        (
+            prop::sample::select(&CLASSES[..]),
+            any::<bool>(),
+            prop::sample::select(&CONTROLS[..]),
+            prop::collection::vec(any::<u8>().prop_map(Turns), 0..17),
+        ),
     )
         .prop_map(
-            |(from, to, geometry, speed_limit_mps, lanes, name, osm, roundabout)| Road {
+            |(from, to, geometry, speed_limit_mps, lanes, name, osm, roundabout, schema4)| Road {
                 from_node: NodeId(from),
                 to_node: NodeId(to),
                 geometry,
@@ -38,6 +57,10 @@ fn network() -> impl Strategy<Value = Network> {
                     to_node,
                 }),
                 roundabout,
+                class: schema4.0,
+                priority_road: schema4.1,
+                end_control: schema4.2,
+                turn_lanes: schema4.3,
             },
         );
     let connection = (any::<u32>(), any::<u32>()).prop_map(|(a, b)| Connection {

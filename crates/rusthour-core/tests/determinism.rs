@@ -5,7 +5,7 @@
 //! PR and say so in the PR description.
 
 use rand_chacha::rand_core::Rng;
-use rusthour_core::network::{Network, Road};
+use rusthour_core::network::{EndControl, Network, Road};
 use rusthour_core::vehicle::idm::IdmParams;
 use rusthour_core::{Config, Engine, Stream, run_and_hash};
 
@@ -27,7 +27,9 @@ use rusthour_core::{Config, Engine, Stream, run_and_hash};
 /// router's delay estimates and accumulators.
 /// Changed in M3.8a: the hash includes the arrival count and the per-road
 /// removal counts; the golden run is otherwise unchanged.
-const GOLDEN_HASH: u64 = 6_080_918_846_754_830_497;
+/// Changed in M3.2: the hash includes each road's class, priority flag, end
+/// control and turn lanes (the run itself is unchanged).
+const GOLDEN_HASH: u64 = 38_815_666_710_758_177;
 
 /// A four-road ring with a short road and a merging side road that routing
 /// excludes. Random demand keeps 10 vehicles on the ring, and hand-placed
@@ -43,6 +45,10 @@ fn traffic(seed: u64) -> u64 {
         start_dir: [1.0, 0.0],
         end_dir: [0.0, 1.0],
         roundabout: false,
+        class: 0,
+        priority_road: false,
+        end_control: EndControl::None,
+        turn_lanes: vec![],
     };
     let net = Network {
         nodes: vec![

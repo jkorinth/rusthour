@@ -1,7 +1,7 @@
 //! Liveness: at moderate density, traffic keeps arriving (M2 trial).
 
 use proptest::prelude::*;
-use rusthour_core::network::{Network, Road};
+use rusthour_core::network::{EndControl, Network, Road};
 use rusthour_core::{Config, Engine};
 
 const MINUTE: u64 = 600;
@@ -34,6 +34,10 @@ fn grid(n: u32, lengths: &[f64]) -> Network {
             start_dir: dir,
             end_dir: dir,
             roundabout: false,
+            class: 0,
+            priority_road: false,
+            end_control: EndControl::None,
+            turn_lanes: vec![],
         });
     };
     for i in 0..n * n {

@@ -168,7 +168,7 @@ impl Controller for Priority {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::network::Road;
+    use crate::network::{EndControl, Road};
     use proptest::prelude::*;
 
     /// Road `i` ends at node 0 heading N, W, S, E: road `i + 1` (mod 4)
@@ -187,6 +187,10 @@ mod tests {
                     start_dir: dirs[i],
                     end_dir: dirs[i],
                     roundabout: classes[i].0,
+                    class: 0,
+                    priority_road: false,
+                    end_control: EndControl::None,
+                    turn_lanes: vec![],
                 })
                 .collect(),
             connections: Vec::new(),

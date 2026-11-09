@@ -10,7 +10,10 @@ use std::collections::{HashMap, HashSet};
 use std::fmt;
 use std::path::Path;
 
-use rusthour_api::{Connection, Network, Node, NodeId, OsmWayPart, Point, Road, RoadId};
+use rusthour_api::{
+    Connection, EndControl, MAX_LANES, Network, Node, NodeId, OsmWayPart, Point, Road, RoadClass,
+    RoadId,
+};
 
 /// OSM elements, as much of them as the importer needs.
 #[derive(Debug, Clone, Default)]
@@ -447,10 +450,6 @@ pub fn import(data: &OsmData, bbox: Bbox) -> Network {
     let mut end_pairs = HashSet::new();
     let mut refs = HashSet::new();
     for (way, highway, dirs, run) in pieces {
-        let name = ["name", "ref"]
-            .into_iter()
-            .find_map(|k| tag(&way.tags, k).filter(|v| !v.is_empty()))
-            .map(str::to_owned);
         let oneway = !(dirs.forward && dirs.backward);
         let mut segments = vec![];
         let mut start = 0;
@@ -489,15 +488,12 @@ pub fn import(data: &OsmData, bbox: Bbox) -> Network {
                     from_node: node_id(from, &mut network.nodes),
                     to_node: node_id(to, &mut network.nodes),
                     geometry,
-                    speed_limit_mps: speed_limit_mps(highway, &way.tags, forward),
-                    lanes: lanes(highway, &way.tags, forward, oneway),
-                    name: name.clone(),
                     osm: Some(OsmWayPart {
                         way: way.id,
                         from_node: from,
                         to_node: to,
                     }),
-                    roundabout: is_roundabout(&way.tags),
+                    ..attributes(way, highway, forward, oneway)
                 });
                 twin.push(None);
             }
@@ -509,6 +505,30 @@ pub fn import(data: &OsmData, bbox: Bbox) -> Network {
     }
     connect(&mut network, &twin, &node_ids, &data.relations);
     network
+}
+
+/// A road's attributes from its way's tags in one direction, for [`import`]
+/// to complete with its ends and geometry.
+fn attributes(way: &Way, highway: &str, forward: bool, oneway: bool) -> Road {
+    let name = ["name", "ref"]
+        .into_iter()
+        .find_map(|k| tag(&way.tags, k).filter(|v| !v.is_empty()))
+        .map(str::to_owned);
+    Road {
+        from_node: NodeId(0),
+        to_node: NodeId(0),
+        geometry: vec![],
+        speed_limit_mps: speed_limit_mps(highway, &way.tags, forward),
+        // Lane sets are `u16` masks (ADR-0005).
+        lanes: lanes(highway, &way.tags, forward, oneway).min(MAX_LANES),
+        name,
+        osm: None,
+        roundabout: is_roundabout(&way.tags),
+        class: RoadClass::Unknown,
+        priority_road: false,
+        end_control: EndControl::None,
+        turn_lanes: vec![],
+    }
 }
 
 /// What [`keep_central_part`] dropped.

@@ -694,6 +694,10 @@ mod tests {
                 name: Some("Schulgäßchen".into()),
                 osm: None,
                 roundabout: false,
+                class: rusthour_api::RoadClass::Unknown,
+                priority_road: false,
+                end_control: rusthour_api::EndControl::None,
+                turn_lanes: vec![],
             }],
             connections: vec![],
         };

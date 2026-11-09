@@ -1,7 +1,7 @@
 //! Intersection passage in the step pipeline (M2.5b, ADR-0004 §2).
 
 use super::*;
-use crate::network::Road;
+use crate::network::{EndControl, Road};
 
 const MINUTE: u64 = 600;
 
@@ -15,6 +15,10 @@ fn road(from: u32, to: u32, length_m: f64, speed: f64, dirs: [[f64; 2]; 2]) -> R
         start_dir: dirs[0],
         end_dir: dirs[1],
         roundabout: false,
+        class: 0,
+        priority_road: false,
+        end_control: EndControl::None,
+        turn_lanes: vec![],
     }
 }
 

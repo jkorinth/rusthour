@@ -1,6 +1,6 @@
 //! Regression tests for bugs found on `main` (AGENTS.md §5).
 
-use rusthour_core::network::{Network, Road};
+use rusthour_core::network::{EndControl, Network, Road};
 use rusthour_core::vehicle::idm::IdmParams;
 use rusthour_core::{Config, Engine};
 
@@ -33,6 +33,10 @@ fn regression_m2_trial_full_exit_holds_the_node() {
         start_dir: dir,
         end_dir: dir,
         roundabout: false,
+        class: 0,
+        priority_road: false,
+        end_control: EndControl::None,
+        turn_lanes: vec![],
     };
     let (east, west, north, south) = ([1.0, 0.0], [-1.0, 0.0], [0.0, 1.0], [0.0, -1.0]);
     // Nodes: P, Q, north of P, south of Q, far west, far east.
