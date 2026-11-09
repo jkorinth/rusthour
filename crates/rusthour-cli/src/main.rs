@@ -16,6 +16,8 @@ struct Cli {
 #[derive(Debug, Subcommand)]
 enum Command {
     /// Run a simulation for a number of steps and print its status as JSON.
+    ///
+    /// `removed_per_arrival` is null when no vehicle arrived.
     Run {
         /// Random seed; the same seed always gives the same result.
         #[arg(long, default_value_t = 42)]
@@ -32,6 +34,10 @@ enum Command {
         /// Road network to run on, a `.rhnet` file; default is an empty map.
         #[arg(long)]
         map: Option<PathBuf>,
+        /// Add `stuck_roads` (the ten roads with the most stuck removals) and
+        /// `stuck_roads_total` (how many roads had any).
+        #[arg(long)]
+        report_stuck: bool,
     },
 }
 
@@ -43,6 +49,7 @@ fn main() {
             dt_ms,
             vehicles,
             map,
+            report_stuck,
         } => {
             let config = Config {
                 dt_ms,
@@ -58,6 +65,16 @@ fn main() {
             sim.step(steps);
             // The hash is on demand, not part of `Status`; keep it in the output.
             let mut out = serde_json::to_value(sim.status()).expect("status is plain data");
+            let status = sim.status();
+            // null, not 0, when nothing arrived: a full gridlock must not look healthy.
+            out["removed_per_arrival"] = (status.arrived > 0)
+                .then(|| f64::from(status.removed_stuck) / f64::from(status.arrived))
+                .into();
+            if report_stuck {
+                let (top, total) = stuck_roads(&sim);
+                out["stuck_roads"] = top.into();
+                out["stuck_roads_total"] = total.into();
+            }
             out["state_hash"] = sim.state_hash().into();
             match serde_json::to_string_pretty(&out) {
                 Ok(json) => println!("{json}"),
@@ -65,6 +82,29 @@ fn main() {
             }
         }
     }
+}
+
+/// The ten roads with the most stuck removals. Name and OSM way tell roads
+/// apart where many have no name or share one.
+fn stuck_roads(sim: &impl Simulation) -> (Vec<serde_json::Value>, usize) {
+    let mut counts = Vec::new();
+    sim.stuck_by_road_into(&mut counts);
+    counts.sort_by_key(|&(road, n)| (std::cmp::Reverse(n), road.0));
+    let top = counts
+        .iter()
+        .take(10)
+        .map(|&(id, removed)| {
+            let road = &sim.network().roads[id.0 as usize];
+            serde_json::json!({
+                "road": id.0,
+                "name": road.name,
+                "osm_way": road.osm.map(|o| o.way),
+                "roundabout": road.roundabout,
+                "removed": removed,
+            })
+        })
+        .collect();
+    (top, counts.len())
 }
 
 fn load(path: &Path) -> Result<Network, String> {
