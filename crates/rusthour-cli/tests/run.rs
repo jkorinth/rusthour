@@ -19,7 +19,7 @@ fn run(args: &[&str]) -> serde_json::Value {
 #[test]
 fn run_prints_the_state_hash_and_the_counts() {
     let a = run(&["--steps", "20"]);
-    assert_eq!(a["protocol_version"], 2);
+    assert_eq!(a["protocol_version"], 3);
     assert_eq!(a["tick"], 20);
     assert!(a["state_hash"].is_u64());
     assert_eq!(a["vehicles"], 0);
