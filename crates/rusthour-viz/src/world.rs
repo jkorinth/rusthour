@@ -14,10 +14,15 @@ use rusthour_api::{Network, Placement, Point, RoadId, VehicleSnapshot};
 
 use crate::camera::{Camera, LANE_WIDTH_M};
 use crate::labels::{self, Candidate};
+use crate::traffic;
 
 /// Road and intersection fill: at least 3:1 against both egui themes' panel
 /// backgrounds (ADR-0003 accessibility minimum).
 const ROAD_COLOR: Color32 = Color32::from_gray(0x8a);
+/// Roads with stuck removals are drawn over in this red.
+const HOT_ROAD_COLOR: Color32 = Color32::from_rgb(0xe0, 0x20, 0x20);
+/// Width of the hot-road overlay, in screen points.
+const HOT_ROAD_WIDTH_PT: f32 = 4.0;
 /// Drawn vehicle width in meters.
 const VEHICLE_WIDTH_M: f32 = 1.8;
 /// Smallest drawn vehicle, in screen points, so traffic stays visible when
@@ -103,8 +108,15 @@ impl World {
     }
 
     /// Draws the map and `vehicles`, extrapolated by `ahead_s` sim seconds,
+    /// with the roads in `hot` (stuck removals) tinted,
     /// into the remaining space of `ui` and handles pan/zoom.
-    pub fn show(&mut self, ui: &mut Ui, vehicles: &VehicleSnapshot, ahead_s: f32) {
+    pub fn show(
+        &mut self,
+        ui: &mut Ui,
+        vehicles: &VehicleSnapshot,
+        ahead_s: f32,
+        hot: (&Network, &[(RoadId, u32)]),
+    ) {
         let (viewport, response) = ui.allocate_exact_size(ui.available_size(), Sense::drag());
         if viewport.width() < 1.0 || viewport.height() < 1.0 {
             return; // e.g. a minimized window: a zero scale would poison the camera
@@ -201,6 +213,7 @@ impl World {
         let painter = ui.painter_at(viewport);
         painter.add(Shape::mesh(mesh));
         let camera = *camera;
+        draw_hot_roads(&painter, camera, viewport, &self.placement, hot);
         let color = if ui.visuals().dark_mode {
             VEHICLE_DARK
         } else {
@@ -287,6 +300,40 @@ impl World {
             }
             painter.add(shape(p.center, text));
         }
+    }
+}
+
+/// Tints the roads with stuck removals, redder the more they have.
+fn draw_hot_roads(
+    painter: &egui::Painter,
+    camera: Camera,
+    viewport: Rect,
+    placement: &Placement,
+    (network, hot): (&Network, &[(RoadId, u32)]),
+) {
+    let to_screen = camera.mesh_transform(viewport);
+    let max = hot.iter().map(|&(_, n)| n).max().unwrap_or(0);
+    let [r, g, b, _] = HOT_ROAD_COLOR.to_array();
+    for &(road, n) in hot {
+        // The line the road is drawn on, so a twin's jam shows on its own direction.
+        let info = &network.roads[road.0 as usize];
+        let geometry = if placement.has_twin(road) {
+            shifted(
+                &info.geometry,
+                f64::from(info.lanes) * f64::from(LANE_WIDTH_M) / 2.0,
+            )
+        } else {
+            info.geometry.clone()
+        };
+        let line = geometry
+            .into_iter()
+            .map(|p| to_screen * to_mesh(p))
+            .collect();
+        let color = Color32::from_rgba_unmultiplied(r, g, b, traffic::hot_road_alpha(n, max));
+        painter.add(Shape::line(
+            line,
+            egui::Stroke::new(HOT_ROAD_WIDTH_PT, color),
+        ));
     }
 }
 
@@ -422,7 +469,14 @@ mod tests {
             events,
             ..Default::default()
         };
-        let mut out = ctx.run_ui(input, |ui| world.show(ui, &VehicleSnapshot::default(), 0.0));
+        let mut out = ctx.run_ui(input, |ui| {
+            world.show(
+                ui,
+                &VehicleSnapshot::default(),
+                0.0,
+                (&Network::default(), &[]),
+            );
+        });
         out.textures_delta.clear();
     }
 
