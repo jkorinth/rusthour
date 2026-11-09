@@ -19,13 +19,15 @@ use rusthour_core::{Config, Engine, Stream, run_and_hash};
 /// next road has no room waits at its line and no one yields to it (don't
 /// block the box), and a stopped head also respects a leader on the next road.
 /// Changed in M2.10: the hash includes each slot's stuck counter, the
-/// stuck timeout and the teleport count (the run itself is unchanged).
+/// stuck timeout and the removal count (the run itself is unchanged).
 /// Changed in M2.9: routes use current travel times, vehicles under way
 /// re-plan, and the hash includes the router's travel-time estimates.
 /// Changed in M3.1: routes add turn penalties and observed stop-line delays
 /// per movement, and the hash includes each slot's held counter and the
 /// router's delay estimates and accumulators.
-const GOLDEN_HASH: u64 = 18_273_362_273_731_190_971;
+/// Changed in M3.8a: the hash includes the arrival count and the per-road
+/// removal counts; the golden run is otherwise unchanged.
+const GOLDEN_HASH: u64 = 6_080_918_846_754_830_497;
 
 /// A four-road ring with a short road and a merging side road that routing
 /// excludes. Random demand keeps 10 vehicles on the ring, and hand-placed

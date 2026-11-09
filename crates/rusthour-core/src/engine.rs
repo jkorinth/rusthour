@@ -70,7 +70,7 @@ pub struct Config {
     /// network; 0 means no demand. Until M5.1 scenarios replace it.
     pub target_vehicles: u32,
     /// A vehicle that has not moved (below 0.1 m/s) for this many simulated
-    /// seconds is removed and counted in [`Engine::teleported`]; 0 disables
+    /// seconds is removed and counted in [`Engine::removed_stuck`]; 0 disables
     /// it (ADR-0004, addendum M2.10).
     pub stuck_timeout_s: u32,
 }
@@ -143,8 +143,12 @@ pub struct Engine {
     /// Phase 1 scratch, reused every step.
     new_trips: Vec<Trip>,
     route: Vec<u32>,
+    /// Vehicles that reached their destination so far.
+    arrived: u32,
     /// Vehicles removed by the stuck-vehicle safety net so far.
-    teleported: u32,
+    removed_stuck: u32,
+    /// `removed_stuck` per road, sized once.
+    stuck_by_road: Vec<u32>,
     /// `stuck_timeout_s` in ticks; 0 = off.
     stuck_limit: u32,
 }
@@ -207,7 +211,9 @@ impl Engine {
             spawn_cursor: 0,
             new_trips: Vec::new(),
             route: Vec::new(),
-            teleported: 0,
+            arrived: 0,
+            removed_stuck: 0,
+            stuck_by_road: vec![0; network.roads.len()],
             stuck_limit: match config.stuck_timeout_s {
                 0 => 0,
                 s => u32::try_from(u64::from(s) * 1000 / u64::from(config.dt_ms))
@@ -391,7 +397,10 @@ impl Engine {
                     speed_mps: v,
                     min_gap_m: p.min_gap_m,
                     can_stop: dist_m >= v * v / (2.0 * p.comfort_decel_mps2),
-                    blocked: no_room(&*vs, u),
+                    // Circulating vehicles keep priority on the ring (ADR-0005 §4).
+                    blocked: no_room(vs, u)
+                        && !(net.roads[r as usize].roundabout
+                            && net.roads[to_road as usize].roundabout),
                 });
             }
             self.go.clear();
@@ -561,6 +570,7 @@ impl Engine {
                     break;
                 }
                 vs.despawn(vs.id(s));
+                self.arrived += 1;
             }
         }
         // Safety net: gridlock can still happen (ADR-0004, M2.10). Slot order.
@@ -574,8 +584,9 @@ impl Engine {
             }
             vs.stuck_ticks[s] += 1;
             if self.stuck_limit > 0 && vs.stuck_ticks[s] >= self.stuck_limit {
+                self.stuck_by_road[vs.road(s) as usize] += 1;
                 vs.despawn(vs.id(s));
-                self.teleported += 1;
+                self.removed_stuck += 1;
             }
         }
     }
@@ -583,8 +594,20 @@ impl Engine {
     /// Vehicles removed so far for standing still longer than
     /// `Config::stuck_timeout_s`. A symptom of gridlock, not a result.
     #[must_use]
-    pub fn teleported(&self) -> u32 {
-        self.teleported
+    pub fn removed_stuck(&self) -> u32 {
+        self.removed_stuck
+    }
+
+    /// Vehicles that reached the end of their route so far.
+    #[must_use]
+    pub fn arrived(&self) -> u32 {
+        self.arrived
+    }
+
+    /// [`Self::removed_stuck`] per road, indexed by road id.
+    #[must_use]
+    pub fn stuck_by_road(&self) -> &[u32] {
+        &self.stuck_by_road
     }
 
     /// The random stream of one subsystem.
@@ -620,7 +643,11 @@ impl Engine {
         h.write_u64(u64::from(self.config.dt_ms));
         h.write_u64(u64::from(self.config.target_vehicles));
         h.write_u64(u64::from(self.config.stuck_timeout_s));
-        h.write_u64(u64::from(self.teleported));
+        h.write_u64(u64::from(self.arrived));
+        h.write_u64(u64::from(self.removed_stuck));
+        for &n in &self.stuck_by_road {
+            h.write_u64(u64::from(n));
+        }
         h.write_u64(self.tick);
         for (stream, rng) in STREAMS.iter().zip(&self.rngs) {
             h.write_bytes(&rng.get_seed());

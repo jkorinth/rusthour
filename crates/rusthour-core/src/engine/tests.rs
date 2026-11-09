@@ -290,3 +290,29 @@ fn rerouting_is_staggered_by_slot() {
     }
     assert!(total > 0, "nobody re-planned");
 }
+
+/// ADR-0005 §4: a ring head is not held for "no room" on the next ring road.
+#[test]
+fn ring_heads_are_exempt_from_no_room() {
+    let stopped = |roundabout: bool| {
+        let (mut a, mut b) = (
+            road(0, 1, 100.0, 10.0, [[1.0, 0.0]; 2]),
+            road(1, 0, 100.0, 10.0, [[-1.0, 0.0]; 2]),
+        );
+        a.roundabout = roundabout;
+        b.roundabout = roundabout;
+        let net = Network {
+            nodes: vec![[0.0, 0.0], [100.0, 0.0]],
+            roads: vec![a, b],
+            connections: vec![(0, 1), (1, 0)],
+        };
+        let mut e = Engine::with_network(Config::default(), 1, net);
+        let head = e.spawn(&[0, 1], car()).unwrap();
+        e.spawn(&[1, 0], car()).unwrap(); // sits at the start of road 1: no room
+        e.vehicles.pos_m[head.slot as usize] = 95.0;
+        e.decide();
+        e.stop[e.vehicles.lane_id(0, 0)]
+    };
+    assert!(stopped(false), "a plain node keeps the box clear");
+    assert!(!stopped(true), "the ring keeps circulating");
+}
