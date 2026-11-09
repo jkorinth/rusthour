@@ -56,10 +56,17 @@ impl Priority {
     }
 }
 
-/// Circulating > higher speed limit > more lanes.
-fn class(net: &Network, a: &Approach) -> (bool, f64, u8) {
-    let r = &net.roads[a.from_road as usize];
+/// A road's rank at its end node, compared lexicographically, highest
+/// first: circulating > higher speed limit > more lanes. Routing uses it
+/// for the yield prior of a movement (ADR-0005 §2).
+#[must_use]
+pub fn rank(net: &Network, road: u32) -> (bool, f64, u8) {
+    let r = &net.roads[road as usize];
     (r.roundabout, r.speed_limit_mps, r.lanes)
+}
+
+fn class(net: &Network, a: &Approach) -> (bool, f64, u8) {
+    rank(net, a.from_road)
 }
 
 /// Time-to-line test: `dist ≤ 3 s · v + 2·s0`.

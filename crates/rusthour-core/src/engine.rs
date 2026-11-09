@@ -308,15 +308,20 @@ impl Engine {
         }
     }
 
-    /// Phase 2: refresh the travel-time estimates every `COST_PERIOD_MS`;
-    /// then each vehicle whose turn it is re-plans from its current road to
-    /// its destination, keeping that road. Turns are staggered by slot, so a
-    /// step re-plans at most `ceil(slots / period)` vehicles. Returns how
+    /// Phase 2: refresh the travel-time and movement-delay estimates every
+    /// `COST_PERIOD_MS`; then each vehicle whose turn it is re-plans from its
+    /// current road to its destination, keeping that road. Turns are
+    /// staggered by slot, so a step re-plans at most `ceil(slots / period)`
+    /// vehicles. Returns how
     /// many it re-planned.
     fn update_routes(&mut self) -> u32 {
         let dt = u64::from(self.config.dt_ms);
         if self.tick.is_multiple_of((COST_PERIOD_MS / dt).max(1)) {
-            self.router.observe(&self.network, &self.vehicles);
+            self.router.observe(
+                &self.network,
+                &self.vehicles,
+                f64::from(self.config.dt_ms) / 1000.0,
+            );
         }
         let period = (REROUTE_PERIOD_MS / dt).max(1);
         let vs = &mut self.vehicles;
@@ -360,7 +365,7 @@ impl Engine {
     /// their look-ahead of its end; heads told to stop get a stop line.
     fn decide(&mut self) {
         self.stop.fill(false);
-        let (net, vs) = (&self.network, &self.vehicles);
+        let (net, vs) = (&self.network, &mut self.vehicles);
         for (n, control) in self.controls.iter_mut().enumerate() {
             let roads = self.incoming_first[n] as usize..self.incoming_first[n + 1] as usize;
             self.approaches.clear();
@@ -386,7 +391,7 @@ impl Engine {
                     speed_mps: v,
                     min_gap_m: p.min_gap_m,
                     can_stop: dist_m >= v * v / (2.0 * p.comfort_decel_mps2),
-                    blocked: no_room(vs, u),
+                    blocked: no_room(&*vs, u),
                 });
             }
             self.go.clear();
@@ -394,6 +399,9 @@ impl Engine {
             control.decide(net, self.tick, &self.approaches, &mut self.go);
             for (a, &go) in self.approaches.iter().zip(&self.go) {
                 self.stop[vs.lane_id(a.from_road, 0)] = !go;
+                if !go {
+                    vs.held_ticks[a.slot as usize] += 1;
+                }
             }
         }
     }
@@ -509,6 +517,10 @@ impl Engine {
                 .back()
                 .is_none_or(|&t| e.pos_m <= vs.pos_m[t as usize] - vs.params[t as usize].length_m);
             if is_head && fits {
+                // The delay sample of the movement it makes (ADR-0005 §2).
+                let to = vs.route[s][vs.route_pos[s] as usize + 1];
+                self.router.passed(old_road, to, vs.held_ticks[s]);
+                vs.held_ticks[s] = 0;
                 let road = vs.route[s][e.route_pos as usize];
                 vs.transfer(vs.id(s), road, 0, e.pos_m);
                 vs.route_pos[s] = e.route_pos;
