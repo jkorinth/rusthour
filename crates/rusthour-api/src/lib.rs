@@ -25,7 +25,7 @@ pub use snapshot::{VehicleId, VehicleSnapshot};
 
 /// Version of the wire protocol. Bump on any incompatible change to the
 /// serialized types in this crate.
-pub const PROTOCOL_VERSION: u32 = 2;
+pub const PROTOCOL_VERSION: u32 = 3;
 
 /// A point-in-time summary of a simulation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -40,6 +40,10 @@ pub struct Status {
     pub vehicles: u32,
     /// Trips generated but not yet on the network.
     pub waiting: u32,
+    /// Vehicles that reached their destination so far.
+    pub arrived: u32,
+    /// Vehicles removed so far for standing still too long (gridlock).
+    pub removed_stuck: u32,
 }
 
 /// The facade every simulation backend implements: in-process now, remote in M8.
@@ -60,6 +64,10 @@ pub trait Simulation {
     /// Stable hash of the full simulation state. Costs O(state), so it is
     /// asked for on demand and is not part of [`Status`].
     fn state_hash(&self) -> u64;
+
+    /// Writes `(road, vehicles removed there as stuck)` into `out`, replacing
+    /// its contents and reusing its buffer. Only roads with removals, by id.
+    fn stuck_by_road_into(&self, out: &mut Vec<(RoadId, u32)>);
 }
 
 /// A simulation running in the caller's process (and thread).
@@ -107,6 +115,8 @@ impl Simulation for InProcess {
             sim_time_ms: self.engine.sim_time_ms(),
             vehicles: u32::try_from(self.engine.vehicles().live_count()).unwrap_or(u32::MAX),
             waiting: self.engine.waiting(),
+            arrived: self.engine.arrived(),
+            removed_stuck: self.engine.removed_stuck(),
         }
     }
 
@@ -136,6 +146,17 @@ impl Simulation for InProcess {
 
     fn state_hash(&self) -> u64 {
         self.engine.state_hash()
+    }
+
+    fn stuck_by_road_into(&self, out: &mut Vec<(RoadId, u32)>) {
+        out.clear();
+        let counts = self.engine.stuck_by_road();
+        out.extend(
+            (0u32..)
+                .zip(counts)
+                .filter(|&(_, &n)| n > 0)
+                .map(|(r, &n)| (RoadId(r), n)),
+        );
     }
 
     fn network(&self) -> &Network {
@@ -221,7 +242,7 @@ mod tests {
         let mut sim = busy();
         sim.step(50);
         let status = sim.status();
-        assert_eq!(status.protocol_version, 2);
+        assert_eq!(status.protocol_version, 3);
         assert!(status.vehicles + status.waiting > 0);
         let json = serde_json::to_string(&status).unwrap();
         assert!(!json.contains("state_hash"));
@@ -229,6 +250,26 @@ mod tests {
         assert_ne!(
             sim.state_hash(),
             InProcess::new(Config::default(), 7).state_hash()
+        );
+    }
+
+    #[test]
+    fn arrivals_and_per_road_removals_match_the_status() {
+        let config = Config {
+            target_vehicles: 40,
+            stuck_timeout_s: 1,
+            ..Config::default()
+        };
+        let mut sim = InProcess::with_network(config, 7, ring()).unwrap();
+        sim.step(3000);
+        let status = sim.status();
+        let mut by_road = vec![(RoadId(9), 9)]; // replaced, not appended to
+        sim.stuck_by_road_into(&mut by_road);
+        assert!(status.arrived > 0 && status.removed_stuck > 0, "{status:?}");
+        assert!(by_road.iter().all(|&(r, n)| r.0 < 3 && n > 0));
+        assert_eq!(
+            by_road.iter().map(|&(_, n)| n).sum::<u32>(),
+            status.removed_stuck
         );
     }
 
