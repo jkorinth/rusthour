@@ -381,7 +381,7 @@ impl Vehicles {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::network::{Network, Road};
+    use crate::network::{EndControl, Network, Road};
     use proptest::prelude::*;
 
     fn net() -> Network {
@@ -394,6 +394,10 @@ mod tests {
             start_dir: [1.0, 0.0],
             end_dir: [1.0, 0.0],
             roundabout: false,
+            class: 0,
+            priority_road: false,
+            end_control: EndControl::None,
+            turn_lanes: vec![],
         };
         Network {
             nodes: vec![[0.0, 0.0], [130.0, 0.0]],

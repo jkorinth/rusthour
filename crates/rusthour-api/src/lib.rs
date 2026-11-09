@@ -19,8 +19,8 @@ pub use inspect::{
     DriverInfo, Gone, MovementInfo, RoadInfo, StopCause, TurnType, VehicleInfo, WaitReason,
 };
 pub use network::{
-    Connection, NETWORK_SCHEMA_VERSION, Network, NetworkError, Node, NodeId, OsmWayPart, Point,
-    Road, RoadId,
+    Connection, EndControl, MAX_LANES, NETWORK_SCHEMA_VERSION, Network, NetworkError, Node, NodeId,
+    OsmWayPart, Point, Road, RoadClass, RoadId, Turns,
 };
 pub use pacer::{DEFAULT_BUDGET_S, MAX_FRAME_S, Pacer, scale_from_slider, slider_from_scale};
 pub use placement::Placement;
@@ -206,6 +206,10 @@ mod tests {
             name: None,
             osm: None,
             roundabout: false,
+            class: crate::RoadClass::Unknown,
+            priority_road: false,
+            end_control: crate::EndControl::None,
+            turn_lanes: vec![],
         };
         let conn = |i: u32| Connection {
             from_road: RoadId(i),

@@ -100,5 +100,9 @@ fn one_way(from: NodeId, to: NodeId, a: Point, b: Point, lanes: u8) -> Road {
         name: None,
         osm: None,
         roundabout: false,
+        class: rusthour_api::RoadClass::Unknown,
+        priority_road: false,
+        end_control: rusthour_api::EndControl::None,
+        turn_lanes: vec![],
     }
 }

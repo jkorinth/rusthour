@@ -30,6 +30,30 @@ pub struct Road {
     pub end_dir: [f64; 2],
     /// Part of a roundabout: traffic on it has priority over entering roads.
     pub roundabout: bool,
+    /// Road class rank: higher is more important, 0 is unknown.
+    pub class: u8,
+    /// Part of a priority road.
+    pub priority_road: bool,
+    /// The sign or signal at the road's end.
+    pub end_control: EndControl,
+    /// Allowed turns per lane (bits: 1 left, 2 through, 4 right, 8 U-turn),
+    /// lane 0 first; empty if unknown, else one per lane.
+    pub turn_lanes: Vec<u8>,
+}
+
+/// What traffic on a road meets at the road's end.
+// shortcut: stored and hashed only; right of way uses it from M3.3/M3.4.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum EndControl {
+    /// No sign or signal.
+    #[default]
+    None,
+    /// A give-way sign.
+    GiveWay,
+    /// A stop sign.
+    Stop,
+    /// Traffic signals.
+    Signals,
 }
 
 /// The static road network.
@@ -63,6 +87,13 @@ impl Network {
                 h.write_f64(d[1]);
             }
             h.write_u64(u64::from(r.roundabout));
+            h.write_u64(u64::from(r.class));
+            h.write_u64(u64::from(r.priority_road));
+            h.write_u64(r.end_control as u64);
+            h.write_u64(r.turn_lanes.len() as u64);
+            for &t in &r.turn_lanes {
+                h.write_u64(u64::from(t));
+            }
         }
         h.write_u64(self.connections.len() as u64);
         for &(from, to) in &self.connections {

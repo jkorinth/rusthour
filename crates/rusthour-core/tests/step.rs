@@ -1,7 +1,7 @@
 //! Step pipeline (M2.1b, ADR-0004 §2): IDM, integration, transfers, arrivals.
 
 use proptest::prelude::*;
-use rusthour_core::network::{Network, Road};
+use rusthour_core::network::{EndControl, Network, Road};
 use rusthour_core::vehicle::idm::IdmParams;
 use rusthour_core::{Config, Engine};
 
@@ -15,6 +15,10 @@ fn road(from: u32, to: u32, length_m: f64) -> Road {
         start_dir: [1.0, 0.0],
         end_dir: [1.0, 0.0],
         roundabout: false,
+        class: 0,
+        priority_road: false,
+        end_control: EndControl::None,
+        turn_lanes: vec![],
     }
 }
 

@@ -174,7 +174,7 @@ impl Engine {
 
 #[cfg(test)]
 mod tests {
-    use crate::network::{Network, Road};
+    use crate::network::{EndControl, Network, Road};
     use crate::vehicle::idm::IdmParams;
     use crate::{Config, Engine, Gone, StopCause, WaitReason};
 
@@ -201,6 +201,10 @@ mod tests {
             start_dir: d,
             end_dir: d,
             roundabout: false,
+            class: 0,
+            priority_road: false,
+            end_control: EndControl::None,
+            turn_lanes: vec![],
         }
     }
 

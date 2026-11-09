@@ -1,7 +1,7 @@
 //! M2.10: the stuck-vehicle safety net removes vehicles that have not moved
 //! for `stuck_timeout_s`, which breaks a physical gridlock.
 
-use rusthour_core::network::{Network, Road};
+use rusthour_core::network::{EndControl, Network, Road};
 use rusthour_core::vehicle::idm::IdmParams;
 use rusthour_core::{Config, Engine};
 
@@ -29,6 +29,10 @@ fn ring() -> Network {
         start_dir: [1.0, 0.0],
         end_dir: [1.0, 0.0],
         roundabout: false,
+        class: 0,
+        priority_road: false,
+        end_control: EndControl::None,
+        turn_lanes: vec![],
     };
     Network {
         nodes: vec![[0.0, 0.0], [15.0, 0.0], [30.0, 0.0], [45.0, 0.0]],

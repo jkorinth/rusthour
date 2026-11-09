@@ -3,8 +3,8 @@
 use proptest::prelude::*;
 use proptest::sample::{Index, subsequence};
 use rusthour_api::{
-    Config, Connection, InProcess, Network, NetworkError, Node, NodeId, Point, Road, RoadId,
-    Simulation,
+    Config, Connection, EndControl, InProcess, Network, NetworkError, Node, NodeId, Point, Road,
+    RoadClass, RoadId, Simulation, Turns,
 };
 
 /// Node `i` sits in its own 250 m grid cell (jitter < half a cell), so node
@@ -57,6 +57,13 @@ fn valid_network() -> impl Strategy<Value = Network> {
                 prop::collection::vec(-30.0..30.0, 2..6),
                 0.5..40.0,
                 1u8..5,
+                (
+                    prop::sample::select(&ROAD_CLASSES[..]),
+                    any::<bool>(),
+                    prop::sample::select(&END_CONTROLS[..]),
+                    prop::collection::vec(1u8..16, 5),
+                    any::<bool>(),
+                ),
             );
             (Just(jitters), prop::collection::vec(road, 1..40))
         })
@@ -69,8 +76,9 @@ fn valid_network() -> impl Strategy<Value = Network> {
                 .collect();
             let roads = roads
                 .into_iter()
-                .map(|(from, step, offsets, speed_limit_mps, lanes)| {
+                .map(|(from, step, offsets, speed_limit_mps, lanes, schema4)| {
                     let to = (from + step) % n;
+                    let (class, priority_road, end_control, turns, with_turns) = schema4;
                     Road {
                         from_node: NodeId(id(from)),
                         to_node: NodeId(id(to)),
@@ -80,6 +88,17 @@ fn valid_network() -> impl Strategy<Value = Network> {
                         name: None,
                         osm: None,
                         roundabout: false,
+                        class,
+                        priority_road,
+                        end_control,
+                        turn_lanes: if with_turns {
+                            turns[..usize::from(lanes)]
+                                .iter()
+                                .map(|&t| Turns(t))
+                                .collect()
+                        } else {
+                            vec![]
+                        },
                     }
                 })
                 .collect();
@@ -130,6 +149,10 @@ fn arbitrary_network() -> impl Strategy<Value = Network> {
             name: None,
             osm: None,
             roundabout: false,
+            class: RoadClass::Unknown,
+            priority_road: false,
+            end_control: EndControl::None,
+            turn_lanes: vec![],
         });
     let connection = (0u32..8, 0u32..8).prop_map(|(a, b)| Connection {
         from_road: RoadId(a),
@@ -152,6 +175,25 @@ fn arbitrary_network() -> impl Strategy<Value = Network> {
             connections,
         })
 }
+
+const ROAD_CLASSES: [RoadClass; 9] = [
+    RoadClass::Unknown,
+    RoadClass::Motorway,
+    RoadClass::Trunk,
+    RoadClass::Primary,
+    RoadClass::Secondary,
+    RoadClass::Tertiary,
+    RoadClass::Unclassified,
+    RoadClass::Residential,
+    RoadClass::LivingStreet,
+];
+
+const END_CONTROLS: [EndControl; 4] = [
+    EndControl::None,
+    EndControl::GiveWay,
+    EndControl::Stop,
+    EndControl::Signals,
+];
 
 fn id(i: usize) -> u32 {
     u32::try_from(i).unwrap()
@@ -176,6 +218,19 @@ proptest! {
     }
 
     #[test]
+    fn schema_4_fields_are_part_of_the_state_hash(network in valid_network(), field in 0..4u8) {
+        let mut changed = network.clone();
+        let r = &mut changed.roads[0];
+        match field {
+            0 => r.class = if r.class == RoadClass::Primary { RoadClass::Residential } else { RoadClass::Primary },
+            1 => r.priority_road = !r.priority_road,
+            2 => r.end_control = if r.end_control == EndControl::Stop { EndControl::Signals } else { EndControl::Stop },
+            _ => r.turn_lanes = if r.turn_lanes.is_empty() { vec![Turns::THROUGH; usize::from(r.lanes)] } else { vec![] },
+        }
+        prop_assert_ne!(hash_after(&network, 1), hash_after(&changed, 1));
+    }
+
+    #[test]
     fn valid_networks_load_and_come_back_unchanged(network in valid_network()) {
         let sim = load(network.clone()).unwrap();
         prop_assert_eq!(sim.network(), &network);
@@ -195,7 +250,8 @@ proptest! {
     #[test]
     fn a_planted_defect_is_reported(
         mut network in valid_network(),
-        defect in 0..11u8,
+        defect in 0..14u8,
+        bad_bits in prop_oneof![Just(0u8), 16u8..=255],
         item in any::<Index>(),
         point in any::<Index>(),
         non_finite in prop_oneof![Just(f64::NAN), Just(f64::INFINITY), Just(f64::NEG_INFINITY)],
@@ -248,6 +304,27 @@ proptest! {
             7 => {
                 network.roads[r].lanes = 0;
                 prop_assert_eq!(load(network).unwrap_err(), NetworkError::NoLanes { road });
+            }
+            8 => {
+                // One turn entry too many or too few.
+                let lanes = network.roads[r].lanes;
+                let n = if lanes > 1 && bad_bits % 2 == 0 { lanes - 1 } else { lanes + 1 };
+                network.roads[r].turn_lanes = vec![Turns::THROUGH; usize::from(n)];
+                prop_assert_eq!(load(network).unwrap_err(), NetworkError::TurnLanesMismatch { road, lanes, turn_lanes: usize::from(n) });
+            }
+            11 => {
+                let lanes = usize::from(network.roads[r].lanes);
+                let lane = point.index(lanes);
+                let mut turns = vec![Turns::THROUGH; lanes];
+                turns[lane] = Turns(bad_bits);
+                network.roads[r].turn_lanes = turns;
+                prop_assert_eq!(load(network).unwrap_err(), NetworkError::BadTurns { road, lane, turns: bad_bits });
+            }
+            12 => {
+                let lanes = 17u8.saturating_add(bad_bits);
+                network.roads[r].lanes = lanes;
+                network.roads[r].turn_lanes = vec![];
+                prop_assert_eq!(load(network).unwrap_err(), NetworkError::TooManyLanes { road, lanes });
             }
             9 => {
                 geometry.truncate(1);

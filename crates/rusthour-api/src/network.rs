@@ -3,6 +3,7 @@
 use std::collections::HashSet;
 use std::fmt;
 
+use rusthour_core::network as core;
 use serde::{Deserialize, Serialize};
 
 /// Version of the network schema (`Network` and the types it contains).
@@ -11,8 +12,13 @@ use serde::{Deserialize, Serialize};
 /// incompatible change to these types.
 ///
 /// Version 2 added OSM source references ([`Node::osm_node`], [`Road::osm`])
-/// and [`Road::name`]. Version 3 added [`Road::roundabout`].
-pub const NETWORK_SCHEMA_VERSION: u32 = 3;
+/// and [`Road::name`]. Version 3 added [`Road::roundabout`]. Version 4 added
+/// [`Road::class`], [`Road::priority_road`], [`Road::end_control`] and
+/// [`Road::turn_lanes`] (ADR-0005).
+pub const NETWORK_SCHEMA_VERSION: u32 = 4;
+
+/// Most lanes a road may have: lane sets are `u16` masks (ADR-0005).
+pub const MAX_LANES: u8 = 16;
 
 /// Index of a node in [`Network::nodes`]. Serializes as a plain number.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -70,6 +76,88 @@ pub struct Road {
     /// Part of a roundabout (OSM `junction=roundabout|circular`): traffic on
     /// it has priority over roads entering it.
     pub roundabout: bool,
+    /// Road class (OSM `highway`), a proxy for right of way where signs are
+    /// missing from the map.
+    #[serde(default)]
+    pub class: RoadClass,
+    /// Part of a priority road (OSM `priority_road=designated|yes_unposted`).
+    #[serde(default)]
+    pub priority_road: bool,
+    /// The sign or signal at the road's end, for traffic on this road.
+    #[serde(default)]
+    pub end_control: EndControl,
+    /// Allowed turns per lane, rightmost lane (lane 0) first: empty if
+    /// unknown, else one entry per lane.
+    #[serde(default)]
+    pub turn_lanes: Vec<Turns>,
+}
+
+/// A road's class, from OSM `highway`; a `_link` road takes its parent's
+/// class.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RoadClass {
+    /// Not known, e.g. a hand-built road.
+    #[default]
+    Unknown,
+    /// `motorway`.
+    Motorway,
+    /// `trunk`.
+    Trunk,
+    /// `primary`.
+    Primary,
+    /// `secondary`.
+    Secondary,
+    /// `tertiary`.
+    Tertiary,
+    /// `unclassified`: minor public roads.
+    Unclassified,
+    /// `residential`.
+    Residential,
+    /// `living_street`.
+    LivingStreet,
+}
+
+/// What traffic on a road meets at the road's end.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum EndControl {
+    /// No sign or signal.
+    #[default]
+    None,
+    /// A give-way sign.
+    GiveWay,
+    /// A stop sign.
+    Stop,
+    /// Traffic signals.
+    Signals,
+}
+
+/// The turns a lane allows: a bit set of [`Turns::LEFT`], [`Turns::THROUGH`],
+/// [`Turns::RIGHT`] and [`Turns::U_TURN`]. Serializes as a plain number.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct Turns(pub u8);
+
+impl Turns {
+    /// Left turns.
+    pub const LEFT: Self = Self(1);
+    /// Straight on.
+    pub const THROUGH: Self = Self(2);
+    /// Right turns.
+    pub const RIGHT: Self = Self(4);
+    /// U-turns.
+    pub const U_TURN: Self = Self(8);
+    /// Every known bit.
+    pub const ALL: Self = Self(15);
+}
+
+impl std::ops::BitOr for Turns {
+    type Output = Self;
+
+    fn bitor(self, other: Self) -> Self {
+        Self(self.0 | other.0)
+    }
 }
 
 /// Where a [`Road`] comes from in OpenStreetMap: the stretch of way `way`
@@ -120,7 +208,9 @@ pub struct Connection {
 /// Two intersections joined by a straight two-lane road:
 ///
 /// ```
-/// use rusthour_api::{Config, InProcess, Network, Node, NodeId, Point, Road, Simulation};
+/// use rusthour_api::{
+///     Config, EndControl, InProcess, Network, Node, NodeId, Point, Road, RoadClass, Simulation,
+/// };
 ///
 /// let a = Point { x: 0.0, y: 0.0 };
 /// let b = Point { x: 100.0, y: 0.0 };
@@ -138,6 +228,10 @@ pub struct Connection {
 ///         name: Some("Hauptstraße".into()),
 ///         osm: None,
 ///         roundabout: false,
+///         class: RoadClass::Secondary,
+///         priority_road: true,
+///         end_control: EndControl::None,
+///         turn_lanes: vec![],
 ///     }],
 ///     connections: vec![],
 /// };
@@ -208,6 +302,31 @@ pub enum NetworkError {
     NoLanes {
         /// Offending road.
         road: RoadId,
+    },
+    /// A road has more than [`MAX_LANES`] lanes.
+    TooManyLanes {
+        /// Offending road.
+        road: RoadId,
+        /// Its lane count.
+        lanes: u8,
+    },
+    /// A road's `turn_lanes` is neither empty nor one entry per lane.
+    TurnLanesMismatch {
+        /// Offending road.
+        road: RoadId,
+        /// Its lane count.
+        lanes: u8,
+        /// Its number of `turn_lanes` entries.
+        turn_lanes: usize,
+    },
+    /// A lane's [`Turns`] is empty or has unknown bits.
+    BadTurns {
+        /// Offending road.
+        road: RoadId,
+        /// The lane, 0 being the rightmost.
+        lane: usize,
+        /// The rejected bits.
+        turns: u8,
     },
     /// A connection refers to a road that does not exist.
     UnknownRoad {
@@ -281,6 +400,27 @@ impl fmt::Display for NetworkError {
                 road.0
             ),
             Self::NoLanes { road } => write!(f, "road {} has no lanes", road.0),
+            Self::TooManyLanes { road, lanes } => write!(
+                f,
+                "road {} has {lanes} lanes (at most {MAX_LANES} are supported)",
+                road.0
+            ),
+            Self::TurnLanesMismatch {
+                road,
+                lanes,
+                turn_lanes,
+            } => write!(
+                f,
+                "road {} has {lanes} lane(s) but {turn_lanes} turn_lanes entries (needs none or \
+                 one per lane)",
+                road.0
+            ),
+            Self::BadTurns { road, lane, turns } => write!(
+                f,
+                "road {} lane {lane} has turns {turns:#06b}, which must be non-empty and use \
+                 only the bits 0b1111 (left, through, right, U-turn)",
+                road.0
+            ),
             Self::UnknownRoad {
                 from_road,
                 to_road,
@@ -326,12 +466,73 @@ fn heading(segment: &[Point]) -> [f64; 2] {
     [dx / len, dy / len]
 }
 
+/// Checks a road's lane count and turn lanes.
+fn check_lanes(road: RoadId, r: &Road) -> Result<(), NetworkError> {
+    if r.lanes == 0 {
+        return Err(NetworkError::NoLanes { road });
+    }
+    if r.lanes > MAX_LANES {
+        return Err(NetworkError::TooManyLanes {
+            road,
+            lanes: r.lanes,
+        });
+    }
+    if !r.turn_lanes.is_empty() && r.turn_lanes.len() != usize::from(r.lanes) {
+        return Err(NetworkError::TurnLanesMismatch {
+            road,
+            lanes: r.lanes,
+            turn_lanes: r.turn_lanes.len(),
+        });
+    }
+    match r
+        .turn_lanes
+        .iter()
+        .position(|t| t.0 == 0 || t.0 & !Turns::ALL.0 != 0)
+    {
+        Some(lane) => Err(NetworkError::BadTurns {
+            road,
+            lane,
+            turns: r.turn_lanes[lane].0,
+        }),
+        None => Ok(()),
+    }
+}
+
+impl EndControl {
+    fn to_core(self) -> core::EndControl {
+        match self {
+            Self::None => core::EndControl::None,
+            Self::GiveWay => core::EndControl::GiveWay,
+            Self::Stop => core::EndControl::Stop,
+            Self::Signals => core::EndControl::Signals,
+        }
+    }
+}
+
+impl RoadClass {
+    /// The class's rank: higher is more important, 0 is unknown.
+    #[must_use]
+    pub fn rank(self) -> u8 {
+        match self {
+            Self::Unknown => 0,
+            Self::LivingStreet => 1,
+            Self::Residential => 2,
+            Self::Unclassified => 3,
+            Self::Tertiary => 4,
+            Self::Secondary => 5,
+            Self::Primary => 6,
+            Self::Trunk => 7,
+            Self::Motorway => 8,
+        }
+    }
+}
+
 impl Network {
     /// Checks the network and builds the core's representation of it.
     ///
     /// This is a trust boundary: networks may come from files or remote
     /// clients, and the core assumes valid data.
-    pub(crate) fn to_core(&self) -> Result<rusthour_core::network::Network, NetworkError> {
+    pub(crate) fn to_core(&self) -> Result<core::Network, NetworkError> {
         let max = u32::MAX as usize;
         if self.nodes.len() > max || self.roads.len() > max {
             return Err(NetworkError::TooLarge);
@@ -385,10 +586,8 @@ impl Network {
                     speed_limit_mps: r.speed_limit_mps,
                 });
             }
-            if r.lanes == 0 {
-                return Err(NetworkError::NoLanes { road });
-            }
-            roads.push(rusthour_core::network::Road {
+            check_lanes(road, r)?;
+            roads.push(core::Road {
                 from: r.from_node.0,
                 to: r.to_node.0,
                 length_m,
@@ -397,6 +596,10 @@ impl Network {
                 start_dir: heading(&r.geometry[..2]),
                 end_dir: heading(&r.geometry[r.geometry.len() - 2..]),
                 roundabout: r.roundabout,
+                class: r.class.rank(),
+                priority_road: r.priority_road,
+                end_control: r.end_control.to_core(),
+                turn_lanes: r.turn_lanes.iter().map(|t| t.0).collect(),
             });
         }
 
@@ -430,7 +633,7 @@ impl Network {
             connections.push((c.from_road.0, c.to_road.0));
         }
 
-        Ok(rusthour_core::network::Network {
+        Ok(core::Network {
             nodes,
             roads,
             connections,
@@ -458,6 +661,10 @@ mod tests {
                 name: None,
                 osm: None,
                 roundabout,
+                class: RoadClass::Unknown,
+                priority_road: false,
+                end_control: EndControl::None,
+                turn_lanes: vec![],
             }],
             connections: vec![],
         }

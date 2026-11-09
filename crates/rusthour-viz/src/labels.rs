@@ -210,6 +210,10 @@ mod tests {
             name: name.map(Into::into),
             osm: None,
             roundabout: false,
+            class: rusthour_api::RoadClass::Unknown,
+            priority_road: false,
+            end_control: rusthour_api::EndControl::None,
+            turn_lanes: vec![],
         };
         let network = Network {
             nodes: vec![

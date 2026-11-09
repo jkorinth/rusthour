@@ -535,6 +535,10 @@ mod tests {
             name: None,
             osm: None,
             roundabout: false,
+            class: rusthour_api::RoadClass::Unknown,
+            priority_road: false,
+            end_control: rusthour_api::EndControl::None,
+            turn_lanes: vec![],
         };
         let mut roads = vec![road(0, 1, vec![p(0.0), p(100.0)])];
         if twin {
