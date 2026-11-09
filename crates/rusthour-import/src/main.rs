@@ -32,6 +32,9 @@ struct Args {
     /// connected to the road nearest the area's center).
     #[arg(long)]
     allow_drop: bool,
+    /// List every road the right-of-way report names, not just the first few.
+    #[arg(long, short)]
+    verbose: bool,
 }
 
 fn main() -> ExitCode {
@@ -63,7 +66,8 @@ fn run(args: Args) -> Result<(), String> {
         format!("cannot read {}: {e}{hint}", args.input.display())
     })?;
 
-    let (network, dropped) = osm::keep_central_part(osm::import(&data, bbox));
+    let (network, report) = osm::import_with_report(&data, bbox);
+    let (network, dropped) = osm::keep_central_part(network);
     if network.roads.is_empty() {
         let Bbox {
             south,
@@ -119,13 +123,19 @@ fn run(args: Args) -> Result<(), String> {
         .map_err(|e| format!("cannot write {}: {e}", output.display()))?;
 
     let length_m: f64 = network.roads.iter().map(osm::road_length_m).sum();
+    let report = if args.verbose {
+        format!("{report:#}")
+    } else {
+        report.to_string()
+    };
     let source = match data.replication_timestamp {
         Some(_) => format!("OSM data of {}", metadata.source_date),
         None => "OSM data date unknown".to_owned(),
     };
     println!(
         "{}: {} nodes, {} directed roads ({:.1} km, both directions counted), {} connections, \
-         {source}\ndropped {} roads not connected to the area's center ({:.1} km)\nwrote {}",
+         {source}\ndropped {} roads not connected to the area's center ({:.1} km)\n{report}\n\
+         wrote {}",
         args.area,
         network.nodes.len(),
         network.roads.len(),

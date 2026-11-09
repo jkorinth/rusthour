@@ -4,15 +4,16 @@
 //! [`read_pbf`] loads an extract into [`OsmData`], [`import`] turns that into
 //! a network clipped to an area's [`Bbox`], and [`keep_central_part`] drops
 //! the islands that clipping leaves. Kept small on purpose: drivable
-//! roads, lanes, speed limits and turn restrictions, nothing else yet.
+//! roads, lanes, speed limits, turn restrictions and right of way (road
+//! class, priority roads, signs, signals and turn lanes; ADR-0005).
 
-use std::collections::{HashMap, HashSet};
-use std::fmt;
+use std::collections::{BTreeMap, HashMap, HashSet};
+use std::fmt::{self, Write as _};
 use std::path::Path;
 
 use rusthour_api::{
     Connection, EndControl, MAX_LANES, Network, Node, NodeId, OsmWayPart, Point, Road, RoadClass,
-    RoadId,
+    RoadId, Turns,
 };
 
 /// OSM elements, as much of them as the importer needs.
@@ -24,6 +25,9 @@ pub struct OsmData {
     pub ways: Vec<Way>,
     /// Relations in file order.
     pub relations: Vec<Relation>,
+    /// Tags of the nodes that carry a sign or signal
+    /// (`highway=give_way|stop|traffic_signals`), by OSM id.
+    pub node_tags: HashMap<i64, Vec<(String, String)>>,
     /// The extract's `osmosis_replication_timestamp`, in seconds since the
     /// Unix epoch, if the file header has one.
     pub replication_timestamp: Option<i64>,
@@ -100,9 +104,11 @@ pub fn read_pbf(path: &Path) -> Result<OsmData, osmpbf::Error> {
                     match element {
                         Element::Node(n) => {
                             data.nodes.insert(n.id(), (n.lat(), n.lon()));
+                            keep_sign(&mut data, n.id(), n.tags());
                         }
                         Element::DenseNode(n) => {
                             data.nodes.insert(n.id(), (n.lat(), n.lon()));
+                            keep_sign(&mut data, n.id(), n.tags());
                         }
                         Element::Way(w) => data.ways.push(Way {
                             id: w.id(),
@@ -132,6 +138,31 @@ pub fn read_pbf(path: &Path) -> Result<OsmData, osmpbf::Error> {
         }
     }
     Ok(data)
+}
+
+/// Keeps the tags of node `id` if it carries a sign or signal.
+fn keep_sign<'a>(
+    data: &mut OsmData,
+    id: i64,
+    tags: impl Iterator<Item = (&'a str, &'a str)> + Clone,
+) {
+    let sign = |(k, v): (&str, &str)| {
+        k == "highway" && matches!(v, "give_way" | "stop" | "traffic_signals")
+    };
+    if tags.clone().any(sign) {
+        let tags = tags.map(|(k, v)| (k.to_owned(), v.to_owned())).collect();
+        data.node_tags.insert(id, tags);
+    }
+}
+
+/// The sign or signal a node's tags describe.
+fn control(tags: &[(String, String)]) -> Option<EndControl> {
+    match tag(tags, "highway")? {
+        "give_way" => Some(EndControl::GiveWay),
+        "stop" => Some(EndControl::Stop),
+        "traffic_signals" => Some(EndControl::Signals),
+        _ => None,
+    }
 }
 
 /// A WGS84 bounding box in degrees.
@@ -403,6 +434,12 @@ fn speed_limit_mps(highway: &str, tags: &[(String, String)], forward: bool) -> f
 // (M5.4) needs them marked, i.e. a flag or list in schema v3.
 #[must_use]
 pub fn import(data: &OsmData, bbox: Bbox) -> Network {
+    import_with_report(data, bbox).0
+}
+
+/// [`import`], with a [`Report`] of the right of way it read.
+#[must_use]
+pub fn import_with_report(data: &OsmData, bbox: Bbox) -> (Network, Report) {
     let project = projection(bbox);
     let inside = |id: &i64| data.nodes.get(id).is_some_and(|&p| bbox.contains(p));
 
@@ -447,6 +484,8 @@ pub fn import(data: &OsmData, bbox: Bbox) -> Network {
     };
     // For each road, the road driving the same segment backwards.
     let mut twin = vec![];
+    let mut parts: Vec<Part<'_>> = vec![];
+    let mut report = Report::default();
     let mut end_pairs = HashSet::new();
     let mut refs = HashSet::new();
     for (way, highway, dirs, run) in pieces {
@@ -484,6 +523,7 @@ pub fn import(data: &OsmData, bbox: Bbox) -> Network {
                 if !forward {
                     geometry.reverse();
                 }
+                parts.push((way, nodes, forward));
                 network.roads.push(Road {
                     from_node: node_id(from, &mut network.nodes),
                     to_node: node_id(to, &mut network.nodes),
@@ -493,7 +533,7 @@ pub fn import(data: &OsmData, bbox: Bbox) -> Network {
                         from_node: from,
                         to_node: to,
                     }),
-                    ..attributes(way, highway, forward, oneway)
+                    ..attributes(way, highway, forward, oneway, &mut report)
                 });
                 twin.push(None);
             }
@@ -504,31 +544,673 @@ pub fn import(data: &OsmData, bbox: Bbox) -> Network {
         }
     }
     connect(&mut network, &twin, &node_ids, &data.relations);
-    network
+    resolve_controls(&mut network, &parts, data, &node_ids, &project, &mut report);
+
+    report.count(&network, &parts);
+    (network, report)
 }
 
-/// A road's attributes from its way's tags in one direction, for [`import`]
-/// to complete with its ends and geometry.
-fn attributes(way: &Way, highway: &str, forward: bool, oneway: bool) -> Road {
+/// Signs and signals more than this far from a road's end, along the road,
+/// don't apply to it (ADR-0005).
+const SIGN_REACH_M: f64 = 30.0;
+
+/// A road named in a [`Report`]: its name and OSM way id.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Named {
+    /// The road's name, if any.
+    pub name: Option<String>,
+    /// Its OSM way id.
+    pub way: i64,
+}
+
+impl Named {
+    fn of(way: i64, name: Option<&String>) -> Self {
+        Self {
+            name: name.cloned(),
+            way,
+        }
+    }
+}
+
+/// What [`import_with_report`] read about right of way, counted before
+/// [`keep_central_part`] drops islands. Ignored and ambiguous cases name
+/// their roads, so a mapper can check them.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct Report {
+    /// Road ends with traffic signals.
+    pub signals: usize,
+    /// Road ends with a stop sign.
+    pub stops: usize,
+    /// Road ends with a give-way sign.
+    pub give_ways: usize,
+    /// Junctions with signals on at least one approach.
+    pub signal_nodes: usize,
+    /// Groups of two or more signalled junctions joined by short links
+    /// (split junctions).
+    pub signal_clusters: usize,
+    /// Short links inside such groups, left without signals so traffic on
+    /// them flows on.
+    pub split_links: usize,
+    /// Signalled junctions by `(signalled approaches, all approaches)`.
+    pub signal_approaches: BTreeMap<(usize, usize), usize>,
+    /// Signal nodes on imported roads.
+    pub signal_tags: usize,
+    /// Signal nodes ignored: mid-block (pedestrian crossings) or at a node
+    /// that is no junction.
+    pub ignored_signals: Vec<Named>,
+    /// Sign nodes on imported roads.
+    pub sign_tags: usize,
+    /// Signs ignored: too far from a junction, or at a node that is no
+    /// junction.
+    pub ignored_signs: Vec<Named>,
+    /// Signs at a junction without a direction, applied to the approaches of
+    /// the lowest class there.
+    pub undirected_lowest: Vec<Named>,
+    /// Signs at a junction without a direction whose approaches are all of
+    /// one class, applied to all of them (all-way stop).
+    pub undirected_all_way: Vec<Named>,
+    /// Roads with `turn:lanes`.
+    pub turn_lanes: usize,
+    /// Roads whose `turn:lanes` was dropped: its lane count differs from
+    /// `lanes`, or it has an unknown value.
+    pub ignored_turn_lanes: Vec<Named>,
+    /// Roads whose lane count was clamped to [`MAX_LANES`].
+    pub clamped_lanes: Vec<Named>,
+    /// OSM ways tagged `priority_road`.
+    pub priority_road_ways: usize,
+    /// Other OSM ways tagged `traffic_sign=DE:306` (priority road sign).
+    pub priority_sign_ways: usize,
+    /// Roads of unknown class.
+    pub unknown_class: usize,
+}
+
+impl Report {
+    /// Counts the controlled road ends, priority ways and unknown classes.
+    fn count(&mut self, network: &Network, parts: &[Part<'_>]) {
+        let mut ways = HashSet::new();
+        for (r, (way, ..)) in network.roads.iter().zip(parts) {
+            match r.end_control {
+                EndControl::Signals => self.signals += 1,
+                EndControl::Stop => self.stops += 1,
+                EndControl::GiveWay => self.give_ways += 1,
+                EndControl::None => {}
+            }
+            if ways.insert(way.id) {
+                match priority(&way.tags) {
+                    (true, _) => self.priority_road_ways += 1,
+                    (false, true) => self.priority_sign_ways += 1,
+                    (false, false) => {}
+                }
+            }
+            self.unknown_class += usize::from(r.class == RoadClass::Unknown);
+        }
+    }
+}
+
+/// `count` and a noun, singular or plural.
+fn plural(count: usize, one: &str, many: &str) -> String {
+    format!("{count} {}", if count == 1 { one } else { many })
+}
+
+/// The first few distinct roads of `list`, or `all` of them, as
+/// `Name (way 123)`.
+fn first_few(list: &[Named], all: bool) -> String {
+    let mut seen = HashSet::new();
+    let distinct: Vec<_> = list.iter().filter(|n| seen.insert(n.way)).collect();
+    let mut text = distinct
+        .iter()
+        .take(if all { usize::MAX } else { FEW })
+        .map(|n| format!("{} (way {})", n.name.as_deref().unwrap_or("unnamed"), n.way))
+        .collect::<Vec<_>>()
+        .join(", ");
+    if !all && distinct.len() > FEW {
+        let _ = write!(text, ", and {} more", distinct.len() - FEW);
+    }
+    text
+}
+
+/// How many roads a report line names, unless verbose.
+const FEW: usize = 3;
+
+/// The report as lines; the alternate form (`{:#}`, `--verbose`) names
+/// every road instead of the first few.
+impl fmt::Display for Report {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.write_counts(f)?;
+        self.write_problems(f, f.alternate())
+    }
+}
+
+impl Report {
+    /// The report's counts: what was applied.
+    fn write_counts(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "right of way: {} signalled, {} stop and {} give-way road ends",
+            self.signals, self.stops, self.give_ways
+        )?;
+        let histogram: Vec<_> = self
+            .signal_approaches
+            .iter()
+            .map(|((signalled, of), n)| format!("{signalled} of {of} at {n}"))
+            .collect();
+        write!(
+            f,
+            "\nsignals: {}; by signalled of all approaches: {}",
+            plural(
+                self.signal_nodes,
+                "signalled junction",
+                "signalled junctions"
+            ),
+            histogram.join(", ")
+        )?;
+        if self.signal_clusters > 0 {
+            write!(
+                f,
+                "\nsplit junctions: {} joined by short links; {} of those links left \
+                 without signals, so traffic on them can't be trapped between two signals",
+                plural(
+                    self.signal_clusters,
+                    "group of signalled junctions",
+                    "groups of signalled junctions"
+                ),
+                self.split_links
+            )?;
+        }
+        let priority = self.priority_road_ways + self.priority_sign_ways;
+        if priority == 0 {
+            write!(
+                f,
+                "\npriority roads: none tagged, road class is used instead"
+            )?;
+        } else {
+            write!(
+                f,
+                "\npriority roads: {} ({} by priority_road, {} by traffic_sign=DE:306)",
+                plural(priority, "way", "ways"),
+                self.priority_road_ways,
+                self.priority_sign_ways
+            )?;
+        }
+        write!(
+            f,
+            "; {}",
+            plural(
+                self.unknown_class,
+                "road of unknown class",
+                "roads of unknown class"
+            )
+        )?;
+        write!(
+            f,
+            "\nturn lanes: {}",
+            plural(
+                self.turn_lanes,
+                "road with turn:lanes",
+                "roads with turn:lanes"
+            )
+        )
+    }
+
+    /// The ignored and ambiguous cases, naming their first few roads or
+    /// `all` of them.
+    fn write_problems(&self, f: &mut fmt::Formatter<'_>, all: bool) -> fmt::Result {
+        // A warning when more than 5% of a kind point to bad data.
+        let line =
+            |f: &mut fmt::Formatter<'_>, list: &[Named], total: usize, what: &str, warn: bool| {
+                if list.is_empty() {
+                    return Ok(());
+                }
+                let warning = if warn && list.len() * 20 > total {
+                    "warning: "
+                } else {
+                    ""
+                };
+                write!(
+                    f,
+                    "\n{warning}{} of {total} {what}: {}",
+                    list.len(),
+                    first_few(list, all)
+                )
+            };
+        let undirected = [&self.undirected_lowest[..], &self.undirected_all_way[..]].concat();
+        line(
+            f,
+            &undirected,
+            self.sign_tags,
+            &format!(
+                "signs at junctions have no direction ({} applied to the lowest road class there, \
+                 {} to every approach as all-way)",
+                self.undirected_lowest.len(),
+                self.undirected_all_way.len()
+            ),
+            true,
+        )?;
+        line(
+            f,
+            &self.ignored_signs,
+            self.sign_tags,
+            "signs ignored (not within 30 m of a junction)",
+            true,
+        )?;
+        line(
+            f,
+            &self.ignored_turn_lanes,
+            self.turn_lanes + self.ignored_turn_lanes.len(),
+            "turn:lanes ignored (lane count differs from `lanes`, or unknown value)",
+            true,
+        )?;
+        line(
+            f,
+            &self.clamped_lanes,
+            self.clamped_lanes.len(),
+            &format!("lane counts clamped to {MAX_LANES}"),
+            false,
+        )?;
+        // Expected in towns: pedestrian crossings.
+        line(
+            f,
+            &self.ignored_signals,
+            self.signal_tags,
+            "signals not applied (mid-block, as at pedestrian crossings, or not near a junction)",
+            false,
+        )?;
+        let lists = [
+            &undirected,
+            &self.ignored_signs,
+            &self.ignored_turn_lanes,
+            &self.clamped_lanes,
+            &self.ignored_signals,
+        ];
+        let distinct = |l: &Vec<Named>| l.iter().map(|n| n.way).collect::<HashSet<_>>().len();
+        if !all && lists.into_iter().any(|l| distinct(l) > FEW) {
+            write!(f, "\n(run with --verbose to list every road)")?;
+        }
+        Ok(())
+    }
+}
+
+/// Whether a way is part of a priority road, as `(by priority_road, by a
+/// traffic_sign=DE:306 sign)`.
+fn priority(tags: &[(String, String)]) -> (bool, bool) {
+    let by_tag = matches!(
+        tag(tags, "priority_road"),
+        Some("designated" | "yes_unposted")
+    );
+    // `DE:306`, also in lists such as `DE:306;DE:1020-30` or `DE:306,…`.
+    let by_sign = tag(tags, "traffic_sign").is_some_and(|v| {
+        v.split([';', ',']).any(|sign| {
+            sign.trim()
+                .strip_prefix("DE:306")
+                .is_some_and(|rest| !rest.starts_with(|c: char| c.is_ascii_digit()))
+        })
+    });
+    (by_tag, by_sign)
+}
+
+/// The class of a drivable `highway` value; a link takes its parent's.
+fn road_class(highway: &str) -> RoadClass {
+    match highway.trim_end_matches("_link") {
+        "motorway" => RoadClass::Motorway,
+        "trunk" => RoadClass::Trunk,
+        "primary" => RoadClass::Primary,
+        "secondary" => RoadClass::Secondary,
+        "tertiary" => RoadClass::Tertiary,
+        "unclassified" => RoadClass::Unclassified,
+        "residential" => RoadClass::Residential,
+        "living_street" => RoadClass::LivingStreet,
+        _ => RoadClass::Unknown,
+    }
+}
+
+/// A road's `turn:lanes` in one direction, lane 0 (rightmost) first, if
+/// tagged; a lane with an unknown value is `None`.
+fn turn_lanes(
+    tags: &[(String, String)],
+    forward: bool,
+    oneway: bool,
+) -> Option<Vec<Option<Turns>>> {
+    let key = if forward {
+        "turn:lanes:forward"
+    } else {
+        "turn:lanes:backward"
+    };
+    let value = tag(tags, key).or_else(|| tag(tags, "turn:lanes").filter(|_| oneway))?;
+    // Listed left to right.
+    let lanes = value.split('|').rev().map(|lane| {
+        lane.split(';')
+            .map(|turn| match turn.trim() {
+                "left" | "slight_left" | "sharp_left" => Some(Turns::LEFT),
+                "right" | "slight_right" | "sharp_right" => Some(Turns::RIGHT),
+                "through" | "merge_to_left" | "merge_to_right" | "none" | "" => {
+                    Some(Turns::THROUGH)
+                }
+                "reverse" => Some(Turns::U_TURN),
+                _ => None,
+            })
+            .try_fold(Turns(0), |turns, turn| Some(turns | turn?))
+    });
+    Some(lanes.collect())
+}
+
+/// A road's attributes from its way's tags in one direction, for
+/// [`import_with_report`] to complete with its ends and geometry. Clamps
+/// lanes and drops inconsistent turn lanes, and reports both.
+fn attributes(way: &Way, highway: &str, forward: bool, oneway: bool, report: &mut Report) -> Road {
     let name = ["name", "ref"]
         .into_iter()
         .find_map(|k| tag(&way.tags, k).filter(|v| !v.is_empty()))
         .map(str::to_owned);
+    let name = name.as_ref();
+    let mut lanes = lanes(highway, &way.tags, forward, oneway);
+    if lanes > MAX_LANES {
+        lanes = MAX_LANES;
+        report.clamped_lanes.push(Named::of(way.id, name));
+    }
+    let turn_lanes = turn_lanes(&way.tags, forward, oneway).map_or_else(Vec::new, |turns| {
+        match turns.into_iter().collect::<Option<Vec<_>>>() {
+            Some(turns) if turns.len() == usize::from(lanes) => {
+                report.turn_lanes += 1;
+                turns
+            }
+            _ => {
+                report.ignored_turn_lanes.push(Named::of(way.id, name));
+                vec![]
+            }
+        }
+    });
     Road {
         from_node: NodeId(0),
         to_node: NodeId(0),
         geometry: vec![],
         speed_limit_mps: speed_limit_mps(highway, &way.tags, forward),
-        // Lane sets are `u16` masks (ADR-0005).
-        lanes: lanes(highway, &way.tags, forward, oneway).min(MAX_LANES),
-        name,
+        lanes,
+        name: name.cloned(),
         osm: None,
         roundabout: is_roundabout(&way.tags),
-        class: RoadClass::Unknown,
-        priority_road: false,
+        class: road_class(highway),
+        priority_road: priority(&way.tags) != (false, false),
         end_control: EndControl::None,
-        turn_lanes: vec![],
+        turn_lanes,
     }
+}
+
+/// A road of the import with where it comes from: its way, its OSM nodes
+/// in way order, and whether it drives them forward.
+type Part<'a> = (&'a Way, &'a [i64], bool);
+
+/// Sets each road's [`Road::end_control`] from the signs and signals on
+/// nodes (ADR-0005 §3), and drops signals from short links between
+/// signalled junctions.
+fn resolve_controls(
+    network: &mut Network,
+    parts: &[Part<'_>],
+    data: &OsmData,
+    node_ids: &HashMap<i64, NodeId>,
+    project: &impl Fn((f64, f64)) -> Point,
+    report: &mut Report,
+) {
+    let roads = &network.roads;
+    let (incoming, outgoing, junction) = topology(network);
+    // Roads through each tagged node that isn't a network node.
+    let mut through: HashMap<i64, Vec<usize>> = HashMap::new();
+    for (i, (_, nodes, _)) in parts.iter().enumerate() {
+        for id in &nodes[1..nodes.len() - 1] {
+            if data.node_tags.contains_key(id) {
+                through.entry(*id).or_default().push(i);
+            }
+        }
+    }
+    let named = |r: usize| Named::of(parts[r].0.id, roads[r].name.as_ref());
+    // The road and distance whose end at a junction lies `d` meters ahead on
+    // road `r`, following on where the way merely continues (a way boundary)
+    // until out of reach.
+    let junction_ahead = |mut r: usize, mut d: f64| {
+        // Bounded, in case roads of zero length form a cycle.
+        for _ in 0..roads.len() {
+            let end = roads[r].to_node.0 as usize;
+            if d > SIGN_REACH_M {
+                return None;
+            }
+            if junction[end] {
+                return Some((r, d));
+            }
+            let from = roads[r].from_node;
+            let mut on = outgoing[end].iter().filter(|&&o| roads[o].to_node != from);
+            match (on.next(), on.next()) {
+                (Some(&next), None) => (r, d) = (next, d + road_length_m(&roads[next])),
+                _ => return None,
+            }
+        }
+        None
+    };
+
+    let mut tagged: Vec<_> = data
+        .node_tags
+        .iter()
+        .filter_map(|(&id, tags)| control(tags).map(|c| (id, c, tags)))
+        .collect();
+    tagged.sort_unstable_by_key(|&(id, ..)| id);
+    let mut set = vec![EndControl::None; roads.len()];
+    for (id, c, tags) in tagged {
+        let signal = c == EndControl::Signals;
+        let direction = direction(tags, signal);
+        let along = |r: &usize| direction.is_none_or(|d| parts[*r].2 == d);
+        let (applied, seen_on) = if let Some(node) = node_ids.get(&id) {
+            let node = node.0 as usize;
+            let seen_on = incoming[node]
+                .first()
+                .copied()
+                .or_else(|| roads.iter().position(|r| r.from_node.0 as usize == node));
+            let approaches: Vec<usize> = incoming[node].iter().copied().filter(along).collect();
+            let applied = if !junction[node] {
+                // A node joining two ways, often where a way is split at the
+                // sign: as on a road's interior.
+                let ends: Vec<_> = approaches
+                    .iter()
+                    .filter_map(|&r| junction_ahead(r, 0.0))
+                    .collect();
+                sign_on_road(&ends, !signal && direction.is_none())
+            } else if approaches.is_empty() {
+                vec![]
+            } else if signal || direction.is_some() {
+                approaches
+            } else {
+                undirected_junction_sign(roads, approaches, report, named)
+            };
+            (applied, seen_on)
+        } else if let Some(on) = through.get(&id) {
+            let ends: Vec<(usize, f64)> = on
+                .iter()
+                .filter(|r| along(r))
+                .filter_map(|&r| junction_ahead(r, to_end(parts[r], id, data, project)))
+                .collect();
+            let undirected_sign = !signal && direction.is_none();
+            (sign_on_road(&ends, undirected_sign), on.first().copied())
+        } else {
+            continue; // not on an imported road
+        };
+        let Some(seen_on) = seen_on else { continue };
+        let (tags, ignored) = if signal {
+            (&mut report.signal_tags, &mut report.ignored_signals)
+        } else {
+            (&mut report.sign_tags, &mut report.ignored_signs)
+        };
+        *tags += 1;
+        if applied.is_empty() {
+            ignored.push(named(seen_on));
+        }
+        for r in applied {
+            set[r] = stronger(set[r], c);
+        }
+    }
+    split_junctions(network, &mut set, report);
+    for (r, c) in network.roads.iter_mut().zip(set) {
+        r.end_control = c;
+    }
+}
+
+/// Whether a sign or signal applies forward (`true`) or backward along its
+/// way, if tagged.
+fn direction(tags: &[(String, String)], signal: bool) -> Option<bool> {
+    let keys: &[&str] = if signal {
+        &["traffic_signals:direction", "direction"]
+    } else {
+        &["direction"]
+    };
+    keys.iter().find_map(|k| match tag(tags, k) {
+        Some("forward") => Some(true),
+        Some("backward") => Some(false),
+        _ => None,
+    })
+}
+
+/// Per node: its incoming roads, its outgoing roads, and whether it is a
+/// junction. Junctions have three or more arms; a node joining two ways
+/// isn't one.
+fn topology(network: &Network) -> (Vec<Vec<usize>>, Vec<Vec<usize>>, Vec<bool>) {
+    let mut incoming = vec![vec![]; network.nodes.len()];
+    let mut outgoing = vec![vec![]; network.nodes.len()];
+    let mut neighbors = vec![vec![]; network.nodes.len()];
+    for (i, r) in network.roads.iter().enumerate() {
+        incoming[r.to_node.0 as usize].push(i);
+        outgoing[r.from_node.0 as usize].push(i);
+        neighbors[r.to_node.0 as usize].push(r.from_node);
+        neighbors[r.from_node.0 as usize].push(r.to_node);
+    }
+    let junction = neighbors
+        .iter_mut()
+        .map(|n| {
+            n.sort_unstable_by_key(|id| id.0);
+            n.dedup();
+            n.len() >= 3
+        })
+        .collect();
+    (incoming, outgoing, junction)
+}
+
+/// Distance along a road from its OSM node `id` to the road's end.
+fn to_end(
+    (_, nodes, forward): Part<'_>,
+    id: i64,
+    data: &OsmData,
+    project: &impl Fn((f64, f64)) -> Point,
+) -> f64 {
+    let k = nodes.iter().position(|&n| n == id).unwrap_or(0);
+    let span = if forward { &nodes[k..] } else { &nodes[..=k] };
+    span.windows(2)
+        .map(|w| {
+            let (a, b) = (project(data.nodes[&w[0]]), project(data.nodes[&w[1]]));
+            (b.x - a.x).hypot(b.y - a.y)
+        })
+        .sum()
+}
+
+/// The roads a sign or signal on a road's interior applies to, given the
+/// `(road, distance to its end)` of the directions that reach a junction.
+/// A sign without a direction applies to the nearer end, or to both in the
+/// middle of a short link between two junctions.
+fn sign_on_road(ends: &[(usize, f64)], undirected_sign: bool) -> Vec<usize> {
+    if let [(a, da), (b, db)] = *ends
+        && undirected_sign
+    {
+        let length = da + db;
+        let middle = length < 2.0 * SIGN_REACH_M && (da - db).abs() < length / 3.0;
+        return if middle {
+            vec![a, b]
+        } else if da <= db {
+            vec![a]
+        } else {
+            vec![b]
+        };
+    }
+    ends.iter().map(|&(r, _)| r).collect()
+}
+
+/// The approaches a sign at a junction without a direction applies to: those
+/// of the lowest class, or all of them if all are of one class (all-way).
+fn undirected_junction_sign(
+    roads: &[Road],
+    approaches: Vec<usize>,
+    report: &mut Report,
+    named: impl Fn(usize) -> Named,
+) -> Vec<usize> {
+    let rank = |r: &usize| roads[*r].class.rank();
+    let lowest = approaches.iter().map(rank).min();
+    let all_way = approaches.iter().all(|r| Some(rank(r)) == lowest);
+    let applied: Vec<_> = approaches
+        .into_iter()
+        .filter(|r| Some(rank(r)) == lowest)
+        .collect();
+    let list = if all_way {
+        &mut report.undirected_all_way
+    } else {
+        &mut report.undirected_lowest
+    };
+    list.push(named(applied[0]));
+    applied
+}
+
+/// Split junctions: short links between signalled junctions get no signals,
+/// so traffic on them flows on. Counts signalled nodes and their groups.
+fn split_junctions(network: &Network, set: &mut [EndControl], report: &mut Report) {
+    let mut signalled = vec![false; network.nodes.len()];
+    for (r, c) in network.roads.iter().zip(&*set) {
+        if *c == EndControl::Signals {
+            signalled[r.to_node.0 as usize] = true;
+        }
+    }
+    report.signal_nodes = signalled.iter().filter(|&&s| s).count();
+    let mut group: Vec<usize> = (0..network.nodes.len()).collect();
+    for (i, r) in network.roads.iter().enumerate() {
+        let (a, b) = (r.from_node.0 as usize, r.to_node.0 as usize);
+        if signalled[a] && signalled[b] && road_length_m(r) < SIGN_REACH_M {
+            if set[i] == EndControl::Signals {
+                set[i] = EndControl::None;
+                report.split_links += 1;
+            }
+            let (ra, rb) = (root(&mut group, a), root(&mut group, b));
+            group[ra.max(rb)] = ra.min(rb);
+        }
+    }
+    let mut size = vec![0usize; network.nodes.len()];
+    for v in (0..size.len()).filter(|&v| signalled[v]) {
+        size[root(&mut group, v)] += 1;
+    }
+    report.signal_clusters = size.iter().filter(|&&n| n >= 2).count();
+
+    let mut approaches = vec![(0, 0); network.nodes.len()];
+    for (r, c) in network.roads.iter().zip(&*set) {
+        let a = &mut approaches[r.to_node.0 as usize];
+        a.0 += usize::from(*c == EndControl::Signals);
+        a.1 += 1;
+    }
+    for (v, a) in approaches.into_iter().enumerate() {
+        if signalled[v] {
+            *report.signal_approaches.entry(a).or_default() += 1;
+        }
+    }
+}
+
+/// The representative of `v`'s group (union-find with path halving).
+fn root(group: &mut [usize], mut v: usize) -> usize {
+    while group[v] != v {
+        group[v] = group[group[v]];
+        v = group[v];
+    }
+    v
+}
+
+/// The stronger of two controls on one road end: signals, then stop, then
+/// give-way.
+fn stronger(a: EndControl, b: EndControl) -> EndControl {
+    let rank = |c| match c {
+        EndControl::None => 0,
+        EndControl::GiveWay => 1,
+        EndControl::Stop => 2,
+        EndControl::Signals => 3,
+    };
+    if rank(b) > rank(a) { b } else { a }
 }
 
 /// What [`keep_central_part`] dropped.
