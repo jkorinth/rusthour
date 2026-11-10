@@ -12,6 +12,20 @@ use crate::RoadId;
 #[serde(transparent)]
 pub struct VehicleId(pub u64);
 
+impl VehicleId {
+    pub(crate) fn from_core(id: rusthour_core::vehicle::VehicleId) -> Self {
+        Self(u64::from(id.generation) << 32 | u64::from(id.slot))
+    }
+
+    #[allow(clippy::cast_possible_truncation)] // the two halves
+    pub(crate) fn to_core(self) -> rusthour_core::vehicle::VehicleId {
+        rusthour_core::vehicle::VehicleId {
+            slot: self.0 as u32,
+            generation: (self.0 >> 32) as u32,
+        }
+    }
+}
+
 /// All vehicles at one tick, as parallel columns in lane order. Entry `i` is
 /// `id[i]`, `road[i]`, and so on. Reused between frames to avoid allocation.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
