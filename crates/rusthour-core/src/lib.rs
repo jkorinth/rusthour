@@ -16,5 +16,5 @@ pub mod vehicle;
 mod engine;
 mod hash;
 
-pub use engine::{Config, Engine, Stream, run_and_hash};
+pub use engine::{Config, Engine, Gone, StopCause, Stream, WaitReason, run_and_hash};
 pub use hash::StateHasher;

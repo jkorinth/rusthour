@@ -53,6 +53,8 @@ pub struct Router {
     /// Per movement (parallel to `succ`): `turn_s + delay_s`, what A* adds
     /// on top of the next road's travel time.
     move_s: Vec<f64>,
+    /// Per movement: its turn type, for inspection.
+    kind: Vec<Turn>,
     /// Per movement: static turn penalty (s).
     turn_s: Vec<f64>,
     /// Per movement: what `delay_s` decays to without samples (s).
@@ -128,6 +130,7 @@ impl Router {
         // Turn penalties and yield priors, per movement.
         let (in_first, incoming) = movement::incoming(net);
         let mut turn = vec![0.0; succ.len()];
+        let mut kind = vec![Turn::Straight; succ.len()];
         let mut prior = vec![0.0; succ.len()];
         for from in 0..n {
             let node = net.roads[from].to as usize;
@@ -136,7 +139,8 @@ impl Router {
             let mine = rank(net, from);
             let yields = arms.iter().any(|&r| rank(net, r) > mine);
             for i in first[from as usize] as usize..first[from as usize + 1] as usize {
-                turn[i] = turn_s(Turn::of(net, from, succ[i], arms));
+                kind[i] = Turn::of(net, from, succ[i], arms);
+                turn[i] = turn_s(kind[i]);
                 prior[i] = if yields { YIELD_PRIOR_S } else { 0.0 };
             }
         }
@@ -165,6 +169,7 @@ impl Router {
         let m = succ.len();
         Self {
             move_s: turn.iter().zip(&prior).map(|(t, p)| t + p).collect(),
+            kind,
             turn_s: turn,
             delay_s: prior.clone(),
             prior_s: prior,
@@ -183,6 +188,14 @@ impl Router {
             epoch: 0,
             heap: BinaryHeap::new(),
         }
+    }
+
+    /// The movements out of road `from` as `(to, turn, delay_s, prior_s)`:
+    /// the smoothed stop-line delay now and what it decays to.
+    pub fn movement_delays(&self, from: u32) -> impl Iterator<Item = (u32, Turn, f64, f64)> + '_ {
+        let (a, b) = (self.first[from as usize], self.first[from as usize + 1]);
+        (a as usize..b as usize)
+            .map(|i| (self.succ[i], self.kind[i], self.delay_s[i], self.prior_s[i]))
     }
 
     /// Roads in the largest SCC, ascending.
