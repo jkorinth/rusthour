@@ -249,6 +249,28 @@ impl Vehicles {
         true
     }
 
+    /// Moves a vehicle to another lane of its road, keeping its position: it
+    /// is inserted where the lane's order stays head first (ahead of any
+    /// vehicle at exactly its position). O(lane), and no allocation as long as
+    /// the lane stays within its physical bound (`Vehicles::new`). The caller
+    /// checks the gaps. Returns `false` for a stale id.
+    ///
+    /// # Panics
+    /// If `lane` does not exist on the vehicle's road.
+    pub fn change_lane(&mut self, id: VehicleId, lane: u8) -> bool {
+        if !self.is_alive(id) {
+            return false;
+        }
+        let s = id.slot as usize;
+        let q = self.checked_lane_id(self.road[s], lane);
+        self.unlink(id.slot);
+        self.lane[s] = lane;
+        let pos = &self.pos_m;
+        let i = self.lanes[q].partition_point(|&o| pos[o as usize] > pos[s]);
+        self.lanes[q].insert(i, id.slot);
+        true
+    }
+
     /// Frees the vehicle's slot. Returns `false` for a stale id.
     pub fn despawn(&mut self, id: VehicleId) -> bool {
         if !self.is_alive(id) {
@@ -272,17 +294,22 @@ impl Vehicles {
         true
     }
 
-    fn push_tail(&mut self, slot: u32, road: u32, lane: u8, pos_m: f64) {
-        let s = slot as usize;
-        self.road[s] = road;
-        self.lane[s] = lane;
-        self.pos_m[s] = pos_m;
+    fn checked_lane_id(&self, road: u32, lane: u8) -> usize {
         let q = self.lane_id(road, lane);
         let end = self
             .lane_first
             .get(road as usize + 1)
             .map_or(self.lanes.len(), |&n| n as usize);
         assert!(q < end, "lane {lane} out of range for road {road}");
+        q
+    }
+
+    fn push_tail(&mut self, slot: u32, road: u32, lane: u8, pos_m: f64) {
+        let s = slot as usize;
+        self.road[s] = road;
+        self.lane[s] = lane;
+        self.pos_m[s] = pos_m;
+        let q = self.checked_lane_id(road, lane);
         // Weaker than ADR-0004's fit rule (`pos <= x_tail - length_tail`): it
         // only guards the order; the engine enforces the physical gap.
         debug_assert!(
@@ -298,7 +325,7 @@ impl Vehicles {
         let s = slot as usize;
         let q = self.lane_id(self.road[s], self.lane[s]);
         // Heads leave in the common case (arrivals, transfers): O(1).
-        // shortcut: O(lane) scan for the rest, fine until M3 lane changes are hot.
+        // shortcut: O(lane) scan for the rest, fine until M3.6 makes lane changes hot.
         let i = self.lanes[q]
             .iter()
             .position(|&x| x == slot)
@@ -408,6 +435,8 @@ mod tests {
         Transfer(usize, u32),
         /// Advance every lane head to tail, never passing the leader.
         Advance(f64),
+        /// Move the n-th live vehicle to lane `l % lanes` of its own road, mid-lane.
+        ChangeLane(usize, u8),
     }
 
     fn ops() -> impl Strategy<Value = Vec<Op>> {
@@ -417,6 +446,7 @@ mod tests {
                 any::<usize>().prop_map(Op::Despawn),
                 (any::<usize>(), 0..3u32).prop_map(|(i, r)| Op::Transfer(i, r)),
                 (0.0..20.0f64).prop_map(Op::Advance),
+                (any::<usize>(), any::<u8>()).prop_map(|(i, l)| Op::ChangeLane(i, l)),
             ],
             0..200,
         )
@@ -424,6 +454,7 @@ mod tests {
 
     /// Runs `ops` on a fresh store, calling `check` after every op.
     fn run(ops: &[Op], check: impl Fn(&Vehicles)) {
+        // The change-lane op asserts no reallocation itself.
         let net = net();
         let mut vs = Vehicles::new(&net);
         let mut live: Vec<VehicleId> = Vec::new();
@@ -438,6 +469,19 @@ mod tests {
                 Op::Transfer(i, road) if !live.is_empty() => {
                     let id = live[i % live.len()];
                     assert!(vs.transfer(id, road, 0, 0.0));
+                }
+                Op::ChangeLane(i, l) if !live.is_empty() => {
+                    let id = live[i % live.len()];
+                    let s = id.slot as usize;
+                    let to = l % net.roads[vs.road(s) as usize].lanes;
+                    let q = vs.lane_id(vs.road(s), to);
+                    let (cap, len) = (vs.lane(q).capacity(), vs.lane(q).len());
+                    assert!(vs.change_lane(id, to));
+                    // Spawns at pos 0 can overfill a lane past the physical bound
+                    // (and `push_back` may grow it); only below it is growth a bug.
+                    if len < cap {
+                        assert_eq!(vs.lane(q).capacity(), cap, "insert reallocated");
+                    }
                 }
                 Op::Advance(d) => {
                     for q in 0..vs.lane_count() {
@@ -483,6 +527,31 @@ mod tests {
                 }
             });
         }
+    }
+
+    #[test]
+    fn change_lane_inserts_at_the_sorted_position() {
+        let net = net();
+        let mut vs = Vehicles::new(&net);
+        let at = |vs: &mut Vehicles, lane, x| {
+            let id = vs.spawn(new(1, lane, 0.0, &[1]));
+            vs.pos_m[id.slot as usize] = x;
+            id
+        };
+        let (a, b, c) = (
+            at(&mut vs, 1, 90.0),
+            at(&mut vs, 1, 50.0),
+            at(&mut vs, 1, 10.0),
+        );
+        let m = at(&mut vs, 0, 60.0);
+        assert!(vs.change_lane(m, 1));
+        assert_eq!(vs.lane(vs.lane_id(1, 1)), &[a.slot, m.slot, b.slot, c.slot]);
+        assert!(vs.lane(vs.lane_id(1, 0)).is_empty());
+        assert_eq!(vs.lane_of(m.slot as usize), 1);
+        assert!(
+            vs.despawn(m) && !vs.change_lane(m, 0),
+            "stale id is rejected"
+        );
     }
 
     #[test]
