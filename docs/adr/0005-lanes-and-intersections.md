@@ -442,11 +442,13 @@ phase or hook, which keeps conflicts in `engine.rs` small.
 | 1 | **M3.8a** ring exemption; `arrived` and `removed_stuck` in `Status`, the CLI and the viewer; per-road report | ADR |
 | 2 | **M3.3** right of way v2: rank, per-lane approaches, conflict matrix, stop signs | M3.1, M3.2 |
 | 2 | **M3.5b** `network/lanes.rs` lane sets and entry lanes; transfers use them | M3.1, M3.5a (turn lanes once M3.2 lands) |
+| 2 | **M3.11a** wait-reason diagnostics and `inspect_*` queries (addendum M3.11) | M3.1, M3.8a |
 | 3 | **M3.4** `control/signal.rs`, the signal prior in routing, `signals_into` | M3.2, M3.3 |
 | 3 | **M3.6** MOBIL phase, European rules, `lane_shift`, multi-lane bench and allocation test | M3.5b |
 | 4 | **M3.7** lane choice: route incentive, `from_mask` at the line, `route_from_any` | M3.3, M3.6 |
 | 4 | **M3.9** viewer: lanes, lane shift, signal bars, counters | M3.4, M3.6, M3.8a |
-| 5 | **M3.8b** re-measure (§8), then the **M3.10** user trial | all |
+| 4 | **M3.11b** viewer: picking, panels, follow, route line (addendum M3.11) | M3.11a; rebases with M3.9 |
+| 5 | **M3.8b** re-measure (§8), then the **M3.10** user trial, which covers M3.11 | all |
 
 **Serialization of shared edits:**
 
@@ -519,3 +521,199 @@ phase or hook, which keeps conflicts in `engine.rs` small.
   keep the old numbers, which map to the new ones as follows: MOBIL M3.1 →
   M3.6, stop and yield M3.2 → M3.3, signals M3.3 → M3.4, turn lanes M3.4 →
   M3.7, gridlock M3.5 → M3.8.
+
+## Addendum (M3.11): select, inspect, follow
+
+The maintainer approved M3.11: click a vehicle or road to inspect it, and
+follow a vehicle with the camera. It is split into M3.11a (core and api
+queries) and M3.11b (the viewer). M4.4 keeps the live parameter panel and
+colouring by type.
+
+### Diagnostics in the core (M3.11a)
+
+- **Rule:** diagnostics are written by phases but never read by them, and
+  they are not hashed. A test enforces this: it steps a scenario N ticks
+  once with an `inspect_vehicle` and `inspect_road` call after every step
+  and once without, and requires equal state hashes. M3.11a leaves the
+  golden hash unchanged.
+- **Stop cause:** the engine keeps a per-lane `stop_cause: Vec<StopCause>`
+  next to the existing `stop` scratch. It is sized once like `stop`, one
+  byte per lane, with no allocation. Phase 3 writes it at the single place
+  `stop` is set, every step:
+  - `NoRoom` when the approach is `blocked`;
+  - `Junction` otherwise, until a later item can say more.
+
+  M3.3 (`Yield`, `Stop`), M3.4 (`Red`) and M3.7 (`WrongLane`) each set
+  their value at their own `go = false` site.
+- **`Engine::wait_reason(slot)`** derives the reason from the state after
+  the last step, checking in order:
+  1. a lane head with `stop` set → `StopLine { cause }`, or `NoRoom`;
+  2. a leader (same lane, or ahead across the road end as in phase 4)
+     whose IDM interaction term `(s*/s)²` is at least 0.1 → `Following`;
+  3. otherwise `FreeRoad`.
+  - The cause was decided in phase 3, before integration, so the reason
+    can be one step (0.1 s) old.
+  - It is meaningful only after the first step, and after any future
+    state restore once a step has run. Before that `stop` is all false
+    and the answer is `Following` or `FreeRoad`, never uninitialised.
+  - Standing time against the stuck limit is a separate field, since a
+    vehicle can be both following and nearly stuck.
+- **Exit ring:** a fixed ring of the last 256 exits, each a
+  `(VehicleId, Gone, road, offset_m)`, allocated at construction and
+  written at despawn. `inspect_vehicle` scans it when the id no longer
+  names a live vehicle, so at high speed a reused slot still reports
+  "arrived" or "removed". `Gone::Unknown` means older than the ring. It is
+  unhashed and allocation-free after construction.
+
+### API queries (M3.11a)
+
+The types go in a new `rusthour-api/src/inspect.rs`. The `lib.rs` edit is
+limited to the two trait methods and their `pub use` lines.
+
+```rust
+// Additions to `Simulation`.
+fn inspect_vehicle(&self, id: VehicleId) -> Result<VehicleInfo, Gone>;
+fn inspect_road(&self, road: RoadId) -> Option<RoadInfo>; // None: unknown id
+
+#[non_exhaustive] pub enum Gone {
+    Arrived { road: RoadId, offset_m: f32 },
+    RemovedStuck { road: RoadId, offset_m: f32 },
+    Unknown,                                          // older than the exit ring
+}
+#[non_exhaustive] pub struct VehicleInfo {
+    pub id: VehicleId, pub road: RoadId, pub lane: u8,
+    pub offset_m: f32, pub speed_mps: f32, pub accel_mps2: f32,
+    pub trip_time_s: f32,
+    pub route_ahead: Vec<RoadId>,                    // current road first
+    pub driver: DriverInfo,                          // IDM now; MOBIL with M3.6; profile with M4.1
+    pub wait: WaitReason,
+    pub standing_s: f32, pub stuck_limit_s: f32,     // 0 = net off
+}
+#[non_exhaustive] pub enum WaitReason {
+    FreeRoad,
+    Following { leader: VehicleId, gap_m: f32 },
+    StopLine { cause: StopCause },
+    NoRoom { next_road: RoadId },
+}
+#[non_exhaustive] pub enum StopCause { Junction, Yield, Stop, Red, WrongLane }
+#[non_exhaustive] pub struct RoadInfo {
+    pub road: RoadId, pub name: Option<String>, pub class: RoadClass,
+    pub lanes: u8, pub speed_limit_mps: f32, pub length_m: f32,
+    pub vehicles: u32, pub mean_speed_mps: Option<f32>,
+    pub removed_stuck: u32,                          // M3.8a's per-road count
+    pub movements: Vec<MovementInfo>,
+}
+#[non_exhaustive] pub struct MovementInfo { pub to_road: RoadId, pub turn: TurnType,
+                                            pub delay_s: f32, pub prior_s: f32 } // M3.1
+```
+
+- **Static and live data:** names, class, lanes and geometry come from the
+  api's own `Network` copy. Live values come from read-only core
+  accessors: `Engine::wait_reason`, the exit ring, and
+  `Router::movement_delays(from)` for M3.1's averages and priors. The
+  queries take `&self`, so they can't mutate anything.
+- **Versioning:** the inspect types are not part of the wire protocol
+  until M8. `#[non_exhaustive]` keeps growth safe for Rust callers now, as
+  M3.3, M3.4 and M3.7 add `StopCause` values and M3.6 and M4.1 add driver
+  fields. Wire compatibility for serde clients, including unknown variants,
+  is decided and tested with M8.4. So there is **no `PROTOCOL_VERSION`
+  bump**: no existing type changes. M3.8a's bump to 3 was right because it
+  changed `Status`.
+- **Cost:** one vehicle or one road per call. The viewer refreshes at
+  about 5 Hz, so the `Vec`s allocated per call don't matter. An `_into`
+  shape can come with M8 if a remote panel needs it.
+
+### Viewer (M3.11b)
+
+- **Picking** follows ADR-0003 §4: on the CPU, against data, with no egui
+  types in the picking code.
+  - Picking uses the positions as drawn (extrapolated, with lane shift)
+    and the shifted twin-road lines, so a click lands on what the user
+    sees.
+  - The radius is 8 px for a mouse and 22 px for touch. Vehicles come
+    before roads, and the nearest wins.
+  - A repeated tap or click on the same spot cycles through the
+    candidates within the radius, nearest first, which handles crowded
+    roads without a list.
+  - Selection happens on release without movement, so a pan drag never
+    selects.
+  - Both searches are linear scans: the snapshot for vehicles, the
+    network polylines for roads (about 30k segments on bensheim-5km, only
+    on a click).
+  - Nice-to-have: highlight the candidate under the cursor before the
+    click, with a pointer cursor.
+- **Selection:**
+  - the selected item is outlined, not only coloured (ADR-0003's
+    accessibility minimum);
+  - the panel has a visible ✕;
+  - Esc closes the help window first and clears the selection second;
+  - a click on empty map clears it too;
+  - Reset, or a change of vehicle count, clears it, since slots mean
+    something else afterwards.
+- **Keys:**
+  - **`C`** and the Follow button toggle follow, and the panel shows
+    "following";
+  - `F`, `Home` and `0` stay "fit map";
+  - `C` is added to the Shortcuts list.
+- **Follow:**
+  - keeps the selected vehicle centred, at any speed, on its drawn
+    position;
+  - zooming while following zooms around the vehicle; dragging or panning
+    by keys stops following;
+  - above about 30× a hint under the speed readout says "follow works best
+    below 30×", because the view jumps.
+- **Gone vehicles:**
+  - the panel says "reached its destination", or "removed after standing
+    still 300 s (gridlock safety net)", with the last known road;
+  - `Unknown` says "no longer on the map";
+  - follow stops, and a marker stays at the last seen position (from the
+    exit record, or cached from the previous inspect), because for a
+    removal that position is the debugging information;
+  - the panel never jumps to the vehicle that reuses the slot.
+- **Route:** a dashed line from the vehicle along its route ahead, with a
+  destination marker. The panel says "going to" plus the destination road's name.
+- **Panel:**
+  - top right, about 280 pt wide and collapsible, clear of the control
+    strip, the attribution and the F3 window;
+  - on narrow screens, a bottom sheet of at most 40% of the height, with a
+    one-line summary when collapsed;
+  - the text refreshes at about 5 Hz at any speed. `Following` uses
+    hysteresis (in at 0.1, out at 0.05) so the reason doesn't flicker.
+- **Vehicle panel wording:**
+
+  | Reason | Text |
+  | --- | --- |
+  | `FreeRoad` | driving freely |
+  | `Following` | following traffic, 12 m gap (moving); stuck in a queue (standing) |
+  | `Junction` | waiting at a junction |
+  | `Yield` | giving way |
+  | `Stop` | stopped at a stop sign |
+  | `Red` | red light, 12 s (from the signal snapshot) |
+  | `WrongLane` | in the wrong lane for its turn, waiting for a gap |
+  | `NoRoom` | waiting for space on Hauptstraße ahead |
+
+  It also shows speed, road name and lane, trip time, standing time
+  against the stuck limit when above 50%, and the driver parameters.
+- **Road panel:** name, class, lanes, speed limit, mean speed, vehicles
+  and removals. Each movement reads as "→ Hauptstraße (left): 12 s,
+  expected 4 s", the delay against the prior.
+- **Files:** the viewer code goes in a new `rusthour-viz/src/inspect.rs`,
+  with only hooks in `main.rs` and `world.rs`.
+
+### Work split and serialization
+
+| Wave | Item | Depends on |
+| --- | --- | --- |
+| 2 (now) | **M3.11a** diagnostics, `wait_reason`, exit ring, `inspect_*` queries, the inspect-does-not-change-the-hash test | M3.1 (merged), M3.8a (per-road removals) |
+| 4 | **M3.11b** viewer: picking, panels, follow, route line | M3.11a |
+
+Whoever merges second rebases:
+
+- **M3.3** rewrites `decide()`, where `stop_cause` is written. M3.11a adds
+  its write at the single place `stop` is set; M3.3 keeps a cause at each
+  `go = false` site.
+- **M3.4** also edits `routing.rs` (`Router::movement_delays`).
+- **M3.9** edits the viewer; M3.11b is confined to `inspect.rs` plus
+  hooks.
+
+The M3 user trial (M3.10) runs after M3.11 and covers it.
