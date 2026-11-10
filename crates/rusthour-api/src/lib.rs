@@ -7,6 +7,7 @@
 #[cfg(all(feature = "server", target_arch = "wasm32"))]
 compile_error!("the `server` feature is native-only");
 
+mod inspect;
 mod network;
 mod pacer;
 mod placement;
@@ -14,6 +15,9 @@ mod snapshot;
 
 use serde::{Deserialize, Serialize};
 
+pub use inspect::{
+    DriverInfo, Gone, MovementInfo, RoadInfo, StopCause, TurnType, VehicleInfo, WaitReason,
+};
 pub use network::{
     Connection, NETWORK_SCHEMA_VERSION, Network, NetworkError, Node, NodeId, OsmWayPart, Point,
     Road, RoadId,
@@ -68,6 +72,17 @@ pub trait Simulation {
     /// Writes `(road, vehicles removed there as stuck)` into `out`, replacing
     /// its contents and reusing its buffer. Only roads with removals, by id.
     fn stuck_by_road_into(&self, out: &mut Vec<(RoadId, u32)>);
+
+    /// Describes one live vehicle, or says what became of it. Meant for a
+    /// selected vehicle a few times per second, not for all of them.
+    ///
+    /// # Errors
+    ///
+    /// [`Gone`] if the id no longer names a live vehicle.
+    fn inspect_vehicle(&self, id: VehicleId) -> Result<VehicleInfo, Gone>;
+
+    /// Describes one road; `None` for an unknown id.
+    fn inspect_road(&self, road: RoadId) -> Option<RoadInfo>;
 }
 
 /// A simulation running in the caller's process (and thread).
@@ -128,9 +143,7 @@ impl Simulation for InProcess {
             for &slot in vs.lane(lane) {
                 let s = slot as usize;
                 let id = vs.id(s);
-                out.id.push(VehicleId(
-                    u64::from(id.generation) << 32 | u64::from(id.slot),
-                ));
+                out.id.push(VehicleId::from_core(id));
                 out.road.push(RoadId(vs.road(s)));
                 out.lane.push(vs.lane_of(s));
                 // The wire format is f32 (ADR-0004 §3).
@@ -161,6 +174,14 @@ impl Simulation for InProcess {
 
     fn network(&self) -> &Network {
         &self.network
+    }
+
+    fn inspect_vehicle(&self, id: VehicleId) -> Result<VehicleInfo, Gone> {
+        inspect::vehicle(&self.engine, id)
+    }
+
+    fn inspect_road(&self, road: RoadId) -> Option<RoadInfo> {
+        inspect::road(&self.engine, &self.network, road)
     }
 }
 
@@ -271,6 +292,76 @@ mod tests {
             by_road.iter().map(|&(_, n)| n).sum::<u32>(),
             status.removed_stuck
         );
+    }
+
+    #[test]
+    fn inspecting_every_step_does_not_change_the_state() {
+        let config = Config {
+            target_vehicles: 40,
+            stuck_timeout_s: 1,
+            ..Config::default()
+        };
+        let run = |inspect: bool| {
+            let mut sim = InProcess::with_network(config, 7, ring()).unwrap();
+            let mut snap = VehicleSnapshot::default();
+            for _ in 0..1500 {
+                sim.step(1);
+                if inspect {
+                    sim.snapshot_into(&mut snap);
+                    for &id in &snap.id {
+                        sim.inspect_vehicle(id).unwrap();
+                    }
+                    for r in 0..3 {
+                        sim.inspect_road(RoadId(r)).unwrap();
+                    }
+                }
+            }
+            sim.state_hash()
+        };
+        assert_eq!(run(true), run(false));
+    }
+
+    #[test]
+    fn inspect_road_matches_the_snapshot_and_rejects_unknown_ids() {
+        let mut sim = busy();
+        sim.step(300);
+        let mut snap = VehicleSnapshot::default();
+        sim.snapshot_into(&mut snap);
+        assert!(sim.inspect_road(RoadId(3)).is_none());
+        let mut total = 0;
+        for r in 0..3 {
+            let info = sim.inspect_road(RoadId(r)).unwrap();
+            let on_road = (0..snap.len()).filter(|&i| snap.road[i] == RoadId(r));
+            assert_eq!(info.vehicles as usize, on_road.clone().count());
+            assert_eq!(info.mean_speed_mps.is_some(), info.vehicles > 0);
+            assert!((180.0..=200.5).contains(&info.length_m));
+            assert_eq!(info.movements.len(), 1);
+            assert_eq!(info.movements[0].to_road, RoadId((r + 1) % 3));
+            total += info.vehicles;
+        }
+        assert_eq!(total, sim.status().vehicles);
+    }
+
+    #[test]
+    fn a_vehicle_is_described_until_it_arrives_and_then_reported_gone() {
+        let mut sim = busy();
+        sim.step(100);
+        let mut snap = VehicleSnapshot::default();
+        sim.snapshot_into(&mut snap);
+        let id = snap.id[0];
+        let info = sim.inspect_vehicle(id).unwrap();
+        assert_eq!(info.id, id);
+        assert_eq!(info.route_ahead[0], info.road);
+        assert!(info.speed_mps >= 0.0 && info.trip_time_s > 0.0);
+        assert!(matches!(
+            sim.inspect_vehicle(VehicleId(u64::MAX)),
+            Err(Gone::Unknown)
+        ));
+        sim.step(20_000);
+        assert!(matches!(
+            sim.inspect_vehicle(id),
+            Err(Gone::Arrived { .. } | Gone::Unknown)
+        ));
     }
 
     #[test]
