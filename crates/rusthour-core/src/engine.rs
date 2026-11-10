@@ -14,6 +14,9 @@ use crate::network::Network;
 use crate::routing::Router;
 use crate::vehicle::idm::{self, IdmParams, Leader};
 use crate::vehicle::{NewVehicle, VehicleId, Vehicles};
+use inspect::{Exits, LaneStop};
+
+pub use inspect::{Gone, StopCause, WaitReason};
 
 /// Hardest braking the integration applies (m/s²).
 const MAX_DECEL_MPS2: f64 = 9.0;
@@ -120,6 +123,11 @@ pub struct Engine {
     /// Per `LaneId`: the head was told to stop at the road end (phase 3
     /// writes, phase 4 reads).
     stop: Vec<bool>,
+    /// Per `LaneId`: why `stop` is set; written with it, never read by a
+    /// phase, not hashed (ADR-0005, addendum M3.11).
+    stop_cause: Vec<LaneStop>,
+    /// The last exits, for `inspect`; not hashed.
+    exits: Exits,
     /// One controller per node.
     controls: Vec<NodeControl>,
     /// Roads by end node, ascending: node `n`'s are
@@ -193,6 +201,8 @@ impl Engine {
             vehicles: Vehicles::new(&network),
             head_limit_m: vec![f64::INFINITY; lanes],
             stop: vec![false; lanes],
+            stop_cause: vec![LaneStop::Go; lanes],
+            exits: Exits::new(),
             controls,
             incoming,
             incoming_first,
@@ -371,6 +381,7 @@ impl Engine {
     /// their look-ahead of its end; heads told to stop get a stop line.
     fn decide(&mut self) {
         self.stop.fill(false);
+        self.stop_cause.fill(LaneStop::Go);
         let (net, vs) = (&self.network, &mut self.vehicles);
         for (n, control) in self.controls.iter_mut().enumerate() {
             let roads = self.incoming_first[n] as usize..self.incoming_first[n + 1] as usize;
@@ -407,8 +418,15 @@ impl Engine {
             self.go.resize(self.approaches.len(), false);
             control.decide(net, self.tick, &self.approaches, &mut self.go);
             for (a, &go) in self.approaches.iter().zip(&self.go) {
-                self.stop[vs.lane_id(a.from_road, 0)] = !go;
+                let q = vs.lane_id(a.from_road, 0);
+                self.stop[q] = !go;
                 if !go {
+                    // M3.3, M3.4 and M3.7 set their own causes at their sites.
+                    self.stop_cause[q] = if a.blocked {
+                        LaneStop::NoRoom
+                    } else {
+                        LaneStop::Junction
+                    };
                     vs.held_ticks[a.slot as usize] += 1;
                 }
             }
@@ -434,7 +452,7 @@ impl Engine {
                     })
                 } else {
                     let dist_m = road.length_m - vs.pos_m[s];
-                    let mut leader = leader_ahead(net, vs, s, dist_m);
+                    let mut leader = leader_ahead(net, vs, s, dist_m).map(|(l, _)| l);
                     let mut limit = leader.map_or(f64::INFINITY, |l| vs.pos_m[s] + l.gap_m);
                     if self.stop[q] {
                         // Stop line: a standing obstacle at the road end, unless
@@ -569,7 +587,13 @@ impl Engine {
                 if !last || vs.pos_m[s] < self.network.roads[road as usize].length_m {
                     break;
                 }
-                vs.despawn(vs.id(s));
+                let (id, length_m) = (vs.id(s), self.network.roads[road as usize].length_m);
+                let gone = Gone::Arrived {
+                    road,
+                    offset_m: vs.pos_m[s].min(length_m),
+                };
+                vs.despawn(id);
+                self.exits.push(id, gone);
                 self.arrived += 1;
             }
         }
@@ -585,7 +609,13 @@ impl Engine {
             vs.stuck_ticks[s] += 1;
             if self.stuck_limit > 0 && vs.stuck_ticks[s] >= self.stuck_limit {
                 self.stuck_by_road[vs.road(s) as usize] += 1;
-                vs.despawn(vs.id(s));
+                let id = vs.id(s);
+                let gone = Gone::RemovedStuck {
+                    road: vs.road(s),
+                    offset_m: vs.pos_m[s],
+                };
+                vs.despawn(id);
+                self.exits.push(id, gone);
                 self.removed_stuck += 1;
             }
         }
@@ -682,22 +712,28 @@ pub fn run_and_hash(config: Config, seed: u64, steps: u64) -> u64 {
     engine.state_hash()
 }
 
-/// The leader of lane head `slot`, `dist_m` before its road end: the tail of
-/// the next route road that has one, within `50 m + v²/b` (ADR-0004 §2). The
-/// destination's end is free road.
-fn leader_ahead(net: &Network, vs: &Vehicles, slot: usize, mut dist_m: f64) -> Option<Leader> {
+/// The leader of lane head `slot`, `dist_m` before its road end, and its slot:
+/// the tail of the next route road that has one, within `50 m + v²/b`
+/// (ADR-0004 §2). The destination's end is free road.
+fn leader_ahead(
+    net: &Network,
+    vs: &Vehicles,
+    slot: usize,
+    mut dist_m: f64,
+) -> Option<(Leader, u32)> {
     let horizon = horizon(&vs.params[slot], vs.speed_mps[slot]);
     let route = &vs.route[slot];
     for &r in &route[vs.route_pos[slot] as usize + 1..] {
         if dist_m > horizon {
             return None;
         }
-        if let Some(&t) = vs.lane(vs.lane_id(r, 0)).back() {
-            let t = t as usize;
-            return Some(Leader {
+        if let Some(&slot_t) = vs.lane(vs.lane_id(r, 0)).back() {
+            let t = slot_t as usize;
+            let leader = Leader {
                 gap_m: (dist_m + vs.pos_m[t] - vs.params[t].length_m).max(0.0),
                 speed_mps: vs.speed_mps[t],
-            });
+            };
+            return Some((leader, slot_t));
         }
         dist_m += net.roads[r as usize].length_m;
     }
@@ -733,6 +769,8 @@ fn entering(route: &[u32], params: IdmParams, v: f64, tick: u64) -> NewVehicle<'
         depart_tick: tick,
     }
 }
+
+mod inspect;
 
 #[cfg(test)]
 mod tests;

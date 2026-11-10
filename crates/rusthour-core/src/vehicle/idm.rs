@@ -45,10 +45,17 @@ pub fn acceleration(p: &IdmParams, v0: f64, v: f64, leader: Option<Leader>) -> f
     let Some(lead) = leader else {
         return p.max_accel_mps2 * free;
     };
+    let inter = interaction(p, v, lead);
+    p.max_accel_mps2 * (free - inter * inter)
+}
+
+/// The IDM interaction ratio `s*/s` of a vehicle at speed `v` behind `lead`;
+/// its square is the braking term of [`acceleration`].
+#[must_use]
+pub fn interaction(p: &IdmParams, v: f64, lead: Leader) -> f64 {
     let s_star = p.min_gap_m + v * p.time_headway_s + v * (v - lead.speed_mps) / (2.0 * p.sqrt_ab);
     // shortcut: gap floor avoids inf at contact, revisit if the engine ever lets gaps reach 0.
-    let inter = s_star.max(p.min_gap_m) / lead.gap_m.max(1e-3);
-    p.max_accel_mps2 * (free - inter * inter)
+    s_star.max(p.min_gap_m) / lead.gap_m.max(1e-3)
 }
 
 #[cfg(test)]
