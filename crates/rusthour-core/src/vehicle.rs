@@ -251,7 +251,8 @@ impl Vehicles {
 
     /// Moves a vehicle to another lane of its road, keeping its position: it
     /// is inserted where the lane's order stays head first (ahead of any
-    /// vehicle at exactly its position). O(lane), and no allocation as long as
+    /// vehicle at exactly its position); to its current lane it does nothing.
+    /// O(lane), and no allocation as long as
     /// the lane stays within its physical bound (`Vehicles::new`). The caller
     /// checks the gaps. Returns `false` for a stale id.
     ///
@@ -263,6 +264,9 @@ impl Vehicles {
         }
         let s = id.slot as usize;
         let q = self.checked_lane_id(self.road[s], lane);
+        if self.lane[s] == lane {
+            return true;
+        }
         self.unlink(id.slot);
         self.lane[s] = lane;
         let pos = &self.pos_m;
@@ -552,6 +556,10 @@ mod tests {
         assert_eq!(vs.lane(vs.lane_id(1, 1)), &[a.slot, m.slot, b.slot, c.slot]);
         assert!(vs.lane(vs.lane_id(1, 0)).is_empty());
         assert_eq!(vs.lane_of(m.slot as usize), 1);
+        // The current lane: no change, even when a vehicle shares the position.
+        vs.pos_m[b.slot as usize] = 60.0;
+        assert!(vs.change_lane(m, 1));
+        assert_eq!(vs.lane(vs.lane_id(1, 1)), &[a.slot, m.slot, b.slot, c.slot]);
         assert!(
             vs.despawn(m) && !vs.change_lane(m, 0),
             "stale id is rejected"
