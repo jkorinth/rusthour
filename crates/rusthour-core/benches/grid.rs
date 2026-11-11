@@ -1,4 +1,4 @@
-//! A synthetic grid network shared by the benchmarks and the allocation test.
+//! Synthetic grid networks shared by the benchmarks and the allocation test.
 
 use rusthour_core::network::{EndControl, Network, Road};
 
@@ -52,6 +52,26 @@ pub fn grid(n: u32) -> Network {
                 net.connections
                     .push((u32::try_from(a).unwrap(), u32::try_from(b).unwrap()));
             }
+        }
+    }
+    net
+}
+
+/// [`grid`] with two lanes per road at 70 km/h, so MOBIL and the ban on
+/// passing on the right run, and signals at every second node in a
+/// checkerboard (ADR-0005, the M3.6 multi-lane case; the signals rank as
+/// unsigned until M3.4 adds the controller).
+///
+/// # Panics
+/// If `n` is too large for `u32` ids.
+#[must_use]
+pub fn multilane_grid(n: u32) -> Network {
+    let mut net = grid(n);
+    for r in &mut net.roads {
+        r.lanes = 2;
+        r.speed_limit_mps = 70.0 / 3.6;
+        if (r.to % n + r.to / n).is_multiple_of(2) {
+            r.end_control = EndControl::Signals;
         }
     }
     net

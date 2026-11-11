@@ -783,3 +783,33 @@ they stand.
   parallel columns like `VehicleSnapshot`, with `SignalState` in
   `rusthour-api/src/signal.rs`. It reports the lights the next step
   applies.
+
+## Addendum (M3.6): MOBIL as built
+
+These points differ from, or add to, §6 and the benchmark note. The
+milestone review decides whether they stand.
+
+- **The ban on passing on the right also holds inside MOBIL**, not only in
+  phase 4. Without it, politeness made a slow car on a 100 km/h road pull
+  left so the faster car behind could pass it on the right. So on a road
+  outside towns, a change to the left gives the old follower no gain if it
+  may not pass the changing car on the right, and a change to the right
+  gives the changing car no gain if it may not then pass its old leader.
+  Politeness still sums both followers.
+- **Lane sets:** MOBIL never moves a vehicle from a lane that serves its
+  next movement (`from_mask`, M3.5b) to one that doesn't. Before M3.7 this
+  keeps keep-right from pulling left turners off their lane. M3.7's route
+  incentive replaces it.
+- **Leaders:** the IDM terms use the nearest vehicle in the lane, or the
+  tail across the road end as in phase 4. Stop lines are left out on both
+  sides of the choice. Phase 4 and MOBIL see only left-lane leaders on the
+  same road.
+- **"Outside towns"** is a speed limit above 14 m/s, so 13.9 m/s (50 km/h)
+  maps count as town.
+- **`lc_ticks`** counts steps since the last change, saturating at
+  `u16::MAX` ("none yet"); the 3 s cooldown and the 2 s fade both read it.
+  Entering a road sets `lc_from` to the new lane, so the shift ends there.
+- **`MobilParams`** are the defaults at spawn; `NewVehicle` gains no field
+  until M4 profiles need one. `DriverInfo` doesn't show them yet.
+- **Bench grid:** the multi-lane variant runs at 70 km/h, so the ban's code
+  path is timed; at the M2.8 grid's 50 km/h it would never run.

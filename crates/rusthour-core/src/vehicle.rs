@@ -9,6 +9,7 @@
 pub mod idm;
 
 use crate::StateHasher;
+use crate::behavior::mobil::MobilParams;
 use idm::IdmParams;
 use std::collections::VecDeque;
 
@@ -73,6 +74,12 @@ pub struct Vehicles {
     /// Steps held at the line (`go = false`) as lane head since entering the
     /// road; the routing delay sample of its next movement (ADR-0005 §2).
     pub held_ticks: Vec<u32>,
+    /// MOBIL parameters, the defaults at spawn (ADR-0005 §6).
+    pub mobil: Vec<MobilParams>,
+    /// Lane before the last lane change; on entering a road, that lane.
+    pub lc_from: Vec<u8>,
+    /// Steps since the last lane change, saturating; `u16::MAX` = none yet.
+    pub lc_ticks: Vec<u16>,
     free: Vec<u32>,
     /// Per `LaneId`: slots, head first. Crate-visible so the engine can walk a
     /// lane while writing the columns; change membership only via the methods.
@@ -116,6 +123,9 @@ impl Vehicles {
             depart_tick: Vec::new(),
             stuck_ticks: Vec::new(),
             held_ticks: Vec::new(),
+            mobil: Vec::new(),
+            lc_from: Vec::new(),
+            lc_ticks: Vec::new(),
             free: Vec::new(),
             lanes,
             lane_first,
@@ -218,6 +228,9 @@ impl Vehicles {
             self.depart_tick.push(0);
             self.stuck_ticks.push(0);
             self.held_ticks.push(0);
+            self.mobil.push(MobilParams::default());
+            self.lc_from.push(0);
+            self.lc_ticks.push(u16::MAX);
             slot
         };
         let s = slot as usize;
@@ -252,6 +265,7 @@ impl Vehicles {
     /// Moves a vehicle to another lane of its road, keeping its position: it
     /// is inserted where the lane's order stays head first (ahead of any
     /// vehicle at exactly its position); to its current lane it does nothing.
+    /// Records the old lane in `lc_from` and restarts `lc_ticks`.
     /// O(lane), and no allocation as long as
     /// the lane stays within its physical bound (`Vehicles::new`). The caller
     /// checks the gaps. Returns `false` for a stale id.
@@ -268,6 +282,8 @@ impl Vehicles {
             return true;
         }
         self.unlink(id.slot);
+        self.lc_from[s] = self.lane[s];
+        self.lc_ticks[s] = 0;
         self.lane[s] = lane;
         let pos = &self.pos_m;
         let i = self.lanes[q].partition_point(|&o| pos[o as usize] > pos[s]);
@@ -294,6 +310,8 @@ impl Vehicles {
         self.depart_tick[s] = 0;
         self.stuck_ticks[s] = 0;
         self.held_ticks[s] = 0;
+        self.mobil[s] = MobilParams::default();
+        self.lc_ticks[s] = u16::MAX;
         self.free.push(id.slot);
         true
     }
@@ -312,6 +330,7 @@ impl Vehicles {
         let s = slot as usize;
         self.road[s] = road;
         self.lane[s] = lane;
+        self.lc_from[s] = lane;
         self.pos_m[s] = pos_m;
         let q = self.checked_lane_id(road, lane);
         // Weaker than ADR-0004's fit rule (`pos <= x_tail - length_tail`): it
@@ -329,7 +348,7 @@ impl Vehicles {
         let s = slot as usize;
         let q = self.lane_id(self.road[s], self.lane[s]);
         // Heads leave in the common case (arrivals, transfers): O(1).
-        // shortcut: O(lane) scan for the rest, fine until M3.6 makes lane changes hot.
+        // shortcut: O(lane) scan for the rest (lane changes, about 1 per vehicle-minute or less).
         let i = self.lanes[q]
             .iter()
             .position(|&x| x == slot)
@@ -368,6 +387,17 @@ impl Vehicles {
             h.write_u64(self.depart_tick[s]);
             h.write_u64(u64::from(self.stuck_ticks[s]));
             h.write_u64(u64::from(self.held_ticks[s]));
+            let m = &self.mobil[s];
+            for x in [
+                m.politeness,
+                m.threshold_mps2,
+                m.bias_right_mps2,
+                m.safe_decel_mps2,
+            ] {
+                h.write_f64(x);
+            }
+            h.write_u64(u64::from(self.lc_from[s]));
+            h.write_u64(u64::from(self.lc_ticks[s]));
         }
         h.write_u64(self.free.len() as u64);
         for &f in &self.free {

@@ -396,11 +396,25 @@ fn a_transfer_enters_the_lane_of_the_movement() {
     for (route, from, to) in [([0, 1], 0, 1), ([0, 2], 0, 0), ([0, 2], 1, 1)] {
         let mut e = Engine::with_network(Config::default(), 1, lane_node([2, 2, 2]));
         let s = park(&mut e, from, 90.0, &route);
+        // Keep-right would move it to lane 0 first (MOBIL, M3.6).
+        e.vehicles.mobil[s].threshold_mps2 = f64::INFINITY;
         while e.vehicles.road(s) == 0 {
             e.step(1);
             assert!(e.tick() < 600, "never left road 0");
         }
         assert_eq!(e.vehicles.lane_of(s), to, "{route:?} from lane {from}");
+    }
+}
+
+#[test]
+fn keep_right_never_leaves_the_lane_of_the_next_movement() {
+    // Left onto road 1 is served by lane 1 only; straight by both.
+    for (route, lane) in [([0, 1], 1), ([0, 2], 0)] {
+        let mut e = Engine::with_network(Config::default(), 1, lane_node([2, 2, 2]));
+        let s = park(&mut e, 1, 20.0, &route);
+        e.step(50);
+        assert_eq!(e.vehicles.road(s), 0);
+        assert_eq!(e.vehicles.lane_of(s), lane, "{route:?}");
     }
 }
 
