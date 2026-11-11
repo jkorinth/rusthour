@@ -7,6 +7,7 @@
 
 use crate::StateHasher;
 
+pub mod lanes;
 pub mod movement;
 
 /// A directed road between two intersections, all lanes in travel direction.

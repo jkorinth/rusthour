@@ -133,8 +133,9 @@ impl Priority {
         arm.stop_sign && !arm.stood
     }
 
-    /// The movements of `a` and `b` cross or merge. An unknown target
-    /// conflicts with everything.
+    /// The movements of `a` and `b` cross or merge, that is, enter the same
+    /// lane of one road (ADR-0005 §5). An unknown target conflicts with
+    /// everything.
     fn conflict(&self, a: &Approach, b: &Approach) -> bool {
         let exit =
             |to| (self.exits.binary_search_by_key(&to, |&(r, _)| r).ok()).map(|i| self.exits[i].1);
@@ -144,7 +145,7 @@ impl Priority {
         let (a1, b1) = (self.arms[self.arm(a)].point, self.arms[self.arm(b)].point);
         let (lo, hi) = (a1.min(a2), a1.max(a2));
         let inside = |p| lo < p && p < hi;
-        a2 == b2 || a1 != b1 && inside(b1) != inside(b2)
+        (a2 == b2 && a.to_lane == b.to_lane) || a1 != b1 && inside(b1) != inside(b2)
     }
 }
 
@@ -384,6 +385,7 @@ mod tests {
             from_road: road,
             lane: 0,
             to_road: straight(road),
+            to_lane: 0,
             slot,
             dist_m,
             speed_mps,
@@ -414,6 +416,28 @@ mod tests {
         let mut p = priority(&net);
         let go = decide(&mut p, &net, 0, &[ap(0, 10, 2.0, 0.0), ap(2, 12, 2.0, 0.0)]);
         assert_eq!(go, [true, true]);
+    }
+
+    #[test]
+    fn heads_of_one_road_conflict_only_when_they_enter_the_same_lane() {
+        let net = node([(false, 8.3, 2), MINOR, MINOR, MINOR]);
+        let head = |lane, to_lane| Approach {
+            lane,
+            to_lane,
+            ..ap(0, 10 + u32::from(lane), 2.0, 0.0)
+        };
+        // Side by side into different lanes: both go.
+        let mut p = priority(&net);
+        assert_eq!(
+            decide(&mut p, &net, 0, &[head(0, 0), head(1, 1)]),
+            [true, true]
+        );
+        // A lane drop: both enter lane 0, so one waits for the other, and
+        // the one that goes keeps going until it has left.
+        let mut p = priority(&net);
+        let first = decide(&mut p, &net, 0, &[head(0, 0), head(1, 0)]);
+        assert_eq!(first.iter().filter(|&&g| g).count(), 1, "{first:?}");
+        assert_eq!(decide(&mut p, &net, 1, &[head(0, 0), head(1, 0)]), first);
     }
 
     #[test]

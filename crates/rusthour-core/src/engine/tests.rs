@@ -56,7 +56,7 @@ fn saturate(
         // Whether each watched head waits for room, as phase 3 will see it.
         let full: Vec<bool> = (watch.iter())
             .map(|&r| e.vehicles.lane(e.vehicles.lane_id(r, 0)).front())
-            .map(|f| f.is_some_and(|&s| no_room(&e.vehicles, s as usize)))
+            .map(|f| f.is_some_and(|&s| no_room(&e.vehicles, s as usize, 0)))
             .collect();
         e.step(1);
         let t = e.tick();
@@ -356,4 +356,76 @@ fn a_stop_sign_needs_a_full_stop_even_at_an_empty_node() {
         passed && min_v > 5.0,
         "a give-way sign alone doesn't stop it: {min_v}"
     );
+}
+
+/// Roads 0 (into the node) and 1, 2 (out of it), all `lanes` wide. A vehicle
+/// from road 0 turns left onto 1 (heading W) or goes straight onto 2.
+fn lane_node(lanes: [u8; 3]) -> Network {
+    let mut roads = vec![
+        road(1, 0, 100.0, 10.0, [[0.0, 1.0]; 2]),
+        road(0, 2, 100.0, 10.0, [[-1.0, 0.0]; 2]),
+        road(0, 3, 100.0, 10.0, [[0.0, 1.0]; 2]),
+    ];
+    for (r, l) in roads.iter_mut().zip(lanes) {
+        r.lanes = l;
+    }
+    Network {
+        nodes: vec![[0.0; 2]; 4],
+        roads,
+        connections: vec![(0, 1), (0, 2)],
+    }
+}
+
+/// Puts a car on `lane` of road 0, `pos_m` from its start, at rest.
+fn park(e: &mut Engine, lane: u8, pos_m: f64, route: &[u32]) -> usize {
+    let id = e.vehicles.spawn(crate::vehicle::NewVehicle {
+        road: 0,
+        lane,
+        pos_m,
+        speed_mps: 0.0,
+        params: car(),
+        route,
+        depart_tick: 0,
+    });
+    id.slot as usize
+}
+
+#[test]
+fn a_transfer_enters_the_lane_of_the_movement() {
+    // Left onto road 1 enters its leftmost lane, straight keeps the lane.
+    for (route, from, to) in [([0, 1], 0, 1), ([0, 2], 0, 0), ([0, 2], 1, 1)] {
+        let mut e = Engine::with_network(Config::default(), 1, lane_node([2, 2, 2]));
+        let s = park(&mut e, from, 90.0, &route);
+        while e.vehicles.road(s) == 0 {
+            e.step(1);
+            assert!(e.tick() < 600, "never left road 0");
+        }
+        assert_eq!(e.vehicles.lane_of(s), to, "{route:?} from lane {from}");
+    }
+}
+
+#[test]
+fn a_lane_drop_zippers_without_overlap_or_gridlock() {
+    let mut e = Engine::with_network(Config::default(), 1, lane_node([2, 2, 1]));
+    for i in 0..6 {
+        for lane in 0..2 {
+            park(&mut e, lane, 95.0 - 10.0 * f64::from(i), &[0, 2]);
+        }
+    }
+    for _ in 0..2 * MINUTE {
+        e.step(1);
+        let vs = &e.vehicles;
+        let lane: Vec<usize> = vs
+            .lane(vs.lane_id(2, 0))
+            .iter()
+            .map(|&s| s as usize)
+            .collect();
+        for w in lane.windows(2) {
+            assert!(
+                vs.pos_m[w[0]] - vs.params[w[0]].length_m >= vs.pos_m[w[1]] - 1e-9,
+                "overlap"
+            );
+        }
+    }
+    assert_eq!((e.arrived(), e.removed_stuck()), (12, 0));
 }
