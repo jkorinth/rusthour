@@ -155,7 +155,7 @@ impl Engine {
             Some((leader, lane[i - 1]))
         } else {
             let dist_m = net.roads[road as usize].length_m - vs.pos_m[slot];
-            leader_ahead(net, &self.lanes, vs, slot, dist_m)
+            leader_ahead(net, &self.lanes, vs, slot, vs.lane_of(slot), dist_m)
         };
         let Some((leader, ls)) = found else {
             return Some(WaitReason::FreeRoad);

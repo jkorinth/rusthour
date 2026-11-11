@@ -33,6 +33,11 @@ const STUCK_SPEED_MPS: f64 = 0.1;
 /// first-come, so a steady stream from the right can't starve it (M3.3).
 // shortcut: guessed; tune in the M3 trial.
 const PATIENCE_MS: u64 = 10_000;
+/// Speed limits above this are outside towns, where passing on the right is
+/// banned (`StVO` §7; just above 50 km/h, so 13.9 m/s maps count as town).
+const OUT_OF_TOWN_MPS: f64 = 14.0;
+/// The ban applies to passing a leader faster than this (60 km/h).
+const NO_RIGHT_PASS_MPS: f64 = 60.0 / 3.6;
 /// Simulated time between updates of the routing travel-time estimates.
 const COST_PERIOD_MS: u64 = 5_000;
 /// Simulated time between two re-plans of the same vehicle (ADR-0004, M2.9).
@@ -169,6 +174,11 @@ pub struct Engine {
     stuck_by_road: Vec<u32>,
     /// `stuck_timeout_s` in ticks; 0 = off.
     stuck_limit: u32,
+    /// Lane changes so far.
+    lane_changes: u64,
+    /// Phase 2b scratch, reused every step: `(LaneId, index in it, slot,
+    /// target lane)`.
+    lane_change_candidates: Vec<(usize, usize, usize, u8)>,
 }
 
 impl Engine {
@@ -246,6 +256,8 @@ impl Engine {
                     .unwrap_or(u32::MAX)
                     .max(1),
             },
+            lane_changes: 0,
+            lane_change_candidates: Vec::new(),
             network,
         }
     }
@@ -255,6 +267,7 @@ impl Engine {
         for _ in 0..steps {
             self.spawn_trips();
             self.update_routes();
+            self.change_lanes();
             self.decide();
             self.accelerations();
             self.integrate();
@@ -459,6 +472,8 @@ impl Engine {
     }
 
     /// Phase 4: IDM accelerations from start-of-step state, lane by lane.
+    /// Outside towns a vehicle doesn't pass a slower leader in the lane to
+    /// its left on the right (ADR-0005 §6).
     fn accelerations(&mut self) {
         // Taken out so the rest of the store stays readable; no allocation.
         let mut accel = std::mem::take(&mut self.vehicles.accel_mps2);
@@ -466,6 +481,14 @@ impl Engine {
         let (net, lanes) = (&self.network, &self.lanes);
         for (q, lane) in vs.lanes.iter().enumerate() {
             let mut ahead: Option<usize> = None;
+            // The lane to the left on a road outside towns, and how many of
+            // its vehicles have their rear ahead of the current one.
+            let left = lane.front().and_then(|&h| {
+                let road = &net.roads[vs.road(h as usize) as usize];
+                let has_left = vs.lane_of(h as usize) + 1 < road.lanes;
+                (has_left && road.speed_limit_mps > OUT_OF_TOWN_MPS).then(|| vs.lane(q + 1))
+            });
+            let mut passed = 0;
             for &s in lane {
                 let s = s as usize;
                 let (p, v) = (&vs.params[s], vs.speed_mps[s]);
@@ -477,7 +500,8 @@ impl Engine {
                     })
                 } else {
                     let dist_m = road.length_m - vs.pos_m[s];
-                    let mut leader = leader_ahead(net, lanes, vs, s, dist_m).map(|(l, _)| l);
+                    let mut leader =
+                        leader_ahead(net, lanes, vs, s, vs.lane_of(s), dist_m).map(|(l, _)| l);
                     let mut limit = leader.map_or(f64::INFINITY, |l| vs.pos_m[s] + l.gap_m);
                     if self.stop[q] {
                         // Stop line: a standing obstacle at the road end, unless
@@ -495,7 +519,11 @@ impl Engine {
                     leader
                 };
                 let v0 = p.desired_speed_factor * road.speed_limit_mps;
-                accel[s] = idm::acceleration(p, v0, v, leader).max(-MAX_DECEL_MPS2);
+                let mut a = idm::acceleration(p, v0, v, leader);
+                if let Some(left) = left {
+                    a = a.min(right_pass_cap(vs, left, &mut passed, s, v0));
+                }
+                accel[s] = a.max(-MAX_DECEL_MPS2);
                 ahead = Some(s);
             }
         }
@@ -715,6 +743,7 @@ impl Engine {
         h.write_u64(u64::from(self.config.stuck_timeout_s));
         h.write_u64(u64::from(self.arrived));
         h.write_u64(u64::from(self.removed_stuck));
+        h.write_u64(self.lane_changes);
         for &n in &self.stuck_by_road {
             h.write_u64(u64::from(n));
         }
@@ -752,7 +781,8 @@ pub fn run_and_hash(config: Config, seed: u64, steps: u64) -> u64 {
     engine.state_hash()
 }
 
-/// The leader of lane head `slot`, `dist_m` before its road end, and its slot:
+/// The leader of lane head `slot`, `dist_m` before its road end in `lane`
+/// (its own, or one it weighs changing to), and its slot:
 /// the tail of the next route road that has one, within `50 m + v²/b`
 /// (ADR-0004 §2). The destination's end is free road.
 fn leader_ahead(
@@ -760,12 +790,13 @@ fn leader_ahead(
     lanes: &Lanes,
     vs: &Vehicles,
     slot: usize,
+    mut lane: u8,
     mut dist_m: f64,
 ) -> Option<(Leader, u32)> {
     let horizon = horizon(&vs.params[slot], vs.speed_mps[slot]);
     let route = &vs.route[slot];
     let k = vs.route_pos[slot] as usize;
-    let (mut from, mut lane) = (route[k], vs.lane_of(slot));
+    let mut from = route[k];
     for (i, &r) in route[k + 1..].iter().enumerate() {
         if dist_m > horizon {
             return None;
@@ -803,6 +834,44 @@ fn no_room(vs: &Vehicles, slot: usize, to_lane: u8) -> bool {
     })
 }
 
+/// Phase 4's cap for `slot` outside towns: its IDM acceleration behind the
+/// nearest vehicle in the lane to its left with its rear ahead, if it must
+/// not pass that one on the right; else infinity. `passed` counts the
+/// vehicles of `left` ahead and only grows down a lane, so a lane costs
+/// O(both lanes).
+fn right_pass_cap(
+    vs: &Vehicles,
+    left: &VecDeque<u32>,
+    passed: &mut usize,
+    slot: usize,
+    v0: f64,
+) -> f64 {
+    let x = vs.pos_m[slot];
+    let rear = |o: usize| vs.pos_m[o] - vs.params[o].length_m;
+    while left.get(*passed).is_some_and(|&o| rear(o as usize) > x) {
+        *passed += 1;
+    }
+    let Some(l) = passed.checked_sub(1).map(|k| left[k] as usize) else {
+        return f64::INFINITY;
+    };
+    let (lv, v) = (vs.speed_mps[l], vs.speed_mps[slot]);
+    if !no_right_pass(lv, v) {
+        return f64::INFINITY;
+    }
+    let leader = Leader {
+        gap_m: rear(l) - x,
+        speed_mps: lv,
+    };
+    idm::acceleration(&vs.params[slot], v0, v, Some(leader))
+}
+
+/// Whether, outside towns, a vehicle at `v` must not pass a leader in the
+/// lane to its left driving `leader_v`: one faster than 60 km/h and slower
+/// than itself. Slower traffic, such as a queue, may be passed (`StVO` §7(3)).
+fn no_right_pass(leader_v: f64, v: f64) -> bool {
+    leader_v > NO_RIGHT_PASS_MPS && leader_v < v
+}
+
 /// How far ahead a vehicle at speed `v` looks: `50 m + v²/b`.
 fn horizon(p: &IdmParams, v: f64) -> f64 {
     LOOK_AHEAD_M + v * v / p.comfort_decel_mps2
@@ -822,6 +891,7 @@ fn entering(route: &[u32], params: IdmParams, v: f64, tick: u64) -> NewVehicle<'
 }
 
 mod inspect;
+mod lane_change;
 
 #[cfg(test)]
 mod tests;

@@ -34,7 +34,10 @@ use rusthour_core::{Config, Engine, Stream, run_and_hash};
 /// stop-sign flag.
 /// Changed in M3.4: the side road 4 ends at a signal, so node 1 runs a
 /// two-phase plan and routing adds its delay prior.
-const GOLDEN_HASH: u64 = 16_314_268_019_558_233_023;
+/// Changed in M3.6: MOBIL changes lanes on the two-lane road, and the hash
+/// includes each slot's MOBIL parameters, `lc_from` and `lc_ticks`, and the
+/// lane-change count.
+const GOLDEN_HASH: u64 = 1_261_048_968_240_535_288;
 
 /// A four-road ring with a short road and a merging side road that routing
 /// excludes. Random demand keeps 10 vehicles on the ring, and hand-placed
