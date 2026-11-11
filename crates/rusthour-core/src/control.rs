@@ -17,6 +17,8 @@ pub struct Approach {
     pub lane: u8,
     /// Next road on its route.
     pub to_road: u32,
+    /// The lane of `to_road` it enters (ADR-0005 §5).
+    pub to_lane: u8,
     /// Vehicle slot.
     pub slot: u32,
     /// Front bumper to the road end (m).
