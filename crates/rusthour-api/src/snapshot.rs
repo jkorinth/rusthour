@@ -38,6 +38,11 @@ pub struct VehicleSnapshot {
     pub road: Vec<RoadId>,
     /// Lane, 0 = rightmost in the direction of travel.
     pub lane: Vec<u8>,
+    /// How far the vehicle is still drawn towards the lane it just left, in
+    /// lanes (positive: left); fades to 0 over 2 s of simulated time after a
+    /// lane change. Draw it at `lane + lane_shift` (ADR-0005 §6).
+    #[serde(default)]
+    pub lane_shift: Vec<f32>,
     /// Front bumper distance from the road start, in meters.
     pub offset_m: Vec<f32>,
     /// Speed in meters per second.
@@ -52,6 +57,7 @@ impl VehicleSnapshot {
         self.id.clear();
         self.road.clear();
         self.lane.clear();
+        self.lane_shift.clear();
         self.offset_m.clear();
         self.speed_mps.clear();
         self.length_m.clear();
@@ -83,6 +89,7 @@ mod tests {
         s.id.push(VehicleId(1 << 32 | 7));
         s.road.push(RoadId(2));
         s.lane.push(0);
+        s.lane_shift.push(0.5);
         s.offset_m.push(1.5);
         s.speed_mps.push(2.5);
         s.length_m.push(4.5);

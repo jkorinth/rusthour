@@ -76,7 +76,8 @@ impl Placement {
 
     /// World position and unit heading `[x, y]` of a vehicle's front bumper at
     /// `offset_m` on `lane` of `road`. The offset is clamped to the road. Lane 0 is rightmost; the
-    /// lanes are `lane_width_m` wide.
+    /// lanes are `lane_width_m` wide. `lane` may be fractional, as in
+    /// `lane + lane_shift` during a lane change.
     ///
     /// # Panics
     ///
@@ -85,7 +86,7 @@ impl Placement {
     pub fn place(
         &self,
         road: RoadId,
-        lane: u8,
+        lane: f32,
         offset_m: f32,
         lane_width_m: f32,
     ) -> (Point, [f32; 2]) {
@@ -170,7 +171,7 @@ mod tests {
             let p = Placement::new(&net(vec![road(0, 1, g.clone(), 1)]));
             #[expect(clippy::cast_possible_truncation)]
             let len = p.roads[0].cum[g.len() - 1] as f32;
-            let at = |o| p.place(RoadId(0), 0, o, 3.5).0;
+            let at = |o| p.place(RoadId(0), 0.0, o, 3.5).0;
             prop_assert!((at(0.0).x - g[0].x).abs() < 1e-3 && (at(0.0).y - g[0].y).abs() < 1e-3);
             let end = g[g.len() - 1];
             prop_assert!((at(len).x - end.x).abs() < 1e-2 && (at(len).y - end.y).abs() < 1e-2);
@@ -189,14 +190,15 @@ mod tests {
         // Alone, heading east, two lanes: lane 0 south (right) of lane 1.
         let solo = Placement::new(&net(vec![road(0, 1, vec![a, b], 2)]));
         let y = |l| solo.place(RoadId(0), l, 50.0, 3.5).0.y;
-        assert!((y(0) + 1.75).abs() < 1e-9 && (y(1) - 1.75).abs() < 1e-9);
+        assert!((y(0.0) + 1.75).abs() < 1e-9 && (y(1.0) - 1.75).abs() < 1e-9);
+        assert!(y(0.5).abs() < 1e-9, "halfway through a lane change");
         // With a twin, each direction keeps to its own side of the shared line.
         let twin = Placement::new(&net(vec![
             road(0, 1, vec![a, b], 1),
             road(1, 0, vec![b, a], 1),
         ]));
-        let (east, _) = twin.place(RoadId(0), 0, 10.0, 3.5);
-        let (west, head) = twin.place(RoadId(1), 0, 90.0, 3.5);
+        let (east, _) = twin.place(RoadId(0), 0.0, 10.0, 3.5);
+        let (west, head) = twin.place(RoadId(1), 0.0, 90.0, 3.5);
         assert!((east.y + 1.75).abs() < 1e-9 && (west.y - 1.75).abs() < 1e-9);
         assert!((west.x - east.x).abs() < 1e-9 && head[0] < 0.0);
         assert!(twin.has_twin(RoadId(1)) && !solo.has_twin(RoadId(0)));
@@ -206,7 +208,7 @@ mod tests {
     fn offset_clamps_to_the_road() {
         let g = vec![pt(0.0, 0.0), pt(100.0, 0.0)];
         let p = Placement::new(&net(vec![road(0, 1, g, 1)]));
-        assert!((p.place(RoadId(0), 0, 25.0, 3.5).0.x - 25.0).abs() < 1e-9);
-        assert!((p.place(RoadId(0), 0, 999.0, 3.5).0.x - 100.0).abs() < 1e-9);
+        assert!((p.place(RoadId(0), 0.0, 25.0, 3.5).0.x - 25.0).abs() < 1e-9);
+        assert!((p.place(RoadId(0), 0.0, 999.0, 3.5).0.x - 100.0).abs() < 1e-9);
     }
 }
