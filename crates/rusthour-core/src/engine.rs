@@ -8,6 +8,7 @@ use rand_chacha::rand_core::SeedableRng;
 
 use crate::StateHasher;
 use crate::control::priority::Priority;
+use crate::control::signal::{Light, Plan, Signal};
 use crate::control::{Approach, Controller, NodeControl};
 use crate::demand::{DemandContext, RandomOd, Trip};
 use crate::network::lanes::Lanes;
@@ -191,7 +192,17 @@ impl Engine {
             .map(|n| {
                 let i = &incoming[incoming_first[n] as usize..incoming_first[n + 1] as usize];
                 let o = &outgoing[out_first[n] as usize..out_first[n + 1] as usize];
-                NodeControl::Priority(Priority::new(&network, i, o, patience))
+                match Plan::new(&network, &incoming_first, &incoming, n) {
+                    Some(plan) => NodeControl::Signal(Signal::new(
+                        &network,
+                        plan,
+                        i,
+                        o,
+                        patience,
+                        config.dt_ms,
+                    )),
+                    None => NodeControl::Priority(Priority::new(&network, i, o, patience)),
+                }
             })
             .collect();
         Self {
@@ -431,8 +442,10 @@ impl Engine {
                 let q = vs.lane_id(a.from_road, a.lane);
                 self.stop[q] = !go;
                 if !go {
-                    // M3.4 and M3.7 add their causes here.
-                    self.stop_cause[q] = if a.blocked {
+                    // M3.7 adds its cause here.
+                    self.stop_cause[q] = if control.holds_at_red(a, self.tick) {
+                        LaneStop::Red
+                    } else if a.blocked {
                         LaneStop::NoRoom
                     } else if control.holds_at_stop_sign(a) {
                         LaneStop::Stop
@@ -642,6 +655,17 @@ impl Engine {
     #[must_use]
     pub fn removed_stuck(&self) -> u32 {
         self.removed_stuck
+    }
+
+    /// Each signal arm's `(road, light, seconds to the next change)`, as the
+    /// next step applies them, by node.
+    pub fn signals(&self) -> impl Iterator<Item = (u32, Light, f64)> + '_ {
+        (self.controls.iter())
+            .filter_map(|c| match c {
+                NodeControl::Signal(s) => Some(s.lights(self.tick)),
+                NodeControl::Priority(_) => None,
+            })
+            .flatten()
     }
 
     /// Vehicles that reached the end of their route so far.

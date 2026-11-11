@@ -750,3 +750,36 @@ they stand.
 - **`to_lane` is left for M3.5b.** `Approach` gains only `lane`. A target
   lane means something only once M3.5b maps entry lanes, and merges are
   per target road until then (§1).
+
+## Addendum (M3.4): signals as built
+
+These points differ from §2 and §4. The milestone review decides whether
+they stand.
+
+- **Signalled on every approach:** on bensheim-5km only 7 of 48 signalled
+  junctions have a signal tagged on every approach; most have 1 of 2, 1 of
+  3 or 2 of 3. So a node with a signal on any approach is signalled on all
+  of them (the architect's suggestion). The exception is a road shorter
+  than 30 m from another signalled node: a split-junction link, as in the
+  importer (§3). It is a non-signal arm, flows on and yields.
+- **Ranks at a signal node:** signal arms rank equal, whatever their signs,
+  `priority_road` or class, because a signal overrides them (StVO §37).
+  Non-signal arms rank below. So a permissive left turn yields to oncoming
+  traffic even from the major road. §4 had kept the road ranks.
+- **Amber and red arms are not passed to the inner `Priority`** at all,
+  rather than passed as non-competing. Their wait at red then doesn't count
+  as an arrival, so impatience can't let a left turner that waited at red
+  go ahead of the oncoming stream when green starts. Amber: `go` only if the
+  head can't stop and the next road has room. Red: never `go`, even for a
+  head released on green; the integration's stop-line clamp holds it.
+- **Phases:** grouped as in §4, by opposite arms only. A node whose signal
+  arms are all opposite, or that has only one, gets one phase: 25 s green,
+  3 s amber and 2 s all-red.
+- **Stop cause:** `Red` covers amber too, and comes before `NoRoom`.
+- **Routing prior:** `red = cycle − green`, so amber counts as red: 10.2 s
+  per signal arm at a two-phase node. A non-signal arm at a signal node gets
+  the 4 s yield prior.
+- **Snapshot:** `SignalSnapshot { tick, road, state, next_change_s }` as
+  parallel columns like `VehicleSnapshot`, with `SignalState` in
+  `rusthour-api/src/signal.rs`. It reports the lights the next step
+  applies.

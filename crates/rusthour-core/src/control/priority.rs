@@ -27,6 +27,9 @@ struct Arm {
     point: u16,
     /// The road ends at a stop sign.
     stop_sign: bool,
+    /// At a signal node (M3.4): `Some(true)` for a signal arm, `Some(false)`
+    /// for a non-signal arm; `None` ranks by [`rank`].
+    signal: Option<bool>,
     /// Lane head seen last step.
     head: u32,
     /// Tick `head` first was arriving, or `NEVER`.
@@ -106,6 +109,7 @@ impl Priority {
                 lane,
                 point: at(true, road),
                 stop_sign: r.end_control == EndControl::Stop,
+                signal: None,
                 head: NONE,
                 since: NEVER,
                 released: NONE,
@@ -118,6 +122,23 @@ impl Priority {
             patience,
             pointer: 0,
             winner: NONE,
+        }
+    }
+
+    /// Makes `road` a signal arm (`true`) or a non-signal arm at a signal
+    /// node. Signals override signs and class, so signal arms rank equal,
+    /// and non-signal arms rank below them (ADR-0005 §4, addendum M3.4).
+    pub fn set_signal(&mut self, road: u32, signal: bool) {
+        for arm in self.arms.iter_mut().filter(|arm| arm.road == road) {
+            arm.signal = Some(signal);
+        }
+    }
+
+    /// The rank of `a`'s road here.
+    fn class(&self, net: &Network, a: &Approach) -> (bool, bool, bool, u8, f64, u8) {
+        match self.arms[self.arm(a)].signal {
+            None => rank(net, a.from_road),
+            Some(signal) => (false, signal, false, 0, 0.0, 0),
         }
     }
 
@@ -180,10 +201,6 @@ pub fn rank(net: &Network, road: u32) -> (bool, bool, bool, u8, f64, u8) {
     )
 }
 
-fn class(net: &Network, a: &Approach) -> (bool, bool, bool, u8, f64, u8) {
-    rank(net, a.from_road)
-}
-
 /// `a` turns left across `b`, which comes from the opposite direction.
 fn left_across(net: &Network, a: &Approach, b: &Approach) -> bool {
     Turn::of(net, a.from_road, a.to_road, &[b.from_road]) == Turn::LeftAcross
@@ -240,7 +257,7 @@ impl Controller for Priority {
             if i == j || !competing(j) || !self.conflict(a, b) {
                 return false;
             }
-            match class(net, b).partial_cmp(&class(net, a)) {
+            match self.class(net, b).partial_cmp(&self.class(net, a)) {
                 Some(std::cmp::Ordering::Greater) => true,
                 Some(std::cmp::Ordering::Equal) => {
                     // Impatience: past the limit, the earlier arrival goes.
@@ -273,7 +290,8 @@ impl Controller for Priority {
         // arrival goes, ties to the first arm from the rotating pointer.
         let stuck = (0..aps.len()).all(|i| !(go[i] && competing(i)));
         let top = (0..aps.len()).filter(|&i| competing(i)).filter(|&i| {
-            !(0..aps.len()).any(|j| competing(j) && class(net, &aps[j]) > class(net, &aps[i]))
+            !(0..aps.len())
+                .any(|j| competing(j) && self.class(net, &aps[j]) > self.class(net, &aps[i]))
         });
         let n = self.arms.len();
         let turn = |i: usize| (self.arm(&aps[i]) + n - self.pointer as usize) % n;

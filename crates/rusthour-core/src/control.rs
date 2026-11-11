@@ -7,6 +7,7 @@ use crate::StateHasher;
 use crate::network::Network;
 
 pub mod priority;
+pub mod signal;
 
 /// A lane head near the end of a road into the node.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -49,6 +50,8 @@ pub enum NodeControl {
     /// Priority rule: signs, priority roads, class, right before left
     /// (M2.5, M3.3).
     Priority(priority::Priority),
+    /// Fixed-time signals (M3.4).
+    Signal(signal::Signal),
 }
 
 impl NodeControl {
@@ -58,6 +61,16 @@ impl NodeControl {
     pub fn holds_at_stop_sign(&self, a: &Approach) -> bool {
         match self {
             Self::Priority(c) => c.holds_at_stop_sign(a),
+            Self::Signal(c) => c.holds_at_stop_sign(a),
+        }
+    }
+
+    /// Whether `a` faces an amber or red signal at `tick`; for diagnostics.
+    #[must_use]
+    pub fn holds_at_red(&self, a: &Approach, tick: u64) -> bool {
+        match self {
+            Self::Priority(_) => false,
+            Self::Signal(c) => c.holds_at_red(a, tick),
         }
     }
 }
@@ -66,12 +79,14 @@ impl Controller for NodeControl {
     fn decide(&mut self, net: &Network, tick: u64, approaches: &[Approach], go: &mut [bool]) {
         match self {
             Self::Priority(c) => c.decide(net, tick, approaches, go),
+            Self::Signal(c) => c.decide(net, tick, approaches, go),
         }
     }
 
     fn hash_into(&self, h: &mut StateHasher) {
         match self {
             Self::Priority(c) => c.hash_into(h),
+            Self::Signal(c) => c.hash_into(h),
         }
     }
 }

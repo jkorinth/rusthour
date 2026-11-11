@@ -9,8 +9,9 @@ const MINUTE: u64 = 600;
 /// An `n × n` grid, nodes 100 m apart, two one-lane roads between
 /// neighbours, and every movement except U-turns. East–west roads take
 /// their lengths from `lengths` (cycled), north–south roads are 60 m, so
-/// short links sit between longer roads as at split junctions.
-fn grid(n: u32, lengths: &[f64]) -> Network {
+/// short links sit between longer roads as at split junctions. With
+/// `signals`, roads into even nodes end at signals (M3.4).
+fn grid(n: u32, lengths: &[f64], signals: bool) -> Network {
     let mut net = Network {
         nodes: (0..n * n)
             .map(|i| [f64::from(i % n) * 100.0, f64::from(i / n) * 100.0])
@@ -36,7 +37,11 @@ fn grid(n: u32, lengths: &[f64]) -> Network {
             roundabout: false,
             class: 0,
             priority_road: false,
-            end_control: EndControl::None,
+            end_control: if signals && to.is_multiple_of(2) {
+                EndControl::Signals
+            } else {
+                EndControl::None
+            },
             turn_lanes: vec![],
         });
     };
@@ -77,8 +82,9 @@ proptest! {
         n in 2..6u32,
         lengths in prop::collection::vec(prop_oneof![6.0..15.0f64, 15.0..120.0f64], 1..12),
         seed in any::<u64>(),
+        signals in any::<bool>(),
     ) {
-        let net = grid(n, &lengths);
+        let net = grid(n, &lengths, signals);
         let roads = u32::try_from(net.roads.len()).unwrap();
         let config = Config { target_vehicles: roads / 8 + 1, ..Config::default() };
         let mut e = Engine::with_network(config, seed, net);
