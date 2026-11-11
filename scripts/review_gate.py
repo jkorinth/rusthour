@@ -6,6 +6,10 @@ a bold heading line `**Architect ...**` or `**UX ...**`, and a final
 `VERDICT: APPROVE` / `VERDICT: REQUEST CHANGES` line. The latest such comment
 per role decides that role's state.
 
+Regular PRs need no review; a role whose latest verdict requests changes
+blocks the merge. The milestone review happens on the release PR, which needs
+both the architect's and the UX designer's approval.
+
 Usage (in CI): GITHUB_TOKEN=... GITHUB_REPOSITORY=owner/repo review_gate.py <pr>
 """
 
@@ -14,12 +18,6 @@ import os
 import sys
 import urllib.request
 
-UX_PATHS = (
-    "crates/rusthour-viz/",
-    "crates/rusthour-cli/",
-    "crates/rusthour-api/",
-    "crates/rusthour-import/",
-)
 HEADINGS = {"**Architect": "architect", "**UX": "UX"}
 TRUSTED = {"OWNER", "MEMBER", "COLLABORATOR"}
 
@@ -49,21 +47,19 @@ def is_release_pr(pr):
     )
 
 
-def evaluate(pr, files, comments):
+def evaluate(pr, comments):
     """Return (state, description) for the commit status of PR info `pr`."""
-    if is_release_pr(pr):
-        return "success", "release PR: merged by the maintainer at milestone end"
-    roles = ["architect"]
-    if any(f.startswith(UX_PATHS) for f in files):
-        roles.append("UX")
     state = {}
     for c in sorted(comments, key=lambda c: c["created_at"]):
         found = c["author_association"] in TRUSTED and verdict_of(c["body"] or "")
         if found:
             state[found[0]] = found[1]
+    roles = list(HEADINGS.values())
+    problems = [f"{r} requested changes" for r in roles if state.get(r) == "request"]
+    if not is_release_pr(pr):
+        return ("failure", "; ".join(problems)) if problems else ("success", "no reviews required")
     if all(state.get(r) == "approve" for r in roles):
         return "success", ", ".join(f"{r} ✓" for r in roles)
-    problems = [f"{r} requested changes" for r in roles if state.get(r) == "request"]
     waiting = [f"{r} review" for r in roles if r not in state]
     if waiting:
         problems.append("waiting for: " + ", ".join(waiting))
@@ -108,9 +104,8 @@ def main(number):
     # Replace any older success first, so a failed run can't leave it green.
     status("pending", "evaluating review verdicts")
     try:
-        files = [f["filename"] for f in paginate(f"pulls/{number}/files")]
         comments = paginate(f"issues/{number}/comments")
-        state, description = evaluate(info, files, comments)
+        state, description = evaluate(info, comments)
     except Exception:
         status("error", "review-gate run failed; see the workflow log")
         raise
