@@ -11,6 +11,7 @@ mod inspect;
 mod network;
 mod pacer;
 mod placement;
+mod signal;
 mod snapshot;
 
 use serde::{Deserialize, Serialize};
@@ -25,6 +26,7 @@ pub use network::{
 pub use pacer::{DEFAULT_BUDGET_S, MAX_FRAME_S, Pacer, scale_from_slider, slider_from_scale};
 pub use placement::Placement;
 pub use rusthour_core::Config;
+pub use signal::{SignalSnapshot, SignalState};
 pub use snapshot::{VehicleId, VehicleSnapshot};
 
 /// Version of the wire protocol. Bump on any incompatible change to the
@@ -83,6 +85,10 @@ pub trait Simulation {
 
     /// Describes one road; `None` for an unknown id.
     fn inspect_road(&self, road: RoadId) -> Option<RoadInfo>;
+
+    /// Writes every signal's state and seconds to its next change into
+    /// `out`, replacing its contents and reusing its buffers.
+    fn signals_into(&self, out: &mut SignalSnapshot);
 }
 
 /// A simulation running in the caller's process (and thread).
@@ -182,6 +188,22 @@ impl Simulation for InProcess {
 
     fn inspect_road(&self, road: RoadId) -> Option<RoadInfo> {
         inspect::road(&self.engine, &self.network, road)
+    }
+
+    fn signals_into(&self, out: &mut SignalSnapshot) {
+        use rusthour_core::control::signal::Light;
+        out.clear();
+        out.tick = self.engine.tick();
+        for (road, light, next_s) in self.engine.signals() {
+            out.road.push(RoadId(road));
+            out.state.push(match light {
+                Light::Green => SignalState::Green,
+                Light::Amber => SignalState::Amber,
+                Light::Red => SignalState::Red,
+            });
+            #[allow(clippy::cast_possible_truncation)] // the wire format is f32
+            out.next_change_s.push(next_s as f32);
+        }
     }
 }
 
@@ -366,6 +388,26 @@ mod tests {
             sim.inspect_vehicle(id),
             Err(Gone::Arrived { .. } | Gone::Unknown)
         ));
+    }
+
+    #[test]
+    fn signals_report_their_state_and_seconds_to_the_next_change() {
+        // Signals on road 0 only: the node at its end gets a one-phase plan.
+        let mut net = ring();
+        net.roads[0].end_control = crate::EndControl::Signals;
+        let mut sim = InProcess::with_network(Config::default(), 7, net).unwrap();
+        let mut snap = SignalSnapshot::default();
+        sim.signals_into(&mut snap);
+        assert_eq!(snap.road, [RoadId(0)]);
+        assert_eq!(snap.state, [SignalState::Green]);
+        assert!((snap.next_change_s[0] - 25.0).abs() < 1e-6);
+        sim.step(260);
+        sim.signals_into(&mut snap);
+        assert_eq!((snap.tick, snap.len()), (260, 1));
+        assert_eq!(snap.state, [SignalState::Amber]);
+        assert!((snap.next_change_s[0] - 2.0).abs() < 1e-6);
+        let json = serde_json::to_string(&snap).unwrap();
+        assert_eq!(serde_json::from_str::<SignalSnapshot>(&json).unwrap(), snap);
     }
 
     #[test]

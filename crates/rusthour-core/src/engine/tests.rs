@@ -429,3 +429,37 @@ fn a_lane_drop_zippers_without_overlap_or_gridlock() {
     }
     assert_eq!((e.arrived(), e.removed_stuck()), (12, 0));
 }
+
+#[test]
+fn red_holds_a_car_at_the_line_and_green_releases_it() {
+    // Only road 0 is tagged, but the cross road 2 gets a signal too, so the
+    // node runs two 30 s phases: road 0 is red from 28 s to 60 s.
+    let mut first = road(0, 1, 200.0, 13.9, [[1.0, 0.0]; 2]);
+    first.end_control = EndControl::Signals;
+    let net = Network {
+        nodes: vec![[0.0, 0.0], [200.0, 0.0], [400.0, 0.0], [200.0, -200.0]],
+        roads: vec![
+            first,
+            road(1, 2, 200.0, 13.9, [[1.0, 0.0]; 2]),
+            road(3, 1, 200.0, 13.9, [[0.0, 1.0]; 2]),
+        ],
+        connections: vec![(0, 1), (2, 1)],
+    };
+    let mut e = Engine::with_network(Config::default(), 1, net);
+    e.step(300);
+    let id = e.spawn(&[0, 1], car()).unwrap();
+    let s = id.slot as usize;
+    e.step(250);
+    assert_eq!(e.vehicles.road(s), 0);
+    assert!(e.vehicles.speed_mps[s] < STUCK_SPEED_MPS && e.vehicles.pos_m[s] > 190.0);
+    let red = WaitReason::StopLine {
+        cause: StopCause::Red,
+    };
+    assert_eq!(e.wait_reason(s), Some(red));
+    let lights: Vec<_> = e.signals().collect();
+    assert_eq!(lights, [(0, Light::Red, 5.0), (2, Light::Amber, 3.0)]);
+    e.step(49);
+    assert_eq!(e.vehicles.road(s), 0, "still red");
+    e.step(100);
+    assert_eq!(e.vehicles.road(s), 1, "green releases it");
+}

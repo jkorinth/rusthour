@@ -16,6 +16,7 @@ use std::collections::BinaryHeap;
 
 use crate::StateHasher;
 use crate::control::priority::rank;
+use crate::control::signal::Plan;
 use crate::demand::Trip;
 use crate::network::movement::{self, Turn};
 use crate::network::{EndControl, Network};
@@ -129,8 +130,11 @@ impl Router {
             succ[fill[from as usize] as usize] = to;
             fill[from as usize] += 1;
         }
-        // Turn penalties and yield and stop priors, per movement.
+        // Turn penalties and yield, stop and signal priors, per movement.
         let (in_first, incoming) = movement::incoming(net);
+        let plans: Vec<Option<Plan>> = (0..net.nodes.len())
+            .map(|node| Plan::new(net, &in_first, &incoming, node))
+            .collect();
         let mut turn = vec![0.0; succ.len()];
         let mut kind = vec![Turn::Straight; succ.len()];
         let mut prior = vec![0.0; succ.len()];
@@ -139,7 +143,11 @@ impl Router {
             let arms = &incoming[in_first[node] as usize..in_first[node + 1] as usize];
             let from = u32::try_from(from).expect("road count fits u32");
             let mine = rank(net, from);
-            let prior_s = if net.roads[from as usize].end_control == EndControl::Stop {
+            let prior_s = if let Some(plan) = &plans[node] {
+                // A non-signal arm at a signal node yields to the signal arms.
+                plan.phase_of(from)
+                    .map_or(YIELD_PRIOR_S, |_| plan.delay_prior_s())
+            } else if net.roads[from as usize].end_control == EndControl::Stop {
                 STOP_PRIOR_S
             } else if arms.iter().any(|&r| rank(net, r) > mine) {
                 YIELD_PRIOR_S
@@ -604,6 +612,9 @@ mod tests {
         assert_eq!(priors(EndControl::None), [0.0, 0.0]);
         assert_eq!(priors(EndControl::GiveWay), [4.0, 4.0]);
         assert_eq!(priors(EndControl::Stop), [6.0, 6.0]);
+        // One phase: red 5 s of a 30 s cycle.
+        let signal = 5.0 * 5.0 / 60.0;
+        assert_eq!(priors(EndControl::Signals), [signal, signal]);
     }
 
     #[test]

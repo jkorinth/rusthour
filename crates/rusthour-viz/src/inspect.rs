@@ -435,7 +435,7 @@ pub fn wait_text(info: &VehicleInfo, network: &Network) -> String {
             StopCause::Junction => "waiting at a junction",
             StopCause::Yield => "giving way",
             StopCause::Stop => "stopped at a stop sign",
-            // shortcut: no seconds left yet; add them from the signal snapshot with M3.4.
+            // shortcut: no seconds left yet; add them from `signals_into` with M3.9.
             StopCause::Red => "red light",
             StopCause::WrongLane => "in the wrong lane for its turn, waiting for a gap",
             _ => "waiting at the stop line",

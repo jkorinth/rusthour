@@ -32,7 +32,9 @@ use rusthour_core::{Config, Engine, Stream, run_and_hash};
 /// Changed in M3.3: only conflicting movements yield, ranks add signs,
 /// priority roads and class, and the hash includes per-lane arms and the
 /// stop-sign flag.
-const GOLDEN_HASH: u64 = 1_032_360_242_064_702_161;
+/// Changed in M3.4: the side road 4 ends at a signal, so node 1 runs a
+/// two-phase plan and routing adds its delay prior.
+const GOLDEN_HASH: u64 = 16_314_268_019_558_233_023;
 
 /// A four-road ring with a short road and a merging side road that routing
 /// excludes. Random demand keeps 10 vehicles on the ring, and hand-placed
@@ -53,7 +55,7 @@ fn traffic(seed: u64) -> u64 {
         end_control: EndControl::None,
         turn_lanes: vec![],
     };
-    let net = Network {
+    let mut net = Network {
         nodes: vec![
             [0.0, 0.0],
             [120.0, 0.0],
@@ -70,6 +72,7 @@ fn traffic(seed: u64) -> u64 {
         ],
         connections: vec![(0, 1), (1, 2), (2, 3), (3, 0), (4, 1)],
     };
+    net.roads[4].end_control = EndControl::Signals;
     let config = Config {
         target_vehicles: 10,
         ..Config::default()

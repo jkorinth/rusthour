@@ -46,7 +46,7 @@ pub struct DriverInfo {
     pub min_gap_m: f32,
 }
 
-/// Why a stopped lane head waits. More with M3.4 and M3.7.
+/// Why a stopped lane head waits. More with M3.7.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[non_exhaustive]
 pub enum StopCause {
@@ -212,6 +212,7 @@ fn wait(w: rusthour_core::WaitReason) -> WaitReason {
             cause: match cause {
                 rusthour_core::StopCause::Yield => StopCause::Yield,
                 rusthour_core::StopCause::Stop => StopCause::Stop,
+                rusthour_core::StopCause::Red => StopCause::Red,
                 _ => StopCause::Junction,
             },
         },
@@ -307,6 +308,7 @@ mod tests {
         for (core, api) in [
             (rusthour_core::StopCause::Yield, StopCause::Yield),
             (rusthour_core::StopCause::Stop, StopCause::Stop),
+            (rusthour_core::StopCause::Red, StopCause::Red),
         ] {
             let w = wait(W::StopLine { cause: core });
             assert_eq!(w, WaitReason::StopLine { cause: api });
