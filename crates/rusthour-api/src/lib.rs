@@ -155,6 +155,7 @@ impl Simulation for InProcess {
                 // The wire format is f32 (ADR-0004 §3).
                 #[allow(clippy::cast_possible_truncation)]
                 {
+                    out.lane_shift.push(self.engine.lane_shift(s) as f32);
                     out.offset_m.push(vs.pos_m[s] as f32);
                     out.speed_mps.push(vs.speed_mps[s] as f32);
                     out.length_m.push(vs.params[s].length_m as f32);

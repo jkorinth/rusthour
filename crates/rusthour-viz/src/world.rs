@@ -444,8 +444,12 @@ pub fn vehicle_pose(
     ahead_s: f32,
 ) -> (Pos2, Vec2) {
     let offset = vehicles.offset_m[i] + vehicles.speed_mps[i] * ahead_s;
-    let (front, [hx, hy]) =
-        placement.place(vehicles.road[i], vehicles.lane[i], offset, LANE_WIDTH_M);
+    let (front, [hx, hy]) = placement.place(
+        vehicles.road[i],
+        f32::from(vehicles.lane[i]),
+        offset,
+        LANE_WIDTH_M,
+    );
     (to_mesh(front), Vec2::new(hx, -hy))
 }
 

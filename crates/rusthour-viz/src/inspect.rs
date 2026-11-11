@@ -250,7 +250,11 @@ impl Inspector {
                 (i.road, i.lane, i.offset_m)
             }
         };
-        Some(view.placement.place(road, lane, offset, LANE_WIDTH_M).0)
+        Some(
+            view.placement
+                .place(road, f32::from(lane), offset, LANE_WIDTH_M)
+                .0,
+        )
     }
 
     /// The panel: top right on wide screens, a bottom sheet on narrow ones.
