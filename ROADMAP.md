@@ -185,7 +185,7 @@ seed ⇒ identical state hash.
 | M3.7 | Lane choice ahead of intersections: route incentive, lane sets enforced at the line, fallback re-plan (capped per step) | todo | |
 | M3.8 | Gridlock follow-ups: exempt circulating heads from "no room", expose arrivals, stuck removals and removals per arrival in `Status`, the CLI and the viewer; per-road removals through the facade and in the CLI JSON (road id, name, OSM way); re-measure bensheim-5km and Berliner Ring after M3.7 (gate at 5,000: ≤ 5% removals per arrival and ≥ 4,545 arrivals/h) | claimed | feat/M3.8a-gridlock-exposure |
 | M3.9 | `rusthour-viz`: lane dividers, lane-change animation, signal states at stop lines (distinct shapes, neutral above ~30×), stop/give-way marks when zoomed in, capped node discs, min/max zoom and a scale bar, arrived and removed counters, roads with removals marked | todo | |
-| M3.11 | Select a vehicle or road to inspect it (speed, lane, trip time, route ahead, why it waits; road class, mean speed, removals, movement delays) and follow a vehicle with the camera; core diagnostics and api queries, then the viewer (ADR-0005, addendum M3.11) | claimed | feat/M3.11a-inspect |
+| M3.11 | Select a vehicle or road to inspect it (speed, lane, trip time, route ahead, why it waits; road class, mean speed, removals, movement delays) and follow a vehicle with the camera; core diagnostics and api queries, then the viewer (ADR-0005, addendum M3.11) | done | feat/M3.11b-select-follow |
 | M3.10 | M3 user trial (docs/trials/M3.md), including what M2 left untested and M3.11; runs after M3.11 | todo | |
 
 ### M4 — Drivers & vehicles → `v0.5.0`

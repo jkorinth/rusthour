@@ -32,6 +32,8 @@ pub struct Traffic {
     pub step_cost_s: f64,
     /// Steps run in the last frame.
     pub last_steps: u64,
+    /// Counts restarts: vehicle slots mean something else afterwards.
+    pub epoch: u32,
 }
 
 impl Traffic {
@@ -49,12 +51,18 @@ impl Traffic {
             stuck_roads: Vec::new(),
             step_cost_s: 0.0,
             last_steps: 0,
+            epoch: 0,
         })
     }
 
     /// The network the simulation runs on.
     pub fn network(&self) -> &Network {
         self.sim.network()
+    }
+
+    /// The simulation, for the inspector's queries.
+    pub fn sim(&self) -> &InProcess {
+        &self.sim
     }
 
     /// The current status, for the readouts.
@@ -73,6 +81,7 @@ impl Traffic {
         let network = self.sim.network().clone();
         self.sim = InProcess::with_network(self.config, SEED, network)
             .expect("validated when the map was loaded");
+        self.epoch = self.epoch.wrapping_add(1);
         self.sim.snapshot_into(&mut self.snapshot);
         self.sim.stuck_by_road_into(&mut self.stuck_roads);
     }

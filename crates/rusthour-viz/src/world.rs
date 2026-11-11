@@ -13,6 +13,7 @@ use eframe::egui::{
 use rusthour_api::{Network, Placement, Point, RoadId, VehicleSnapshot};
 
 use crate::camera::{Camera, LANE_WIDTH_M};
+use crate::inspect::{Inspector, View};
 use crate::labels::{self, Candidate};
 use crate::traffic;
 
@@ -24,10 +25,10 @@ const HOT_ROAD_COLOR: Color32 = Color32::from_rgb(0xe0, 0x20, 0x20);
 /// Width of the hot-road overlay, in screen points.
 const HOT_ROAD_WIDTH_PT: f32 = 4.0;
 /// Drawn vehicle width in meters.
-const VEHICLE_WIDTH_M: f32 = 1.8;
+pub const VEHICLE_WIDTH_M: f32 = 1.8;
 /// Smallest drawn vehicle, in screen points, so traffic stays visible when
 /// zoomed out.
-const MIN_VEHICLE_PT: Vec2 = Vec2::new(4.0, 3.0);
+pub const MIN_VEHICLE_PT: Vec2 = Vec2::new(4.0, 3.0);
 /// Vehicle fill in the dark theme: amber, apart from the gray roads in hue.
 const VEHICLE_DARK: Color32 = Color32::from_rgb(0xff, 0xc8, 0x3c);
 /// Vehicle fill in the light theme: a burnt orange that reads on the light
@@ -51,11 +52,17 @@ pub const SHORTCUTS: &[(&str, &str)] = &[
         "Pan",
     ),
     ("Scroll, pinch, + / -", "Zoom"),
+    (
+        "Click, tap",
+        "Select a vehicle or road; again on the spot for the next one",
+    ),
+    ("C", "Follow the selected vehicle"),
     ("Home, F, 0", "Fit the map"),
     ("Space", "Play or pause"),
     (".", "Step once (pauses)"),
     ("F3", "Show or hide frame times"),
-    ("? / Esc", "Show or close this list"),
+    ("?", "Show or close this list"),
+    ("Esc", "Close this list, else clear the selection"),
 ];
 
 /// The network mesh and vehicles, plus the camera looking at them.
@@ -75,6 +82,10 @@ pub struct World {
     /// `galleys_ppp` pixels per point.
     galleys: Vec<Option<Arc<Galley>>>,
     galleys_ppp: f32,
+    /// Each road's drawn center line (world), twins shifted, for picking.
+    lines: Vec<Vec<Point>>,
+    /// Whether the pointer is a finger: taps pick with a wider radius.
+    touch: bool,
 }
 
 impl World {
@@ -91,7 +102,12 @@ impl World {
             Rect::from_center_size(Pos2::ZERO, Vec2::splat(100.0))
         };
         let labels = labels::candidates(network);
+        let lines = (0..network.roads.len())
+            .map(|i| drawn_line(network, &placement, i))
+            .collect();
         Self {
+            lines,
+            touch: false,
             placement,
             mesh,
             bounds,
@@ -107,6 +123,12 @@ impl World {
         self.camera = None;
     }
 
+    /// The world point at the view center, once shown.
+    #[cfg(test)]
+    pub fn camera_center(&self) -> Option<Pos2> {
+        self.camera.map(|c| c.center)
+    }
+
     /// Draws the map and `vehicles`, extrapolated by `ahead_s` sim seconds,
     /// with the roads in `hot` (stuck removals) tinted,
     /// into the remaining space of `ui` and handles pan/zoom.
@@ -116,8 +138,11 @@ impl World {
         vehicles: &VehicleSnapshot,
         ahead_s: f32,
         hot: (&Network, &[(RoadId, u32)]),
+        inspect: &mut Inspector,
     ) {
-        let (viewport, response) = ui.allocate_exact_size(ui.available_size(), Sense::drag());
+        // A click is a release without movement, so a pan never selects.
+        let (viewport, response) =
+            ui.allocate_exact_size(ui.available_size(), Sense::click_and_drag());
         if viewport.width() < 1.0 || viewport.height() < 1.0 {
             return; // e.g. a minimized window: a zero scale would poison the camera
         }
@@ -146,6 +171,7 @@ impl World {
             Vec2::ZERO
         };
         let (pan, zoom, anchor, keys_held, fit_key) = ui.input(|i| {
+            self.touch = is_touch(i, self.touch);
             // Ctrl/Cmd/Alt combinations belong to egui and the browser (UI zoom).
             let keyboard =
                 keyboard && !(i.modifiers.command || i.modifiers.ctrl || i.modifiers.alt);
@@ -166,40 +192,41 @@ impl World {
                     anchor = i.pointer.hover_pos().unwrap_or(anchor);
                 }
             }
-            let mut keys_held = false;
-            let mut fit_key = false;
-            if keyboard {
-                fit_key = [Key::Home, Key::F, Key::Num0]
-                    .iter()
-                    .any(|&k| i.key_pressed(k));
-                for (keys, dir) in [
-                    ([Key::ArrowLeft, Key::A], egui::vec2(1.0, 0.0)),
-                    ([Key::ArrowRight, Key::D], egui::vec2(-1.0, 0.0)),
-                    ([Key::ArrowUp, Key::W], egui::vec2(0.0, 1.0)),
-                    ([Key::ArrowDown, Key::S], egui::vec2(0.0, -1.0)),
-                ] {
-                    if keys.iter().any(|&k| i.key_down(k)) {
-                        pan += dir * KEY_PAN_SPEED * i.stable_dt;
-                        keys_held = true;
-                    }
-                }
-                if i.key_pressed(Key::Plus) || i.key_pressed(Key::Equals) {
-                    zoom *= KEY_ZOOM_STEP;
-                    anchor = viewport.center();
-                }
-                if i.key_pressed(Key::Minus) {
-                    zoom /= KEY_ZOOM_STEP;
-                    anchor = viewport.center();
-                }
-            }
+            let (keys_held, fit_key) = if keyboard {
+                view_keys(i, &mut pan, &mut zoom, &mut anchor, viewport.center())
+            } else {
+                (false, false)
+            };
             (pan, zoom, anchor, keys_held, fit_key)
         });
         if fit_key {
             *camera = fit;
         }
-        camera.pan(pan);
-        // Also re-applies the clamp after a window resize.
-        camera.zoom_around(viewport, anchor, zoom, fit.scale, max_scale);
+        let mut view = View {
+            placement: &self.placement,
+            network: hot.0,
+            lines: &self.lines,
+            vehicles,
+            ahead_s,
+            camera: *camera,
+            viewport,
+        };
+        if let Some(target) = inspect.follow(pan, fit_key, inspect.target(&view)) {
+            // Zoom around the vehicle, then keep it centered.
+            let anchor = camera.world_to_screen(viewport, target);
+            camera.zoom_around(viewport, anchor, zoom, fit.scale, max_scale);
+            camera.center = target;
+        } else {
+            camera.pan(pan);
+            // Also re-applies the clamp after a window resize.
+            camera.zoom_around(viewport, anchor, zoom, fit.scale, max_scale);
+        }
+        view.camera = *camera;
+        if response.clicked()
+            && let Some(click) = response.interact_pointer_pos()
+        {
+            inspect.tap(&view, click, self.touch);
+        }
         if keys_held {
             ui.ctx().request_repaint();
         }
@@ -222,6 +249,7 @@ impl World {
         painter.add(Shape::mesh(
             self.vehicle_mesh(vehicles, ahead_s, camera, viewport, color),
         ));
+        inspect.draw(&painter, &view, ui.visuals());
         self.draw_labels(&painter, camera, viewport, ui.visuals());
     }
 
@@ -303,6 +331,59 @@ impl World {
     }
 }
 
+/// Whether the pointer is a finger: a touch event says yes, a mouse move without one no.
+fn is_touch(i: &egui::InputState, was: bool) -> bool {
+    if i.events
+        .iter()
+        .any(|e| matches!(e, egui::Event::Touch { .. }))
+    {
+        true
+    } else if i
+        .events
+        .iter()
+        .any(|e| matches!(e, egui::Event::PointerMoved(_)))
+    {
+        false
+    } else {
+        was
+    }
+}
+
+/// Adds the keyboard's pan and zoom; returns whether pan keys are held and
+/// whether "fit" was pressed.
+fn view_keys(
+    i: &egui::InputState,
+    pan: &mut Vec2,
+    zoom: &mut f32,
+    anchor: &mut Pos2,
+    center: Pos2,
+) -> (bool, bool) {
+    let fit_key = [Key::Home, Key::F, Key::Num0]
+        .iter()
+        .any(|&k| i.key_pressed(k));
+    let mut keys_held = false;
+    for (keys, dir) in [
+        ([Key::ArrowLeft, Key::A], egui::vec2(1.0, 0.0)),
+        ([Key::ArrowRight, Key::D], egui::vec2(-1.0, 0.0)),
+        ([Key::ArrowUp, Key::W], egui::vec2(0.0, 1.0)),
+        ([Key::ArrowDown, Key::S], egui::vec2(0.0, -1.0)),
+    ] {
+        if keys.iter().any(|&k| i.key_down(k)) {
+            *pan += dir * KEY_PAN_SPEED * i.stable_dt;
+            keys_held = true;
+        }
+    }
+    if i.key_pressed(Key::Plus) || i.key_pressed(Key::Equals) {
+        *zoom *= KEY_ZOOM_STEP;
+        *anchor = center;
+    }
+    if i.key_pressed(Key::Minus) {
+        *zoom /= KEY_ZOOM_STEP;
+        *anchor = center;
+    }
+    (keys_held, fit_key)
+}
+
 /// Tints the roads with stuck removals, redder the more they have.
 fn draw_hot_roads(
     painter: &egui::Painter,
@@ -316,16 +397,7 @@ fn draw_hot_roads(
     let [r, g, b, _] = HOT_ROAD_COLOR.to_array();
     for &(road, n) in hot {
         // The line the road is drawn on, so a twin's jam shows on its own direction.
-        let info = &network.roads[road.0 as usize];
-        let geometry = if placement.has_twin(road) {
-            shifted(
-                &info.geometry,
-                f64::from(info.lanes) * f64::from(LANE_WIDTH_M) / 2.0,
-            )
-        } else {
-            info.geometry.clone()
-        };
-        let line = geometry
+        let line = drawn_line(network, placement, road.0 as usize)
             .into_iter()
             .map(|p| to_screen * to_mesh(p))
             .collect();
@@ -334,6 +406,20 @@ fn draw_hot_roads(
             line,
             egui::Stroke::new(HOT_ROAD_WIDTH_PT, color),
         ));
+    }
+}
+
+/// Road `i`'s drawn center line (world): right of its geometry if it has a twin.
+fn drawn_line(network: &Network, placement: &Placement, i: usize) -> Vec<Point> {
+    let road = &network.roads[i];
+    let id = RoadId(u32::try_from(i).expect("road ids are u32"));
+    if placement.has_twin(id) {
+        shifted(
+            &road.geometry,
+            f64::from(road.lanes) * f64::from(LANE_WIDTH_M) / 2.0,
+        )
+    } else {
+        road.geometry.clone()
     }
 }
 
@@ -351,7 +437,7 @@ const HALO_OFFSETS: [Vec2; 8] = [
 
 /// Front bumper position and unit heading of vehicle `i` in mesh space (`y`
 /// down), moved `ahead_s` seconds along its road and clamped to it.
-fn vehicle_pose(
+pub fn vehicle_pose(
     placement: &Placement,
     vehicles: &VehicleSnapshot,
     i: usize,
@@ -367,7 +453,7 @@ fn vehicle_pose(
 /// and `width` wide, in drawing order, in any space where `dir` is unit.
 // shortcut: the body is straight, so on a sharp bend its rear leaves the lane
 // by a few decimeters; place the rear bumper too if that shows.
-fn vehicle_quad(front: Pos2, dir: Vec2, length: f32, width: f32) -> [Pos2; 4] {
+pub fn vehicle_quad(front: Pos2, dir: Vec2, length: f32, width: f32) -> [Pos2; 4] {
     let side = dir.rot90() * (width / 2.0);
     let rear = front - dir * length;
     [front + side, front - side, rear - side, rear + side]
@@ -375,7 +461,7 @@ fn vehicle_quad(front: Pos2, dir: Vec2, length: f32, width: f32) -> [Pos2; 4] {
 
 /// `points` moved `d` meters to the right of their direction, keeping that
 /// distance from each segment at corners (`y` north).
-fn shifted(points: &[Point], dist: f64) -> Vec<Point> {
+pub fn shifted(points: &[Point], dist: f64) -> Vec<Point> {
     let right = |p0: Point, p1: Point| {
         let len = (p1.x - p0.x).hypot(p1.y - p0.y);
         ((p1.y - p0.y) / len, -(p1.x - p0.x) / len)
@@ -409,7 +495,7 @@ fn shifted(points: &[Point], dist: f64) -> Vec<Point> {
 /// Mesh position of a world point: `y` negated (see [`World::mesh`]).
 // f32 keeps millimeter precision across a few kilometers of local frame.
 #[expect(clippy::cast_possible_truncation, reason = "local frame, meters")]
-fn to_mesh(p: Point) -> Pos2 {
+pub fn to_mesh(p: Point) -> Pos2 {
     pos2(p.x as f32, -p.y as f32)
 }
 
@@ -439,13 +525,10 @@ pub fn build_mesh(network: &Network, placement: &Placement) -> Mesh {
             let r = &mut node_radius[node.0 as usize];
             *r = r.max(width);
         }
-        let id = RoadId(u32::try_from(i).expect("road ids are u32"));
-        let line = if placement.has_twin(id) {
-            shifted(&road.geometry, f64::from(width) / 2.0)
-        } else {
-            road.geometry.clone()
-        };
-        let line = line.into_iter().map(to_mesh).collect();
+        let line = drawn_line(network, placement, i)
+            .into_iter()
+            .map(to_mesh)
+            .collect();
         tessellator.tessellate_shape(Shape::line(line, (width, ROAD_COLOR)), &mut mesh);
     }
     for (node, radius) in network.nodes.iter().zip(node_radius) {
@@ -474,7 +557,8 @@ mod tests {
                 ui,
                 &VehicleSnapshot::default(),
                 0.0,
-                (&Network::default(), &[]),
+                (&crate::demo::map().network, &[]),
+                &mut Inspector::default(),
             );
         });
         out.textures_delta.clear();

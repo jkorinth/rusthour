@@ -3,6 +3,7 @@
 mod camera;
 mod demo;
 mod frame_stats;
+mod inspect;
 mod labels;
 #[cfg_attr(
     not(target_arch = "wasm32"),
@@ -101,6 +102,7 @@ struct Viewer {
     stats: (String, usize, usize),
     /// Areas the map selector offers; empty hides it.
     maps: Vec<String>,
+    inspect: inspect::Inspector,
 }
 
 impl Viewer {
@@ -118,6 +120,7 @@ impl Viewer {
             source_date: map.source_date,
             note,
             maps: Vec::new(),
+            inspect: inspect::Inspector::default(),
         })
     }
 }
@@ -461,12 +464,16 @@ fn show_sim_controls(ui: &mut egui::Ui, v: &mut Viewer) {
             }
         });
     });
+    if v.inspect.following && t.pacer.scale() > inspect::FOLLOW_HINT_ABOVE {
+        ui.small("follow works best below 30×");
+    }
 }
 
 /// The map with its vehicles and the roads that had stuck removals.
 fn show_world(ui: &mut egui::Ui, v: &mut Viewer, ahead_s: f32) {
     let hot = (v.traffic.network(), v.traffic.stuck_roads.as_slice());
-    v.world.show(ui, &v.traffic.snapshot, ahead_s, hot);
+    v.world
+        .show(ui, &v.traffic.snapshot, ahead_s, hot, &mut v.inspect);
 }
 
 /// The map view and its controls; returns the area picked in the map
@@ -482,9 +489,7 @@ fn show_ready(
     if !ctx.egui_wants_keyboard_input() && ctx.input(|i| i.key_pressed(Key::Questionmark)) {
         *show_help = !*show_help;
     }
-    if *show_help && ctx.input(|i| i.key_pressed(Key::Escape)) {
-        *show_help = false;
-    }
+    v.inspect.keys(&ctx, show_help);
     sim_keys(&ctx, &mut v.traffic);
 
     let ahead_s = v.traffic.ahead_s();
@@ -520,6 +525,7 @@ fn show_ready(
                     }
                     if ui.button("Fit map").clicked() {
                         v.world.fit();
+                        v.inspect.following = false;
                     }
                     if ui.button("Shortcuts (?)").clicked() {
                         *show_help = !*show_help;
@@ -561,6 +567,10 @@ fn show_ready(
                 });
             });
         });
+
+    // After the controls, so a reset in them clears the selection at once.
+    v.inspect.update(&v.traffic, ctx.input(|i| i.time));
+    v.inspect.show_panel(&ctx, v.traffic.network());
 
     egui::Window::new("Keyboard shortcuts")
         .open(show_help)
