@@ -42,7 +42,7 @@ pub struct Road {
 }
 
 /// What traffic on a road meets at the road's end.
-// shortcut: stored and hashed only; right of way uses it from M3.3/M3.4.
+// shortcut: `Signals` ranks as unsigned until M3.4 adds the signal controller.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub enum EndControl {
     /// No sign or signal.

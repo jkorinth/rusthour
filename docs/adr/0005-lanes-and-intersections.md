@@ -723,3 +723,30 @@ Whoever merges second rebases:
   hooks.
 
 The M3 user trial (M3.10) runs after M3.11 and covers it.
+
+## Addendum (M3.3): right of way v2 as built
+
+Three points differ from §1 and §4. The milestone review decides whether
+they stand.
+
+- **Impatience:** among heads of equal rank whose movements conflict, once
+  either has been arriving for 10 s (`PATIENCE_MS`, a `shortcut:` to tune
+  in the M3 trial), the earlier arrival goes, ahead of the left-turn and
+  right-before-left rules.
+  - *Why:* when only conflicting movements yield, waiting cycles are rarer,
+    so the deadlock rule fires less often. A steady stream from the right
+    then starves a movement for good. In the saturated 4-way test, a left
+    turner merging into the same road as the stream from its right waited
+    31 s, against the 20 s limit. With the rule, every arm is served
+    within 16–18 s.
+  - Higher ranks are unaffected: a major road may still hold a minor one.
+- **Conflicts without a bit matrix:** `Priority::new(net, incoming,
+  outgoing, patience)` stores one position per road end on the circle
+  around the node: per incoming lane in its arm, and per outgoing road.
+  The positions follow §1's order. Arms with exactly equal angles also put
+  out-points first. The chord test is then four comparisons per pair of
+  approaches, so a matrix would add memory without saving work. A target
+  road that is not at the node conflicts with everything.
+- **`to_lane` is left for M3.5b.** `Approach` gains only `lane`. A target
+  lane means something only once M3.5b maps entry lanes, and merges are
+  per target road until then (§1).
