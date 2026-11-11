@@ -46,7 +46,7 @@ pub struct DriverInfo {
     pub min_gap_m: f32,
 }
 
-/// Why a stopped lane head waits. More with M3.3, M3.4 and M3.7.
+/// Why a stopped lane head waits. More with M3.4 and M3.7.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[non_exhaustive]
 pub enum StopCause {
@@ -208,6 +208,13 @@ fn wait(w: rusthour_core::WaitReason) -> WaitReason {
         W::NoRoom { next_road } => WaitReason::NoRoom {
             next_road: RoadId(next_road),
         },
+        W::StopLine { cause } => WaitReason::StopLine {
+            cause: match cause {
+                rusthour_core::StopCause::Yield => StopCause::Yield,
+                rusthour_core::StopCause::Stop => StopCause::Stop,
+                _ => StopCause::Junction,
+            },
+        },
         // A stop cause this crate does not know yet is still a wait at the line.
         _ => WaitReason::StopLine {
             cause: StopCause::Junction,
@@ -288,4 +295,21 @@ pub(crate) fn road(e: &Engine, network: &Network, road: RoadId) -> Option<RoadIn
             })
             .collect(),
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rusthour_core::WaitReason as W;
+
+    #[test]
+    fn stop_causes_reach_the_wait_reason() {
+        for (core, api) in [
+            (rusthour_core::StopCause::Yield, StopCause::Yield),
+            (rusthour_core::StopCause::Stop, StopCause::Stop),
+        ] {
+            let w = wait(W::StopLine { cause: core });
+            assert_eq!(w, WaitReason::StopLine { cause: api });
+        }
+    }
 }

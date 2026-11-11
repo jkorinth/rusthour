@@ -13,6 +13,8 @@ pub mod priority;
 pub struct Approach {
     /// Road the vehicle is on.
     pub from_road: u32,
+    /// Its lane on that road.
+    pub lane: u8,
     /// Next road on its route.
     pub to_road: u32,
     /// Vehicle slot.
@@ -32,7 +34,8 @@ pub struct Approach {
 
 /// Decides which approaches of one node may pass.
 pub trait Controller {
-    /// Sets `go[i]` for `approaches[i]`, which are sorted by `from_road`.
+    /// Sets `go[i]` for `approaches[i]`, which are sorted by
+    /// `(from_road, lane)`.
     fn decide(&mut self, net: &Network, tick: u64, approaches: &[Approach], go: &mut [bool]);
     /// Feeds the controller's state into `h`.
     fn hash_into(&self, h: &mut StateHasher);
@@ -41,8 +44,20 @@ pub trait Controller {
 /// The controller of one node.
 #[derive(Debug, Clone)]
 pub enum NodeControl {
-    /// Priority rule (M2.5).
+    /// Priority rule: signs, priority roads, class, right before left
+    /// (M2.5, M3.3).
     Priority(priority::Priority),
+}
+
+impl NodeControl {
+    /// Whether `a` waits only to stand at a stop sign first; valid after
+    /// `decide`, for diagnostics.
+    #[must_use]
+    pub fn holds_at_stop_sign(&self, a: &Approach) -> bool {
+        match self {
+            Self::Priority(c) => c.holds_at_stop_sign(a),
+        }
+    }
 }
 
 impl Controller for NodeControl {

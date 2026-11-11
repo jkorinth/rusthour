@@ -53,13 +53,27 @@ fn dot(a: [f64; 2], b: [f64; 2]) -> f64 {
 /// If the network has more than `u32::MAX` roads.
 #[must_use]
 pub fn incoming(net: &Network) -> (Vec<u32>, Vec<u32>) {
+    by_node(net, |r| r.to)
+}
+
+/// Roads grouped by start node, as [`incoming`] does by end node.
+///
+/// # Panics
+///
+/// If the network has more than `u32::MAX` roads.
+#[must_use]
+pub fn outgoing(net: &Network) -> (Vec<u32>, Vec<u32>) {
+    by_node(net, |r| r.from)
+}
+
+fn by_node(net: &Network, node: impl Fn(&super::Road) -> u32) -> (Vec<u32>, Vec<u32>) {
     let mut roads: Vec<u32> = (0..net.roads.len())
         .map(|r| u32::try_from(r).expect("road id fits u32"))
         .collect();
-    roads.sort_by_key(|&r| (net.roads[r as usize].to, r));
+    roads.sort_by_key(|&r| (node(&net.roads[r as usize]), r));
     let first = (0..=net.nodes.len())
         .map(|n| {
-            let before = roads.partition_point(|&r| (net.roads[r as usize].to as usize) < n);
+            let before = roads.partition_point(|&r| (node(&net.roads[r as usize]) as usize) < n);
             u32::try_from(before).expect("road id fits u32")
         })
         .collect();

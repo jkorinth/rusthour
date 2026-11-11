@@ -17,8 +17,8 @@ use std::collections::BinaryHeap;
 use crate::StateHasher;
 use crate::control::priority::rank;
 use crate::demand::Trip;
-use crate::network::Network;
 use crate::network::movement::{self, Turn};
+use crate::network::{EndControl, Network};
 use crate::vehicle::Vehicles;
 
 const UNSEEN: u32 = u32::MAX;
@@ -30,6 +30,8 @@ const MIN_SPEED_MPS: f64 = 0.01;
 const SMOOTHING: f64 = 0.2;
 /// Delay prior of a movement whose road ranks below another at the node (s).
 const YIELD_PRIOR_S: f64 = 4.0;
+/// Delay prior of a movement at a stop sign (s).
+const STOP_PRIOR_S: f64 = 6.0;
 
 /// Static cost of a turn (s).
 // shortcut: guessed values from ADR-0005, tune in the M3 trial.
@@ -127,7 +129,7 @@ impl Router {
             succ[fill[from as usize] as usize] = to;
             fill[from as usize] += 1;
         }
-        // Turn penalties and yield priors, per movement.
+        // Turn penalties and yield and stop priors, per movement.
         let (in_first, incoming) = movement::incoming(net);
         let mut turn = vec![0.0; succ.len()];
         let mut kind = vec![Turn::Straight; succ.len()];
@@ -137,11 +139,17 @@ impl Router {
             let arms = &incoming[in_first[node] as usize..in_first[node + 1] as usize];
             let from = u32::try_from(from).expect("road count fits u32");
             let mine = rank(net, from);
-            let yields = arms.iter().any(|&r| rank(net, r) > mine);
+            let prior_s = if net.roads[from as usize].end_control == EndControl::Stop {
+                STOP_PRIOR_S
+            } else if arms.iter().any(|&r| rank(net, r) > mine) {
+                YIELD_PRIOR_S
+            } else {
+                0.0
+            };
             for i in first[from as usize] as usize..first[from as usize + 1] as usize {
                 kind[i] = Turn::of(net, from, succ[i], arms);
                 turn[i] = turn_s(kind[i]);
-                prior[i] = if yields { YIELD_PRIOR_S } else { 0.0 };
+                prior[i] = prior_s;
             }
         }
         let in_scc = largest_scc(&first, &succ);
@@ -583,6 +591,19 @@ mod tests {
         let mut out = Vec::new();
         assert!(Router::new(&net).route(&net, trip(0, 6), &mut out));
         assert_eq!(out, [0, 4, 5, 6]);
+    }
+
+    #[test]
+    fn signs_set_the_delay_prior() {
+        let priors = |end_control| {
+            let mut net = left_or_around();
+            net.roads[0].end_control = end_control;
+            let router = Router::new(&net);
+            router.movement_delays(0).map(|m| m.3).collect::<Vec<_>>()
+        };
+        assert_eq!(priors(EndControl::None), [0.0, 0.0]);
+        assert_eq!(priors(EndControl::GiveWay), [4.0, 4.0]);
+        assert_eq!(priors(EndControl::Stop), [6.0, 6.0]);
     }
 
     #[test]

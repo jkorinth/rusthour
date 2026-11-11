@@ -29,7 +29,10 @@ use rusthour_core::{Config, Engine, Stream, run_and_hash};
 /// removal counts; the golden run is otherwise unchanged.
 /// Changed in M3.2: the hash includes each road's class, priority flag, end
 /// control and turn lanes (the run itself is unchanged).
-const GOLDEN_HASH: u64 = 38_815_666_710_758_177;
+/// Changed in M3.3: only conflicting movements yield, ranks add signs,
+/// priority roads and class, and the hash includes per-lane arms and the
+/// stop-sign flag.
+const GOLDEN_HASH: u64 = 1_032_360_242_064_702_161;
 
 /// A four-road ring with a short road and a merging side road that routing
 /// excludes. Random demand keeps 10 vehicles on the ring, and hand-placed

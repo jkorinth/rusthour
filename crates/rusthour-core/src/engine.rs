@@ -10,7 +10,7 @@ use crate::StateHasher;
 use crate::control::priority::Priority;
 use crate::control::{Approach, Controller, NodeControl};
 use crate::demand::{DemandContext, RandomOd, Trip};
-use crate::network::Network;
+use crate::network::{Network, movement};
 use crate::routing::Router;
 use crate::vehicle::idm::{self, IdmParams, Leader};
 use crate::vehicle::{NewVehicle, VehicleId, Vehicles};
@@ -27,6 +27,10 @@ const LOOK_AHEAD_M: f64 = 50.0;
 const MAX_ROUTES_PER_STEP: u32 = 8;
 /// Below this speed a vehicle counts as standing (m/s).
 const STUCK_SPEED_MPS: f64 = 0.1;
+/// Wait after which a head among equal-ranked conflicting heads is served
+/// first-come, so a steady stream from the right can't starve it (M3.3).
+// shortcut: guessed; tune in the M3 trial.
+const PATIENCE_MS: u64 = 10_000;
 /// Simulated time between updates of the routing travel-time estimates.
 const COST_PERIOD_MS: u64 = 5_000;
 /// Simulated time between two re-plans of the same vehicle (ADR-0004, M2.9).
@@ -175,20 +179,15 @@ impl Engine {
     #[must_use]
     pub fn with_network(config: Config, seed: u64, network: Network) -> Self {
         let lanes = network.roads.iter().map(|r| usize::from(r.lanes)).sum();
-        let mut incoming: Vec<u32> = (0..network.roads.len())
-            .map(|r| u32::try_from(r).expect("road id fits u32"))
-            .collect();
-        incoming.sort_by_key(|&r| (network.roads[r as usize].to, r));
-        let incoming_first: Vec<u32> = (0..=network.nodes.len())
+        let (incoming_first, incoming) = movement::incoming(&network);
+        let (out_first, outgoing) = movement::outgoing(&network);
+        let patience = PATIENCE_MS / u64::from(config.dt_ms).max(1);
+        let controls = (0..network.nodes.len())
             .map(|n| {
-                let n = u32::try_from(n).expect("node id fits u32");
-                let before = incoming.partition_point(|&r| network.roads[r as usize].to < n);
-                u32::try_from(before).expect("road id fits u32")
+                let i = &incoming[incoming_first[n] as usize..incoming_first[n + 1] as usize];
+                let o = &outgoing[out_first[n] as usize..out_first[n + 1] as usize];
+                NodeControl::Priority(Priority::new(&network, i, o, patience))
             })
-            .collect();
-        let controls = incoming_first
-            .windows(2)
-            .map(|w| NodeControl::Priority(Priority::new(&incoming[w[0] as usize..w[1] as usize])))
             .collect();
         Self {
             config,
@@ -387,45 +386,50 @@ impl Engine {
             let roads = self.incoming_first[n] as usize..self.incoming_first[n + 1] as usize;
             self.approaches.clear();
             for &r in &self.incoming[roads] {
-                let Some(&s) = vs.lane(vs.lane_id(r, 0)).front() else {
-                    continue;
-                };
-                let u = s as usize;
-                // The destination's end is no node passage (it arrives there).
-                let Some(&to_road) = vs.route[u].get(vs.route_pos[u] as usize + 1) else {
-                    continue;
-                };
-                let (p, v) = (&vs.params[u], vs.speed_mps[u]);
-                let dist_m = net.roads[r as usize].length_m - vs.pos_m[u];
-                if dist_m > horizon(p, v) {
-                    continue;
+                for lane in 0..net.roads[r as usize].lanes {
+                    let Some(&s) = vs.lane(vs.lane_id(r, lane)).front() else {
+                        continue;
+                    };
+                    let u = s as usize;
+                    // The destination's end is no node passage (it arrives there).
+                    let Some(&to_road) = vs.route[u].get(vs.route_pos[u] as usize + 1) else {
+                        continue;
+                    };
+                    let (p, v) = (&vs.params[u], vs.speed_mps[u]);
+                    let dist_m = net.roads[r as usize].length_m - vs.pos_m[u];
+                    if dist_m > horizon(p, v) {
+                        continue;
+                    }
+                    self.approaches.push(Approach {
+                        from_road: r,
+                        lane,
+                        to_road,
+                        slot: s,
+                        dist_m,
+                        speed_mps: v,
+                        min_gap_m: p.min_gap_m,
+                        can_stop: dist_m >= v * v / (2.0 * p.comfort_decel_mps2),
+                        // Circulating vehicles keep priority on the ring (ADR-0005 §4).
+                        blocked: no_room(vs, u)
+                            && !(net.roads[r as usize].roundabout
+                                && net.roads[to_road as usize].roundabout),
+                    });
                 }
-                self.approaches.push(Approach {
-                    from_road: r,
-                    to_road,
-                    slot: s,
-                    dist_m,
-                    speed_mps: v,
-                    min_gap_m: p.min_gap_m,
-                    can_stop: dist_m >= v * v / (2.0 * p.comfort_decel_mps2),
-                    // Circulating vehicles keep priority on the ring (ADR-0005 §4).
-                    blocked: no_room(vs, u)
-                        && !(net.roads[r as usize].roundabout
-                            && net.roads[to_road as usize].roundabout),
-                });
             }
             self.go.clear();
             self.go.resize(self.approaches.len(), false);
             control.decide(net, self.tick, &self.approaches, &mut self.go);
             for (a, &go) in self.approaches.iter().zip(&self.go) {
-                let q = vs.lane_id(a.from_road, 0);
+                let q = vs.lane_id(a.from_road, a.lane);
                 self.stop[q] = !go;
                 if !go {
-                    // M3.3, M3.4 and M3.7 set their own causes at their sites.
+                    // M3.4 and M3.7 add their causes here.
                     self.stop_cause[q] = if a.blocked {
                         LaneStop::NoRoom
+                    } else if control.holds_at_stop_sign(a) {
+                        LaneStop::Stop
                     } else {
-                        LaneStop::Junction
+                        LaneStop::Yield
                     };
                     vs.held_ticks[a.slot as usize] += 1;
                 }

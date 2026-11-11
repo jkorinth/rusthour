@@ -7,12 +7,15 @@ use super::{Engine, leader_ahead};
 use crate::vehicle::VehicleId;
 use crate::vehicle::idm::{self, Leader};
 
-/// Why a lane head stands at its road end. More with M3.3, M3.4 and M3.7.
+/// Why a lane head stands at its road end. More with M3.4 and M3.7.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum StopCause {
-    /// The node's controller made it wait; no finer reason is known yet.
-    Junction,
+    /// It gives way to another movement: a sign, a higher-ranked road, the
+    /// right, or oncoming traffic.
+    Yield,
+    /// It must stand at a stop sign before it may go.
+    Stop,
 }
 
 /// What a vehicle waits for, from the state after the last step. The stop
@@ -68,7 +71,8 @@ pub enum Gone {
 pub(super) enum LaneStop {
     Go,
     NoRoom,
-    Junction,
+    Yield,
+    Stop,
 }
 
 /// Exits remembered.
@@ -120,9 +124,14 @@ impl Engine {
                 (LaneStop::NoRoom, Some(next_road)) => {
                     return Some(WaitReason::NoRoom { next_road });
                 }
-                (LaneStop::Junction, _) => {
+                (LaneStop::Yield, _) => {
                     return Some(WaitReason::StopLine {
-                        cause: StopCause::Junction,
+                        cause: StopCause::Yield,
+                    });
+                }
+                (LaneStop::Stop, _) => {
+                    return Some(WaitReason::StopLine {
+                        cause: StopCause::Stop,
                     });
                 }
                 _ => {}
@@ -225,7 +234,7 @@ mod tests {
     }
 
     #[test]
-    fn wait_reasons_follower_no_room_and_junction() {
+    fn wait_reasons_follower_no_room_yield_and_stop() {
         // A follower enters behind a leader that is still slow.
         let mut e = Engine::with_network(Config::default(), 1, pair(400.0));
         let lead = e.spawn(&[0], car()).unwrap();
@@ -269,7 +278,7 @@ mod tests {
                 .flat_map(|i| (0..4).filter(move |&j| j != i).map(move |j| (i, 4 + j)))
                 .collect(),
         };
-        let mut e = Engine::with_network(Config::default(), 1, net);
+        let mut e = Engine::with_network(Config::default(), 1, net.clone());
         let heads: Vec<_> = (0..4u32)
             .map(|k| {
                 let id = e.spawn(&[k, 4 + (k + 2) % 4], car()).unwrap();
@@ -279,10 +288,22 @@ mod tests {
             .collect();
         e.step(1);
         let waits: Vec<_> = heads.iter().map(|&h| wait(&e, h)).collect();
-        let stop = WaitReason::StopLine {
-            cause: StopCause::Junction,
+        let yields = WaitReason::StopLine {
+            cause: StopCause::Yield,
         };
-        assert!(waits.contains(&stop), "{waits:?}");
+        assert!(waits.contains(&yields), "{waits:?}");
+
+        // Alone at a stop sign: it waits for the sign, not for traffic.
+        let mut net = net;
+        net.roads[0].end_control = EndControl::Stop;
+        let mut e = Engine::with_network(Config::default(), 1, net);
+        let head = e.spawn(&[0, 6], car()).unwrap();
+        e.vehicles.pos_m[head.slot as usize] = 80.0;
+        e.step(1);
+        let stop = WaitReason::StopLine {
+            cause: StopCause::Stop,
+        };
+        assert_eq!(wait(&e, head), stop);
     }
 
     #[test]

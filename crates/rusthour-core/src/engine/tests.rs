@@ -320,3 +320,40 @@ fn ring_heads_are_exempt_from_no_room() {
     assert!(stopped(false), "a plain node keeps the box clear");
     assert!(!stopped(true), "the ring keeps circulating");
 }
+
+/// Lowest speed of a lone car within 10 m of road 0's end, and whether it
+/// reached road 1, at an otherwise empty node.
+fn pass_alone(end_control: EndControl) -> (f64, bool) {
+    let mut first = road(0, 1, 200.0, 13.9, [[1.0, 0.0]; 2]);
+    first.end_control = end_control;
+    let net = Network {
+        nodes: vec![[0.0, 0.0], [200.0, 0.0], [400.0, 0.0]],
+        roads: vec![first, road(1, 2, 200.0, 13.9, [[1.0, 0.0]; 2])],
+        connections: vec![(0, 1)],
+    };
+    let mut e = Engine::with_network(Config::default(), 1, net);
+    let id = e.spawn(&[0, 1], car()).unwrap();
+    let mut min_v = f64::INFINITY;
+    for _ in 0..MINUTE {
+        let s = id.slot as usize;
+        if e.vehicles.road(s) == 1 {
+            return (min_v, true);
+        }
+        if e.vehicles.pos_m[s] > 190.0 {
+            min_v = min_v.min(e.vehicles.speed_mps[s]);
+        }
+        e.step(1);
+    }
+    (min_v, false)
+}
+
+#[test]
+fn a_stop_sign_needs_a_full_stop_even_at_an_empty_node() {
+    let (min_v, passed) = pass_alone(EndControl::Stop);
+    assert!(passed && min_v < STUCK_SPEED_MPS, "{min_v} {passed}");
+    let (min_v, passed) = pass_alone(EndControl::GiveWay);
+    assert!(
+        passed && min_v > 5.0,
+        "a give-way sign alone doesn't stop it: {min_v}"
+    );
+}
