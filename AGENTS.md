@@ -10,9 +10,9 @@ own work.
 
 | Role | Responsibilities |
 | --- | --- |
-| **Software architect** | Owns crate boundaries, public APIs, data layout, performance strategy. Writes ADRs in `docs/adr/`. Reviews **every** PR for design, boundaries and roadmap fit. |
+| **Software architect** | Owns crate boundaries, public APIs, data layout, performance strategy. Writes ADRs in `docs/adr/`. Reviews each milestone (§2.5) for design, boundaries and roadmap fit. |
 | **Software engineer** | Implements roadmap items test-first. **Always loads and follows the `ponytail` skill** (vendored in `.claude/skills/`) at the start of every engineering task. Authors PRs. |
-| **UX designer** | Owns the interactive experience (`rusthour-viz`), CLI ergonomics, output formats, error messages and API ergonomics. Reviews every PR that touches these. |
+| **UX designer** | Owns the interactive experience (`rusthour-viz`), CLI ergonomics, output formats, error messages and API ergonomics. Reviews each milestone (§2.5) for these. |
 
 Where a skill's guidance differs from this file, this file wins: on testing
 (§5, e.g. test-first and a few tests per feature, not "one small test"),
@@ -42,31 +42,33 @@ Direct commits to `main` are allowed. Conventional commits are still mandatory.
 4. **Open a PR** using the template. The title is a conventional commit
    summarizing the change. Reference the roadmap ID. Address review findings
    with `git commit --fixup=<sha>` so reviewers can follow what changed.
-5. **Review**: architect always; UX designer if the PR touches `rusthour-viz`,
-   `rusthour-cli` UX, output formats or `rusthour-api` public types. Reviewers post a
-   comment ending with an explicit verdict: `VERDICT: APPROVE` or
-   `VERDICT: REQUEST CHANGES` (agents may share a GitHub account, so formal
-   approvals may not be available). The required `review-gate` status
-   (`scripts/review_gate.py`) reads these comments and must be green to
-   merge. It counts a comment only in this format:
+5. **Review** happens once per milestone, not per PR. A PR merges when CI
+   is green; the engineer checks their own diff with the `ponytail-review`
+   skill before asking to merge. At the end of a milestone, before its
+   release PR is merged, the architect and the UX designer review everything
+   the milestone changed (`git diff <previous release tag>..main`), each in
+   a comment on the release PR ending with an explicit verdict:
+   `VERDICT: APPROVE` or `VERDICT: REQUEST CHANGES` (agents may share a
+   GitHub account, so formal approvals may not be available). Findings
+   become fixes or roadmap items. A reviewer may still review a single PR
+   when asked; a request for changes there blocks its merge.
+
+   The required `review-gate` status (`scripts/review_gate.py`) reads these
+   comments. A regular PR passes unless a role's latest verdict requests
+   changes; the release PR (opened by release-please from this repo) needs
+   an approval from both roles. It counts a comment only in this format:
    - one role per comment;
    - the first line is a bold heading starting with `**Architect` or `**UX`,
-     e.g. `**Architect review**`, `**UX re-check** (head abc1234)`;
+     e.g. `**Architect milestone review**`, `**UX re-check** (head abc1234)`;
    - a line that is exactly `VERDICT: APPROVE`, or starts with
      `VERDICT: REQUEST CHANGES`; the last such line counts, and a footer
      after it is fine.
 
-   Each role's most recent such comment decides. UX is required when the PR
-   changes `crates/rusthour-{viz,cli,api,import}/`. Verdicts are not reset
-   by pushes: reviewers re-check after any substantive push, while a
-   trivial rebase or conflict resolution keeps the verdicts.
-
-   Release PRs (opened by release-please from this repo) are exempt, but
-   they are opened with `GITHUB_TOKEN` and so trigger no workflows: the
-   maintainer posts any comment on the release PR to get its status, or
-   bypasses the ruleset at milestone end. One-time maintainer setting:
-   Settings → Rules → the `main` ruleset → Require status checks to pass →
-   add `review-gate`.
+   Each role's most recent such comment decides. Release PRs are opened with
+   `GITHUB_TOKEN` and so trigger no workflows: the review comments trigger
+   the gate, and closing and reopening the PR runs CI. One-time maintainer
+   setting: Settings → Rules → the `main` ruleset → Require status checks to
+   pass → add `review-gate`.
 6. **Clean up history** before merging:
    `git rebase -i --autosquash origin/main`, then force-push your branch
    (`--force-with-lease`). Every remaining commit must be a meaningful,
@@ -74,7 +76,8 @@ Direct commits to `main` are allowed. Conventional commits are still mandatory.
    rejects `fixup!`-style leftovers). Each commit should also build and pass
    tests on its own; check with
    `git rebase -x 'cargo nextest run' origin/main` (CI tests only the head).
-7. **Merge** by rebase once CI is green and required verdicts are APPROVE.
+7. **Merge** by rebase once CI is green, the branch is up to date with
+   `main`, and `review-gate` is green.
    Every commit lands on `main` as-is. Set the roadmap item to `done` in the
    same PR.
 
