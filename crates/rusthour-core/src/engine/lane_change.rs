@@ -1,5 +1,6 @@
-//! Phase 2b: discretionary lane changes by MOBIL, European asymmetric
-//! (ADR-0005 §6, M3.6). Route-driven lane choice is M3.7.
+//! Phase 2b: lane changes by MOBIL, European asymmetric (ADR-0005 §6,
+//! M3.6), with a route incentive towards the lanes of the next movement
+//! (§7, M3.7).
 
 use super::{Engine, MAX_DECEL_MPS2, OUT_OF_TOWN_MPS, leader_ahead, no_right_pass};
 use crate::behavior::mobil::{self, Accels};
@@ -20,6 +21,8 @@ const ENTRY_ZONE_M: f64 = 10.0;
 const MIN_ROAD_M: f64 = 20.0;
 /// The lane shift fades out over this much simulated time (viewer).
 const FADE_MS: u64 = 2000;
+/// The route incentive starts at least this far before the line (m).
+const ROUTE_ZONE_M: f64 = 100.0;
 
 impl Engine {
     /// Phase 2b: each due vehicle on a multi-lane road weighs a change to
@@ -81,6 +84,12 @@ impl Engine {
     #[must_use]
     pub fn lane_changes(&self) -> u64 {
         self.lane_changes
+    }
+
+    /// Fallback re-plans of heads stuck in the wrong lane so far (M3.7).
+    #[must_use]
+    pub fn fallback_replans(&self) -> u64 {
+        self.fallback_replans
     }
 
     /// How far `slot` is still drawn towards the lane it left, in lanes
@@ -166,10 +175,23 @@ fn best_change(net: &Network, lanes: &Lanes, vs: &Vehicles, q: usize, i: usize) 
     // Whether the ban on passing on the right (phase 4) would hold back a
     // vehicle at `v` behind `l` once `l` is in the lane to its left.
     let banned = |l: usize, v: f64| out_of_town && no_right_pass(vs.speed_mps[l], v);
-    // Lanes that serve the next movement (M3.5b); MOBIL never leaves them.
+    // Route incentive (ADR-0005 §7): within the zone before the line, each
+    // lane between a vehicle and the lanes of its next movement costs
+    // `penalty`, growing linearly to `2·b` at the line.
     let serves = vs.route[c]
         .get(vs.route_pos[c] as usize + 1)
         .map_or(u16::MAX, |&next| lanes.from_mask(net, r, next));
+    let off = |l: u8| {
+        (0..n)
+            .filter(|&k| serves >> k & 1 == 1)
+            .map(|k| k.abs_diff(l))
+            .min()
+            .unwrap_or(0)
+    };
+    let p = &vs.params[c];
+    let zone = ROUTE_ZONE_M.max(3.0 * vs.speed_mps[c] * p.time_headway_s);
+    let dist_m = net.roads[r as usize].length_m - vs.pos_m[c];
+    let penalty = 2.0 * p.comfort_decel_mps2 * (1.0 - dist_m / zone).max(0.0);
     let a_c = accel(net, vs, c, leader_of(net, lanes, vs, c, from, old_leader));
     let a_o = old_follower.map(|o| {
         let now = accel(net, vs, o, Some(behind(vs, o, c)));
@@ -187,9 +209,12 @@ fn best_change(net: &Network, lanes: &Lanes, vs: &Vehicles, q: usize, i: usize) 
     let held_right = old_leader.is_some_and(|l| banned(l, vs.speed_mps[c]));
     let mut best: Option<(f64, u8)> = None;
     for (to, left) in [(from.wrapping_sub(1), false), (from + 1, true)] {
-        if to >= n || (serves >> from & 1 == 1 && serves >> to & 1 == 0) {
+        // In the zone, never away from the lanes of the next movement.
+        if to >= n || (dist_m < zone && off(to) > off(from)) {
             continue;
         }
+        // In the zone, a change towards them is mandatory: politeness is waived.
+        let mandatory = dist_m < zone && off(to) < off(from);
         let Some((nl, nf)) = gap_check(vs, c, vs.lane_id(r, to)) else {
             continue;
         };
@@ -205,12 +230,20 @@ fn best_change(net: &Network, lanes: &Lanes, vs: &Vehicles, q: usize, i: usize) 
         if !left && held_right {
             after = after.min(a_c);
         }
-        let a = Accels {
-            c: [a_c, after],
-            n: a_n.unwrap_or_default(),
-            o: (if left { a_o_left } else { a_o }).unwrap_or_default(),
+        let a = if mandatory {
+            Accels {
+                c: [a_c, after],
+                ..Accels::default()
+            }
+        } else {
+            Accels {
+                c: [a_c, after],
+                n: a_n.unwrap_or_default(),
+                o: (if left { a_o_left } else { a_o }).unwrap_or_default(),
+            }
         };
-        let margin = mobil::margin(m, left, &a);
+        let gain = penalty * (f64::from(off(from)) - f64::from(off(to)));
+        let margin = mobil::margin(m, left, &a) + gain;
         if margin > 0.0 && best.is_none_or(|(b, _)| margin > b) {
             best = Some((margin, to));
         }

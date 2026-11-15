@@ -45,6 +45,16 @@ const REROUTE_PERIOD_MS: u64 = 180_000;
 /// Most vehicles re-planned per step, on top of `MAX_ROUTES_PER_STEP`.
 // shortcut: due vehicles past the cap skip a period; never binds below 4 × 1,800 = 7,200 slots at dt = 100 ms.
 const MAX_REROUTES_PER_STEP: u32 = 4;
+/// A head standing this long at the line (red excepted) in a lane that
+/// doesn't serve its movement re-plans from a movement its lane serves (ADR-0005 §7).
+const WRONG_LANE_MS: u64 = 10_000;
+/// Most such fallback re-plans per step; due heads past the cap retry next
+/// step, lowest node id first.
+// shortcut: like the reroute cap; spread over nodes if the trial shows starvation.
+const MAX_FALLBACK_REPLANS_PER_STEP: u32 = 4;
+/// `wrong_lane_ticks` of a head with no route from its lane: it goes from
+/// the wrong one rather than stand until the stuck net removes it.
+const NO_ROUTE: u16 = u16::MAX;
 
 /// The M2 car, the same for every vehicle until M4 driver profiles.
 fn car() -> IdmParams {
@@ -176,6 +186,8 @@ pub struct Engine {
     stuck_limit: u32,
     /// Lane changes so far.
     lane_changes: u64,
+    /// Fallback re-plans from the wrong lane so far.
+    fallback_replans: u64,
     /// Phase 2b scratch, reused every step: `(LaneId, index in it, slot,
     /// target lane)`.
     lane_change_candidates: Vec<(usize, usize, usize, u8)>,
@@ -257,6 +269,7 @@ impl Engine {
                     .max(1),
             },
             lane_changes: 0,
+            fallback_replans: 0,
             lane_change_candidates: Vec::new(),
             network,
         }
@@ -407,11 +420,15 @@ impl Engine {
     }
 
     /// Phase 3: each node's controller decides for the lane heads within
-    /// their look-ahead of its end; heads told to stop get a stop line.
+    /// their look-ahead of its end; heads told to stop get a stop line. A
+    /// head whose lane doesn't serve its movement stops without competing,
+    /// and after `WRONG_LANE_MS` standing re-plans from its lane (ADR-0005 §7).
     fn decide(&mut self) {
         self.stop.fill(false);
         self.stop_cause.fill(LaneStop::Go);
         let (net, lanes, vs) = (&self.network, &self.lanes, &mut self.vehicles);
+        let wrong_lane_ticks = WRONG_LANE_MS / u64::from(self.config.dt_ms);
+        let mut replans = 0;
         for (n, control) in self.controls.iter_mut().enumerate() {
             let roads = self.incoming_first[n] as usize..self.incoming_first[n + 1] as usize;
             self.approaches.clear();
@@ -431,7 +448,7 @@ impl Engine {
                         continue;
                     }
                     let to_lane = next_lane(net, lanes, vs, u, r, lane);
-                    self.approaches.push(Approach {
+                    let mut ap = Approach {
                         from_road: r,
                         lane,
                         to_road,
@@ -441,11 +458,49 @@ impl Engine {
                         speed_mps: v,
                         min_gap_m: p.min_gap_m,
                         can_stop: dist_m >= v * v / (2.0 * p.comfort_decel_mps2),
-                        // Circulating vehicles keep priority on the ring (ADR-0005 §4).
-                        blocked: no_room(vs, u, to_lane)
-                            && !(net.roads[r as usize].roundabout
-                                && net.roads[to_road as usize].roundabout),
-                    });
+                        blocked: blocked(net, vs, u, r, to_lane),
+                    };
+                    let serves = |to: u32| lanes.from_mask(net, r, to) >> lane & 1 == 1;
+                    if !serves(to_road) {
+                        let lane_id = vs.lane_id(r, lane);
+                        self.stop[lane_id] = true;
+                        if control.holds_at_red(&ap, self.tick) {
+                            self.stop_cause[lane_id] = LaneStop::Red;
+                            continue;
+                        }
+                        let waited = &mut vs.wrong_lane_ticks[u];
+                        if *waited != NO_ROUTE {
+                            if v < STUCK_SPEED_MPS {
+                                *waited = (*waited + 1).min(NO_ROUTE - 1);
+                            }
+                            if u64::from(*waited) < wrong_lane_ticks
+                                || replans == MAX_FALLBACK_REPLANS_PER_STEP
+                            {
+                                self.stop_cause[lane_id] = LaneStop::WrongLane;
+                                continue;
+                            }
+                            replans += 1;
+                            self.fallback_replans += 1;
+                            let route = &mut vs.route[u];
+                            let dest = route[route.len() - 1];
+                            if self
+                                .router
+                                .route_from_any(net, r, serves, dest, &mut self.route)
+                            {
+                                *waited = 0;
+                                route.clear();
+                                route.extend_from_slice(&self.route);
+                                vs.route_pos[u] = 0;
+                                ap.to_road = route[1];
+                                ap.to_lane = next_lane(net, lanes, vs, u, r, lane);
+                                ap.blocked = blocked(net, vs, u, r, ap.to_lane);
+                            } else {
+                                *waited = NO_ROUTE;
+                            }
+                        }
+                        self.stop[lane_id] = false;
+                    }
+                    self.approaches.push(ap);
                 }
             }
             self.go.clear();
@@ -455,7 +510,6 @@ impl Engine {
                 let q = vs.lane_id(a.from_road, a.lane);
                 self.stop[q] = !go;
                 if !go {
-                    // M3.7 adds its cause here.
                     self.stop_cause[q] = if control.holds_at_red(a, self.tick) {
                         LaneStop::Red
                     } else if a.blocked {
@@ -605,6 +659,7 @@ impl Engine {
                 let to = vs.route[s][vs.route_pos[s] as usize + 1];
                 self.router.passed(old_road, to, vs.held_ticks[s]);
                 vs.held_ticks[s] = 0;
+                vs.wrong_lane_ticks[s] = 0;
                 let road = vs.route[s][e.route_pos as usize];
                 vs.transfer(vs.id(s), road, e.to_lane, e.pos_m);
                 vs.route_pos[s] = e.route_pos;
@@ -744,6 +799,7 @@ impl Engine {
         h.write_u64(u64::from(self.arrived));
         h.write_u64(u64::from(self.removed_stuck));
         h.write_u64(self.lane_changes);
+        h.write_u64(self.fallback_replans);
         for &n in &self.stuck_by_road {
             h.write_u64(u64::from(n));
         }
@@ -820,6 +876,14 @@ fn leader_ahead(
 fn next_lane(net: &Network, lanes: &Lanes, vs: &Vehicles, slot: usize, from: u32, lane: u8) -> u8 {
     let (route, k) = (&vs.route[slot], vs.route_pos[slot] as usize + 1);
     lanes.entry(net, from, lane, route[k], route.get(k + 1).copied())
+}
+
+/// Whether lane head `slot` on `road` waits for room in `to_lane` of its
+/// next road; circulating vehicles keep priority on the ring (ADR-0005 §4).
+fn blocked(net: &Network, vs: &Vehicles, slot: usize, road: u32, to_lane: u8) -> bool {
+    let to_road = vs.route[slot][vs.route_pos[slot] as usize + 1];
+    no_room(vs, slot, to_lane)
+        && !(net.roads[road as usize].roundabout && net.roads[to_road as usize].roundabout)
 }
 
 /// Don't block the box: the lane `to_lane` of lane head `slot`'s next road

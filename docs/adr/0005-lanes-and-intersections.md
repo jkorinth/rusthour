@@ -832,3 +832,54 @@ they stand.
 - **Neutral signals:** above 30× set speed, but not while paused.
 - **Zoom-in thresholds:** signal bars from 0.5 points per meter, lane
   dividers from 2 and signs from 3. Turn-lane arrows are not drawn.
+
+## Addendum (M3.7): lane choice as built
+
+These points differ from, or add to, §7. The milestone review decides
+whether they stand.
+
+- **Lanes away, not served or not:** the incentive penalty counts the lanes
+  between a lane and the nearest lane of the next movement, so on three or
+  more lanes each step towards the set pays. A change towards the set is the
+  mandatory one: politeness is waived for it, the threshold and keep-right
+  bias still apply, and so does the safety check.
+- **The M3.6 rule stays inside the zone:** within `max(100 m, 3·v·T)` of the
+  line, MOBIL never moves a vehicle further from the lanes of its next
+  movement. The penalty alone starts at 0 at the zone's edge, where
+  keep-right would still pull a left turner out of its lane. Outside the
+  zone there is no restriction, which replaces M3.6's "never leave a lane
+  that serves the next turn" there.
+- **No look past a short next road:** the penalty uses only the next
+  movement. On a next road shorter than 60 m, the entry lane (§5) already
+  picks the lane that serves the movement after it.
+- **At the line:** a wrong-lane head is not passed to the controller, so no
+  one yields to it, and it gets a stop line with the cause `WrongLane`. At
+  a red or amber light the cause is `Red`, so it can't slip through on
+  amber either. Wrong-lane holds add nothing to `held_ticks`, so they don't
+  inflate the routing delay of a movement the head may never make.
+- **10 s held there** is a new hashed column `wrong_lane_ticks`: steps the
+  head stood (below 0.1 m/s) in the wrong lane outside red, reset on entering
+  a road and at each re-plan. The stuck counter would also count the wait at
+  red, and re-planned five times as often on the multi-lane bench grid.
+- **`Router::route_from_any(net, origin, first, dest, out)`** takes a
+  predicate on the first road after `origin`. The route may pass `origin`
+  again, e.g. once round the block. `route` and `route_from_any` share the
+  A* loop. If no movement the lane serves leads to the destination, the head
+  keeps its route and goes from the wrong lane, rather than standing until
+  the stuck net removes it.
+- **The cap** of 4 re-plans per step serves nodes in id order; a due head
+  past it retries next step. `Engine::fallback_replans` counts re-plans.
+- **Route `Vec`s reserve at least 64 roads.** The multi-lane grid's longest
+  spawned route now passes 32 roads after about 14,000 steps, after which
+  every newly spawned slot grew its route once, past the allocation test's
+  warm-up. 64 roads cost 256 bytes per slot.
+- **Measured** on bensheim-5km, seed 42, two simulated hours (M3.6 and
+  M3.4 on `main` before):
+
+  | Vehicles | Arrivals/h before → after | Removed per arrival before → after | Re-plans per vehicle-hour |
+  | --- | --- | --- | --- |
+  | 4,000 | 6,503 → 6,567 | 0.57% → 0.79% | 0.12 |
+  | 5,000 | 6,240 → 6,094 | 1.34% → 1.55% | 0.13 |
+
+  Turning from any lane was extra capacity that the map doesn't have; the
+  M3.8 gate (≤ 5% and ≥ 4,545 arrivals/h at 5,000) still holds.

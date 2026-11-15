@@ -393,6 +393,7 @@ fn park(e: &mut Engine, lane: u8, pos_m: f64, route: &[u32]) -> usize {
 #[test]
 fn a_transfer_enters_the_lane_of_the_movement() {
     // Left onto road 1 enters its leftmost lane, straight keeps the lane.
+    // From lane 0 the left turn waits 10 s, finds no other route and goes.
     for (route, from, to) in [([0, 1], 0, 1), ([0, 2], 0, 0), ([0, 2], 1, 1)] {
         let mut e = Engine::with_network(Config::default(), 1, lane_node([2, 2, 2]));
         let s = park(&mut e, from, 90.0, &route);
@@ -476,4 +477,102 @@ fn red_holds_a_car_at_the_line_and_green_releases_it() {
     assert_eq!(e.vehicles.road(s), 0, "still red");
     e.step(100);
     assert_eq!(e.vehicles.road(s), 1, "green releases it");
+}
+
+/// `copies` disjoint forks, five roads each (`5c..5c + 5`). Road `5c`
+/// (300 m, two lanes, heading E) turns left onto `5c + 1` (N) or goes
+/// straight onto `5c + 2`; both reach `5c + 4`, the left turn directly and
+/// straight on via `5c + 3`. Only lane 1 serves the left turn.
+fn fork(copies: u32) -> Network {
+    let (e, n, nw) = ([1.0, 0.0], [0.0, 1.0], [-0.6, 0.8]);
+    let mut net = Network::default();
+    for c in 0..copies {
+        let (k, y) = (5 * c, 1000.0 * f64::from(c));
+        // Nodes k..k + 5: start, junction, north, east, end.
+        net.nodes.extend([
+            [-300.0, y],
+            [0.0, y],
+            [0.0, y + 100.0],
+            [75.0, y],
+            [0.0, y + 200.0],
+        ]);
+        let mut first = road(k, k + 1, 300.0, 13.9, [e; 2]);
+        first.lanes = 2;
+        net.roads.extend([
+            first,
+            road(k + 1, k + 2, 100.0, 13.9, [n; 2]),
+            road(k + 1, k + 3, 75.0, 13.9, [e; 2]),
+            road(k + 3, k + 2, 125.0, 13.9, [nw; 2]),
+            road(k + 2, k + 4, 100.0, 13.9, [n; 2]),
+        ]);
+        net.connections.extend([
+            (k, k + 1),
+            (k, k + 2),
+            (k + 2, k + 3),
+            (k + 1, k + 4),
+            (k + 3, k + 4),
+        ]);
+    }
+    net
+}
+
+#[test]
+fn a_left_turner_moves_to_the_left_lane_before_the_line() {
+    let mut e = Engine::with_network(Config::default(), 1, fork(1));
+    let s = e.spawn(&[0, 1, 4], car()).unwrap().slot as usize;
+    let mut lane = 0;
+    while e.vehicles.road(s) == 0 {
+        lane = e.vehicles.lane_of(s);
+        e.step(1);
+        assert!(e.tick() < 600, "never left road 0");
+    }
+    assert_eq!(
+        (lane, e.vehicles.road(s)),
+        (1, 1),
+        "left from the left lane"
+    );
+    assert_eq!(e.fallback_replans(), 0);
+}
+
+#[test]
+fn a_car_stuck_in_the_wrong_lane_waits_then_replans_from_its_lane() {
+    let mut e = Engine::with_network(Config::default(), 1, fork(1));
+    let s = e.spawn(&[0, 1, 4], car()).unwrap().slot as usize;
+    // It finds no gap, ever.
+    e.vehicles.mobil[s].threshold_mps2 = f64::INFINITY;
+    let wrong = WaitReason::StopLine {
+        cause: StopCause::WrongLane,
+    };
+    let mut waited = 0;
+    while e.vehicles.road(s) == 0 {
+        e.step(1);
+        waited += u32::from(e.wait_reason(s) == Some(wrong));
+        assert!(e.tick() < 1200, "never left road 0");
+    }
+    assert!(waited >= 100, "held {waited} steps");
+    assert_eq!(e.vehicles.road(s), 2, "straight on, which lane 0 serves");
+    assert_eq!(e.vehicles.route[s], [0, 2, 3, 4]);
+    assert_eq!(e.fallback_replans(), 1);
+    e.step(MINUTE);
+    assert_eq!(e.arrived(), 1);
+}
+
+#[test]
+fn at_most_four_fallback_replans_run_per_step() {
+    let mut e = Engine::with_network(Config::default(), 1, fork(6));
+    for c in 0..6 {
+        let s = e.spawn(&[5 * c, 5 * c + 1, 5 * c + 4], car()).unwrap().slot as usize;
+        e.vehicles.mobil[s].threshold_mps2 = f64::INFINITY;
+    }
+    let mut most = 0;
+    for _ in 0..MINUTE {
+        let before = e.fallback_replans();
+        e.step(1);
+        most = most.max(e.fallback_replans() - before);
+    }
+    assert_eq!(
+        (most, e.fallback_replans()),
+        (4, 6),
+        "the rest retry next step"
+    );
 }
