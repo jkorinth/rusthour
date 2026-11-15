@@ -15,7 +15,8 @@ use rusthour_api::{Network, Placement, Point, RoadId, VehicleSnapshot};
 use crate::camera::{Camera, LANE_WIDTH_M};
 use crate::inspect::{Inspector, View};
 use crate::labels::{self, Candidate};
-use crate::traffic;
+use crate::marks;
+use crate::traffic::{self, Traffic};
 
 /// Road and intersection fill: at least 3:1 against both egui themes' panel
 /// backgrounds (ADR-0003 accessibility minimum).
@@ -34,6 +35,11 @@ const VEHICLE_DARK: Color32 = Color32::from_rgb(0xff, 0xc8, 0x3c);
 /// Vehicle fill in the light theme: a burnt orange that reads on the light
 /// background where zoomed-out vehicles overhang their roads.
 const VEHICLE_LIGHT: Color32 = Color32::from_rgb(0x8f, 0x35, 0x00);
+/// Widest a lane gets at full zoom, in screen points, so a vehicle never
+/// fills the screen (ADR-0005 §9).
+const MAX_LANE_PT: f32 = 100.0;
+/// Lane dividers show from this zoom, in screen points per meter.
+const DIVIDERS_FROM_SCALE: f32 = 2.0;
 /// Keyboard pan speed, in screen points per second.
 const KEY_PAN_SPEED: f32 = 600.0;
 /// Zoom per `+`/`-` press.
@@ -86,6 +92,10 @@ pub struct World {
     lines: Vec<Vec<Point>>,
     /// Whether the pointer is a finger: taps pick with a wider radius.
     touch: bool,
+    /// Lane dividers, in the same space as `mesh`.
+    dividers: Mesh,
+    /// Signs at road ends, drawn when zoomed in.
+    signs: Vec<marks::Sign>,
 }
 
 impl World {
@@ -102,10 +112,12 @@ impl World {
             Rect::from_center_size(Pos2::ZERO, Vec2::splat(100.0))
         };
         let labels = labels::candidates(network);
-        let lines = (0..network.roads.len())
+        let lines: Vec<_> = (0..network.roads.len())
             .map(|i| drawn_line(network, &placement, i))
             .collect();
         Self {
+            dividers: marks::build_dividers(network, &lines),
+            signs: marks::signs(network),
             lines,
             touch: false,
             placement,
@@ -129,17 +141,10 @@ impl World {
         self.camera.map(|c| c.center)
     }
 
-    /// Draws the map and `vehicles`, extrapolated by `ahead_s` sim seconds,
-    /// with the roads in `hot` (stuck removals) tinted,
-    /// into the remaining space of `ui` and handles pan/zoom.
-    pub fn show(
-        &mut self,
-        ui: &mut Ui,
-        vehicles: &VehicleSnapshot,
-        ahead_s: f32,
-        hot: (&Network, &[(RoadId, u32)]),
-        inspect: &mut Inspector,
-    ) {
+    /// Draws the map and `traffic`'s vehicles, signals and roads with stuck
+    /// removals into the remaining space of `ui` and handles pan/zoom.
+    pub fn show(&mut self, ui: &mut Ui, traffic: &Traffic, inspect: &mut Inspector) {
+        let (vehicles, ahead_s) = (&traffic.snapshot, traffic.ahead_s());
         // A click is a release without movement, so a pan never selects.
         let (viewport, response) =
             ui.allocate_exact_size(ui.available_size(), Sense::click_and_drag());
@@ -156,8 +161,8 @@ impl World {
             },
         );
         let camera = self.camera.get_or_insert(fit);
-        // Zoom out to "whole map fits", in to "one lane fills the screen".
-        let max_scale = viewport.size().min_elem() / LANE_WIDTH_M;
+        // Zoom out to "whole map fits", in to a lane MAX_LANE_PT wide.
+        let max_scale = MAX_LANE_PT / LANE_WIDTH_M;
 
         let keyboard = !ui.ctx().egui_wants_keyboard_input();
         // Left drag (also with Shift) and middle drag pan; right drag is kept
@@ -204,7 +209,7 @@ impl World {
         }
         let mut view = View {
             placement: &self.placement,
-            network: hot.0,
+            network: traffic.network(),
             lines: &self.lines,
             vehicles,
             ahead_s,
@@ -231,16 +236,9 @@ impl World {
             ui.ctx().request_repaint();
         }
 
-        // egui copies every mesh it paints and re-uploads the vertex buffer each
-        // frame anyway; only ADR-0003's custom-pipeline fallback (static vertex
-        // buffer, camera uniform) avoids that. Frame times on bensheim-5km
-        // are measured in M1.8.
-        let mut mesh = self.mesh.clone();
-        mesh.transform(camera.mesh_transform(viewport));
         let painter = ui.painter_at(viewport);
-        painter.add(Shape::mesh(mesh));
         let camera = *camera;
-        draw_hot_roads(&painter, camera, viewport, &self.placement, hot);
+        let hovered = self.draw_roads(&painter, traffic, (camera, viewport), response.hover_pos());
         let color = if ui.visuals().dark_mode {
             VEHICLE_DARK
         } else {
@@ -251,6 +249,49 @@ impl World {
         ));
         inspect.draw(&painter, &view, ui.visuals());
         self.draw_labels(&painter, camera, viewport, ui.visuals());
+        marks::draw_scale_bar(&painter, camera.scale, viewport, ui.visuals());
+        if let Some(text) = hovered.and_then(|r| marks::signal_text(&traffic.signals, r)) {
+            response.on_hover_text_at_pointer(format!("Signal: {text}"));
+        }
+    }
+
+    /// Roads, lane dividers, hot roads, signal bars and signs; returns the
+    /// road whose signal is under `hover`.
+    fn draw_roads(
+        &self,
+        painter: &egui::Painter,
+        traffic: &Traffic,
+        (camera, viewport): (Camera, Rect),
+        hover: Option<Pos2>,
+    ) -> Option<RoadId> {
+        // egui copies every mesh it paints and re-uploads the vertex buffer each
+        // frame anyway; only ADR-0003's custom-pipeline fallback (static vertex
+        // buffer, camera uniform) avoids that. Frame times on bensheim-5km
+        // are measured in M1.8.
+        let mut mesh = self.mesh.clone();
+        mesh.transform(camera.mesh_transform(viewport));
+        painter.add(Shape::mesh(mesh));
+        if camera.scale >= DIVIDERS_FROM_SCALE {
+            let mut dividers = self.dividers.clone();
+            dividers.transform(camera.mesh_transform(viewport));
+            painter.add(Shape::mesh(dividers));
+        }
+        let hot = (traffic.network(), traffic.stuck_roads.as_slice());
+        draw_hot_roads(painter, camera, viewport, &self.placement, hot);
+        let marks = marks::Marks {
+            placement: &self.placement,
+            network: traffic.network(),
+            camera,
+            viewport,
+        };
+        marks.signs(painter, &self.signs);
+        // Paused, nothing strobes: show the states at any speed.
+        let time_scale = if traffic.pacer.is_paused() {
+            0.0
+        } else {
+            traffic.pacer.scale()
+        };
+        marks.signals(painter, &traffic.signals, time_scale, hover)
     }
 
     /// One mesh for all vehicles on screen, in screen points.
@@ -446,7 +487,8 @@ pub fn vehicle_pose(
     let offset = vehicles.offset_m[i] + vehicles.speed_mps[i] * ahead_s;
     let (front, [hx, hy]) = placement.place(
         vehicles.road[i],
-        f32::from(vehicles.lane[i]),
+        // Slides during a lane change; at speed the 2 s fade is just short.
+        f32::from(vehicles.lane[i]) + vehicles.lane_shift[i],
         offset,
         LANE_WIDTH_M,
     );
@@ -503,8 +545,8 @@ pub fn to_mesh(p: Point) -> Pos2 {
     pos2(p.x as f32, -p.y as f32)
 }
 
-/// Tessellates roads (as thick polylines, one lane width per lane) and
-/// intersections (discs as wide as the widest road there) in world meters.
+/// Tessellates roads as thick polylines with round ends, one lane width per
+/// lane, in world meters.
 /// Roads with a twin are drawn right of their shared line, as `placement`
 /// puts their lanes (ADR-0004 §3).
 pub fn build_mesh(network: &Network, placement: &Placement) -> Mesh {
@@ -522,23 +564,22 @@ pub fn build_mesh(network: &Network, placement: &Placement) -> Mesh {
     let mut tessellator = epaint::Tessellator::new(4.0, options, [1, 1], vec![]);
     let mut mesh = Mesh::default();
 
-    let mut node_radius = vec![0.0_f32; network.nodes.len()];
     for (i, road) in network.roads.iter().enumerate() {
         let width = f32::from(road.lanes) * LANE_WIDTH_M;
-        for node in [road.from_node, road.to_node] {
-            let r = &mut node_radius[node.0 as usize];
-            *r = r.max(width);
-        }
-        let line = drawn_line(network, placement, i)
+        let line: Vec<_> = drawn_line(network, placement, i)
             .into_iter()
             .map(to_mesh)
             .collect();
+        // Round ends, each as wide as its own road, fill the corners at
+        // junctions; a disc per node as wide as its widest road bulged past
+        // narrower ones and one-way roads (M2 trial).
+        for end in [line[0], line[line.len() - 1]] {
+            tessellator.tessellate_shape(
+                Shape::circle_filled(end, width / 2.0, ROAD_COLOR),
+                &mut mesh,
+            );
+        }
         tessellator.tessellate_shape(Shape::line(line, (width, ROAD_COLOR)), &mut mesh);
-    }
-    for (node, radius) in network.nodes.iter().zip(node_radius) {
-        let disc =
-            Shape::circle_filled(to_mesh(node.position), radius.max(LANE_WIDTH_M), ROAD_COLOR);
-        tessellator.tessellate_shape(disc, &mut mesh);
     }
     mesh
 }
@@ -556,14 +597,9 @@ mod tests {
             events,
             ..Default::default()
         };
+        let traffic = Traffic::new(crate::demo::map().network).expect("valid");
         let mut out = ctx.run_ui(input, |ui| {
-            world.show(
-                ui,
-                &VehicleSnapshot::default(),
-                0.0,
-                (&crate::demo::map().network, &[]),
-                &mut Inspector::default(),
-            );
+            world.show(ui, &traffic, &mut Inspector::default());
         });
         out.textures_delta.clear();
     }
@@ -641,10 +677,16 @@ mod tests {
 
     /// The vehicle body (mesh space, `y` down) for one vehicle on road 0.
     fn body(net: &Network, lane: u8, offset_m: f32, ahead_s: f32) -> [Pos2; 4] {
+        shifted_body(net, lane, 0.0, offset_m, ahead_s)
+    }
+
+    /// As [`body`], `shift` lanes into a lane change.
+    fn shifted_body(net: &Network, lane: u8, shift: f32, offset_m: f32, ahead_s: f32) -> [Pos2; 4] {
         let snap = VehicleSnapshot {
             id: vec![rusthour_api::VehicleId(0)],
             road: vec![RoadId(0)],
             lane: vec![lane],
+            lane_shift: vec![shift],
             offset_m: vec![offset_m],
             speed_mps: vec![10.0],
             length_m: vec![4.5],
@@ -683,6 +725,54 @@ mod tests {
     }
 
     #[test]
+    fn a_lane_change_slides_from_the_old_lane() {
+        let net = east_west(2, false);
+        // Just moved to lane 1 from lane 0: drawn on lane 0, then halfway.
+        assert_eq!(
+            shifted_body(&net, 1, -1.0, 50.0, 0.0),
+            body(&net, 0, 50.0, 0.0)
+        );
+        let [front, ..] = shifted_body(&net, 1, -0.5, 50.0, 0.0);
+        assert!(front.y.abs() < 1.0, "between the lanes: {front:?}");
+    }
+
+    #[test]
+    fn zoom_stops_at_100_points_per_lane_and_at_the_whole_map() {
+        let ctx = egui::Context::default();
+        let mut world = World::new(&crate::demo::map().network);
+        let key = |key| Event::Key {
+            key,
+            physical_key: None,
+            pressed: true,
+            repeat: false,
+            modifiers: Modifiers::NONE,
+        };
+        frame(&ctx, &mut world, vec![]);
+        let fit = world.camera.expect("set on the first frame").scale;
+        for _ in 0..40 {
+            frame(&ctx, &mut world, vec![key(Key::Plus)]);
+        }
+        let lane_pt = world.camera.expect("set").scale * LANE_WIDTH_M;
+        assert!((95.0..=100.0).contains(&lane_pt), "{lane_pt}");
+        for _ in 0..40 {
+            frame(&ctx, &mut world, vec![key(Key::Minus)]);
+        }
+        assert!((world.camera.expect("set").scale - fit).abs() < 1e-4);
+    }
+
+    #[test]
+    fn road_ends_are_no_wider_than_their_roads() {
+        // A one-way road is centered on its line, so are its round ends.
+        let net = east_west(1, false);
+        let b = build_mesh(&net, &Placement::new(&net)).calc_bounds();
+        assert!(b.min.y >= -1.76 && b.max.y <= 1.76, "{b:?}");
+        // A twin pair spans both sides of the shared line, each on its own.
+        let net = east_west(1, true);
+        let b = build_mesh(&net, &Placement::new(&net)).calc_bounds();
+        assert!(b.min.y >= -3.51 && b.max.y <= 3.51, "{b:?}");
+    }
+
+    #[test]
     fn twin_roads_are_drawn_right_of_their_shared_line() {
         let p = |x, y| Point { x, y };
         // East then north: the shifted line keeps its distance at the corner.
@@ -702,8 +792,8 @@ mod tests {
         let mesh = build_mesh(network, &Placement::new(network));
         assert!(mesh.is_valid(), "indices in range");
         let segments: usize = network.roads.iter().map(|r| r.geometry.len() - 1).sum();
-        // At least a quad per road segment and a few triangles per disc.
-        assert!(mesh.indices.len() / 3 >= 2 * segments + 3 * network.nodes.len());
+        // At least a quad per road segment and a few triangles per round end.
+        assert!(mesh.indices.len() / 3 >= 2 * segments + 6 * network.roads.len());
         assert!(mesh.vertices.iter().all(|v| v.pos.is_finite()));
 
         // Every node lies inside the mesh's bounds (with y flipped back).
