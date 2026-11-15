@@ -35,6 +35,22 @@ fn arrow(t: Turn) -> u8 {
     }
 }
 
+/// The turn from road `from` onto `to` as a pseudo-angle in `(-2, 2]`,
+/// increasing from a hard right through straight to a hard left (no `atan2`).
+fn bearing(net: &Network, from: u32, to: u32) -> f64 {
+    let [ax, ay] = net.roads[from as usize].end_dir;
+    let [bx, by] = net.roads[to as usize].start_dir;
+    let (dot, cross) = (ax * bx + ay * by, ax * by - ay * bx);
+    let t = cross / (dot.abs() + cross.abs());
+    if dot >= 0.0 {
+        t
+    } else if cross >= 0.0 {
+        2.0 - t
+    } else {
+        -2.0 - t
+    }
+}
+
 /// Lanes `lo..hi` as a mask (`hi ≤ 16`).
 fn lanes_mask(lo: u8, hi: u8) -> u16 {
     u16::try_from((1u32 << hi) - (1u32 << lo)).expect("at most 16 lanes")
@@ -104,17 +120,44 @@ impl Lanes {
                 .collect();
             let mut masks = default.clone();
             if !road.turn_lanes.is_empty() {
-                let serves = |lane: usize, t: Turn| {
-                    road.turn_lanes.get(lane).is_some_and(|a| a & arrow(t) != 0)
+                let mut arrows: Vec<u8> = turns.iter().map(|&t| arrow(t)).collect();
+                let serves = |arrows: &[u8], lane: usize, m: usize| {
+                    road.turn_lanes
+                        .get(lane)
+                        .is_some_and(|a| a & arrows[m] != 0)
                 };
-                for (m, &t) in turns.iter().enumerate() {
-                    masks[m] = (0..road.lanes)
-                        .filter(|&l| serves(usize::from(l), t))
+                let unmatched = |arrows: &[u8]| {
+                    (0..road.turn_lanes.len())
+                        .any(|l| (0..arrows.len()).all(|m| !serves(arrows, l, m)))
+                        || (0..arrows.len())
+                            .any(|m| (0..road.turn_lanes.len()).all(|l| !serves(arrows, l, m)))
+                };
+                // Mappers name the turns relative to each other: at a fork of two
+                // near-straight branches `through|right` means the right branch.
+                // So if types leave an arrow or a movement unmatched and there are
+                // as many kinds of arrow as movements, match them in order, right first.
+                let all = road.turn_lanes.iter().fold(0, |a, &b| a | b);
+                let kinds: Vec<u8> = [4, 2, 1, 8].into_iter().filter(|k| all & k != 0).collect();
+                if kinds.len() == turns.len() && unmatched(&arrows) {
+                    let mut order: Vec<usize> = (0..turns.len()).collect();
+                    // A U-turn is leftmost even when its tiny cross is negative.
+                    let key = |i: usize| (turns[i] == Turn::UTurn, bearing(net, from, out[i].1));
+                    order.sort_by(|&i, &j| {
+                        let ((ui, bi), (uj, bj)) = (key(i), key(j));
+                        ui.cmp(&uj).then(bi.total_cmp(&bj))
+                    });
+                    for (k, m) in kinds.into_iter().zip(order) {
+                        arrows[m] = k;
+                    }
+                }
+                for (m, mask) in masks.iter_mut().enumerate() {
+                    *mask = (0..road.lanes)
+                        .filter(|&l| serves(&arrows, usize::from(l), m))
                         .fold(0, |mask, l| mask | 1 << l);
                 }
                 // A lane whose arrows match no movement takes the default set.
-                for l in
-                    (0..road.lanes).filter(|&l| turns.iter().all(|&t| !serves(usize::from(l), t)))
+                for l in (0..road.lanes)
+                    .filter(|&l| (0..turns.len()).all(|m| !serves(&arrows, usize::from(l), m)))
                 {
                     for (m, d) in default.iter().enumerate() {
                         masks[m] |= d & (1 << l);
@@ -240,6 +283,18 @@ mod tests {
         // the default set (straight and right).
         let net = node([2, 1, 1, 1, 2, 1, 1, 2], &[8, 6], vec![(0, 4), (0, 7)]);
         assert_eq!([masks(&net)[0], masks(&net)[2]], [0b11, 0b11]);
+    }
+
+    #[test]
+    fn unmatched_arrows_go_to_the_movements_in_order() {
+        // `through|right` with a straight and a left turn: the straight
+        // movement is the right one, the left turn the through one.
+        let net = node([2, 1, 1, 1, 1, 1, 1, 1], &[4, 2], vec![(0, 4), (0, 5)]);
+        assert_eq!(masks(&net)[..2], [0b01, 0b10]);
+        // More kinds of arrow than movements: types decide, and lane 0 falls
+        // back to the default rule, as before.
+        let net = node([2, 1, 1, 1, 1, 1, 1, 1], &[4, 3], vec![(0, 4), (0, 5)]);
+        assert_eq!(masks(&net)[..2], [0b11, 0b10]);
     }
 
     #[test]
