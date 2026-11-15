@@ -7,7 +7,7 @@ use super::{Engine, leader_ahead};
 use crate::vehicle::VehicleId;
 use crate::vehicle::idm::{self, Leader};
 
-/// Why a lane head stands at its road end. More with M3.7.
+/// Why a lane head stands at its road end.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum StopCause {
@@ -18,6 +18,8 @@ pub enum StopCause {
     Stop,
     /// Its signal shows amber or red.
     Red,
+    /// Its lane doesn't serve its next movement (M3.7).
+    WrongLane,
 }
 
 /// What a vehicle waits for, from the state after the last step. The stop
@@ -76,6 +78,7 @@ pub(super) enum LaneStop {
     Yield,
     Stop,
     Red,
+    WrongLane,
 }
 
 /// Exits remembered.
@@ -140,6 +143,11 @@ impl Engine {
                 (LaneStop::Red, _) => {
                     return Some(WaitReason::StopLine {
                         cause: StopCause::Red,
+                    });
+                }
+                (LaneStop::WrongLane, _) => {
+                    return Some(WaitReason::StopLine {
+                        cause: StopCause::WrongLane,
                     });
                 }
                 _ => {}

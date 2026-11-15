@@ -74,6 +74,9 @@ pub struct Vehicles {
     /// Steps held at the line (`go = false`) as lane head since entering the
     /// road; the routing delay sample of its next movement (ADR-0005 §2).
     pub held_ticks: Vec<u32>,
+    /// Steps standing at the line in a lane that doesn't serve the next
+    /// movement, red excepted, since entering the road (ADR-0005 §7).
+    pub wrong_lane_ticks: Vec<u16>,
     /// MOBIL parameters, the defaults at spawn (ADR-0005 §6).
     pub mobil: Vec<MobilParams>,
     /// Lane before the last lane change; on entering a road, that lane.
@@ -87,7 +90,8 @@ pub struct Vehicles {
     lane_first: Vec<u32>,
     /// Longest route spawned so far, rounded up to a power of two. Every route
     /// `Vec` reserves this much, so a reused slot reallocates only after a
-    /// new record, not whenever it meets a longer trip.
+    /// new record, not whenever it meets a longer trip. Starts at 64, so
+    /// detours and re-plans (M3.7) on town-sized trips fit without a record.
     longest_route: usize,
 }
 
@@ -123,13 +127,14 @@ impl Vehicles {
             depart_tick: Vec::new(),
             stuck_ticks: Vec::new(),
             held_ticks: Vec::new(),
+            wrong_lane_ticks: Vec::new(),
             mobil: Vec::new(),
             lc_from: Vec::new(),
             lc_ticks: Vec::new(),
             free: Vec::new(),
             lanes,
             lane_first,
-            longest_route: 0,
+            longest_route: 64,
         }
     }
 
@@ -228,6 +233,7 @@ impl Vehicles {
             self.depart_tick.push(0);
             self.stuck_ticks.push(0);
             self.held_ticks.push(0);
+            self.wrong_lane_ticks.push(0);
             self.mobil.push(MobilParams::default());
             self.lc_from.push(0);
             self.lc_ticks.push(u16::MAX);
@@ -310,6 +316,7 @@ impl Vehicles {
         self.depart_tick[s] = 0;
         self.stuck_ticks[s] = 0;
         self.held_ticks[s] = 0;
+        self.wrong_lane_ticks[s] = 0;
         self.mobil[s] = MobilParams::default();
         self.lc_ticks[s] = u16::MAX;
         self.free.push(id.slot);
@@ -387,6 +394,7 @@ impl Vehicles {
             h.write_u64(self.depart_tick[s]);
             h.write_u64(u64::from(self.stuck_ticks[s]));
             h.write_u64(u64::from(self.held_ticks[s]));
+            h.write_u64(u64::from(self.wrong_lane_ticks[s]));
             let m = &self.mobil[s];
             for x in [
                 m.politeness,

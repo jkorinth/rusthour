@@ -23,6 +23,8 @@ use crate::network::{EndControl, Network};
 use crate::vehicle::Vehicles;
 
 const UNSEEN: u32 = u32::MAX;
+/// `prev` of a road entered straight from the origin in `route_from_any`.
+const SOURCE: u32 = u32::MAX - 1;
 /// Floor of the mean speed in the travel-time estimate (m/s). Low on
 /// purpose: a road whose cars all stand gets a near-prohibitive cost, which
 /// keeps routes out of forming gridlocks (ADR-0004, addendum M2.9).
@@ -258,24 +260,52 @@ impl Router {
     /// writes the road ids, origin to destination inclusive, into `out`
     /// (cleared first). Returns `false`, leaving `out` empty, if there is none.
     pub fn route(&mut self, net: &Network, trip: Trip, out: &mut Vec<u32>) -> bool {
-        out.clear();
         self.epoch += 1;
         self.heap.clear();
-        let (origin, dest) = (trip.origin, trip.destination);
-        let goal = net.nodes[net.roads[dest as usize].to as usize];
-        let h_per_m = self.h_per_m;
-        let h = |road: u32| {
-            let r = &net.roads[road as usize];
-            dist(net.nodes[r.to as usize], goal) * h_per_m
-        };
+        let g0 = self.travel_s[trip.origin as usize];
+        self.push(net, trip.destination, trip.origin, g0, UNSEEN);
+        self.search(net, trip.origin, trip.destination, out)
+    }
+
+    /// Like [`Self::route`], but leaves `origin` only by a movement onto a
+    /// road for which `first(to)` holds: a multi-source A* from those
+    /// movements, each with its edge cost (ADR-0005 §7). The route may pass
+    /// `origin` again, e.g. once round the block.
+    pub fn route_from_any(
+        &mut self,
+        net: &Network,
+        origin: u32,
+        first: impl Fn(u32) -> bool,
+        dest: u32,
+        out: &mut Vec<u32>,
+    ) -> bool {
+        self.epoch += 1;
+        self.heap.clear();
         let g0 = self.travel_s[origin as usize];
-        self.set(origin, g0, UNSEEN);
-        let f0 = g0 + h(origin);
-        self.heap.push(Entry {
-            f: f0,
-            g: g0,
-            road: origin,
-        });
+        let (a, b) = (self.first[origin as usize], self.first[origin as usize + 1]);
+        for i in a as usize..b as usize {
+            let nb = self.succ[i];
+            let g = g0 + self.move_s[i] + self.travel_s[nb as usize];
+            if first(nb) && (self.stamp[nb as usize] != self.epoch || g < self.cost[nb as usize]) {
+                self.push(net, dest, nb, g, SOURCE);
+            }
+        }
+        self.search(net, origin, dest, out)
+    }
+
+    /// Records `road` reached at cost `g` from `prev` and queues it.
+    fn push(&mut self, net: &Network, dest: u32, road: u32, g: f64, prev: u32) {
+        let goal = net.nodes[net.roads[dest as usize].to as usize];
+        let r = &net.roads[road as usize];
+        let f = g + dist(net.nodes[r.to as usize], goal) * self.h_per_m;
+        self.set(road, g, prev);
+        self.heap.push(Entry { f, g, road });
+    }
+
+    /// Runs A* from the queued roads to `dest` and writes the route into
+    /// `out`; a road whose `prev` is `SOURCE` follows `origin`.
+    fn search(&mut self, net: &Network, origin: u32, dest: u32, out: &mut Vec<u32>) -> bool {
+        out.clear();
         while let Some(Entry { g, road, .. }) = self.heap.pop() {
             if g > self.cost[road as usize] {
                 continue; // stale entry
@@ -283,6 +313,10 @@ impl Router {
             if road == dest {
                 let mut r = dest;
                 while r != UNSEEN {
+                    if r == SOURCE {
+                        out.push(origin);
+                        break;
+                    }
                     out.push(r);
                     r = self.prev[r as usize];
                 }
@@ -294,12 +328,7 @@ impl Router {
                 let nb = self.succ[i as usize];
                 let g2 = g + self.move_s[i as usize] + self.travel_s[nb as usize];
                 if self.stamp[nb as usize] != self.epoch || g2 < self.cost[nb as usize] {
-                    self.set(nb, g2, road);
-                    self.heap.push(Entry {
-                        f: g2 + h(nb),
-                        g: g2,
-                        road: nb,
-                    });
+                    self.push(net, dest, nb, g2, road);
                 }
             }
         }
@@ -546,6 +575,28 @@ mod tests {
             ],
             connections,
         }
+    }
+
+    #[test]
+    fn route_from_any_starts_with_an_allowed_movement_and_may_pass_the_origin_again() {
+        // A loop 0 → 1 → 2 → 0 with an exit 3 off road 0's end.
+        let net = Network {
+            nodes: vec![[0.0, 0.0], [100.0, 0.0], [50.0, 80.0], [200.0, 0.0]],
+            roads: vec![
+                road(0, 1, 100.0),
+                road(1, 2, 100.0),
+                road(2, 0, 100.0),
+                road(1, 3, 100.0),
+            ],
+            connections: vec![(0, 1), (0, 3), (1, 2), (2, 0)],
+        };
+        let mut router = Router::new(&net);
+        let mut out = Vec::new();
+        assert!(router.route_from_any(&net, 0, |to| to == 1, 3, &mut out));
+        assert_eq!(out, [0, 1, 2, 0, 3], "once round the loop");
+        assert!(router.route_from_any(&net, 0, |to| to == 3, 3, &mut out));
+        assert_eq!(out, [0, 3]);
+        assert!(!router.route_from_any(&net, 3, |_| true, 0, &mut out));
     }
 
     #[test]

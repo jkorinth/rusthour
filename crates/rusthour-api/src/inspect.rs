@@ -213,6 +213,7 @@ fn wait(w: rusthour_core::WaitReason) -> WaitReason {
                 rusthour_core::StopCause::Yield => StopCause::Yield,
                 rusthour_core::StopCause::Stop => StopCause::Stop,
                 rusthour_core::StopCause::Red => StopCause::Red,
+                rusthour_core::StopCause::WrongLane => StopCause::WrongLane,
                 _ => StopCause::Junction,
             },
         },
@@ -309,6 +310,7 @@ mod tests {
             (rusthour_core::StopCause::Yield, StopCause::Yield),
             (rusthour_core::StopCause::Stop, StopCause::Stop),
             (rusthour_core::StopCause::Red, StopCause::Red),
+            (rusthour_core::StopCause::WrongLane, StopCause::WrongLane),
         ] {
             let w = wait(W::StopLine { cause: core });
             assert_eq!(w, WaitReason::StopLine { cause: api });
