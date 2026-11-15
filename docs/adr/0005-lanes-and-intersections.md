@@ -883,3 +883,64 @@ whether they stand.
 
   Turning from any lane was extra capacity that the map doesn't have; the
   M3.8 gate (≤ 5% and ≥ 4,545 arrivals/h at 5,000) still holds.
+
+## Addendum (M3.8b): re-measure, Berliner Ring, step profile
+
+These points differ from, or add to, §5 and §8. The milestone review decides
+whether they stand.
+
+- **Turn-lane arrows in order:** §5 matches a `turn:lanes` arrow to a
+  movement by its turn type. At a fork whose branches are both within 30° of
+  straight on, a `right` arrow matched nothing, so that lane fell back to the
+  default rule and every lane took both branches. When type matching leaves
+  an arrow or a movement unmatched, and a road has as many kinds of arrow as
+  movements, the arrows now go to the movements in order: the rightmost
+  arrow to the rightmost movement, by a pseudo-angle of the turn.
+  - *Affected:* 16 roads on bensheim-5km, among them four A 5 exits and
+    Berliner Ring before the L 3345 roundabout.
+  - *Unchanged:* roads with more kinds of arrow than movements, which keep
+    the type rule and its fallback.
+- **Berliner Ring:**
+  - *The wide, short two-lane piece* is road 2568 (way 519137103, 48 m,
+    `through|right`). It forks into the bypass (road 2217, way 260985286)
+    and the roundabout entry (roads 2988 → 2306). Before the fix the
+    roundabout queue blocked the bypass. At 5,000 vehicles the road held 8.4
+    vehicles on average at 1.0 m/s, and 5.1 after. The roundabout-bound
+    movement's delay fell from 13.3 s to 3.3 s.
+  - *The four roundabouts* (ways 157846715, 187276521, 246950232 and
+    679409465) are all flagged on every segment, their approaches are not,
+    and every entry ends in give-way. Removals count on the road the vehicle
+    stood on.
+  - *Removals:* seed 42 at 4,000 and 5,000 vehicles, seeds 1 and 2 at
+    5,000, and the viewer's seed 0 at 4,158 removed no vehicle on any
+    roundabout road or approach, before or after the fix. The 4-exit
+    roundabout removals seen earlier are not reproduced on current `main`;
+    the M3.8a ring exemption is the likely cause.
+- **Measured** on bensheim-5km, seed 42, two simulated hours. "Before" is
+  `main` with all of M3 except the trial; it differs slightly from the M3.7
+  addendum because later PRs changed the state. Trip time is the mean time
+  on the network, from Little's law (vehicles / arrivals per hour).
+
+  | Vehicles | Arrivals/h before → after | Removed per arrival before → after | Trip time before → after |
+  | --- | --- | --- | --- |
+  | 4,000 | 6,560 → 6,154 | 0.85% → 1.15% | 36.6 → 39.0 min |
+  | 5,000 | 6,146 → 5,966 | 1.46% → 1.38% | 48.8 → 50.3 min |
+
+  The gate holds (≤ 5% and ≥ 4,545 arrivals/h at 5,000). Berliner Ring is
+  not among the roads with removals at either count.
+  - *Cost of the fix:* lanes the map reserves for one branch are capacity
+    the model had used for both. Over seeds 1–3 at 4,000 vehicles,
+    arrivals per hour fell from 6,494 to 6,242 on average.
+  - *Main loser:* Rodensteinstraße road 2028 (way 227342012, 125 m,
+    `through|left`), whose left lane feeds a signal 28 m on. Its queue grew
+    from 7 to 22 vehicles. Cars for that lane can't merge into the standing
+    queue and wait at the line in the wrong lane until the fallback re-plan.
+    Cooperative merging is a candidate for the M3 trial.
+- **Step profile:** callgrind on the bench grid; PR #75 has the numbers.
+  - The M3.6 slowdown of `step/5000` came from the deadlock search running
+    on every step and from lost inlining, not from lane changes.
+  - On `step_multilane/5000`, routing takes 34% of the instructions, for
+    only 3.8 searches per step. The `distance / vmax` heuristic is weak
+    against costs that include turn costs and delays, so each search
+    expands nearly the whole grid. A tighter admissible bound is the main
+    lever left for the 1 ms budget.
