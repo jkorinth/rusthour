@@ -813,3 +813,22 @@ milestone review decides whether they stand.
   until M4 profiles need one. `DriverInfo` doesn't show them yet.
 - **Bench grid:** the multi-lane variant runs at 70 km/h, so the ban's code
   path is timed; at the M2.8 grid's 50 km/h it would never run.
+
+## Addendum (M3.9): viewer as built
+
+These points differ from §6 and §9. The milestone review decides whether
+they stand.
+
+- **Lane shift at every speed:** the viewer draws `lane + lane_shift`
+  above 1× too. The snapshot's shift is right for its tick, and at speed
+  the slide is just short, so no switch is needed.
+- **Round road ends instead of node discs:** each road gets round ends as
+  wide as itself. A disc per node as wide as its widest road bulged past
+  one-way roads and the narrower half of a twin pair (225 of 1,369 nodes
+  on bensheim-5km).
+- **Signal bars at the road end:** the core's stop line is the node, so
+  the bar sits inside the junction rather than before it. Signs stand
+  10 m back from the end.
+- **Neutral signals:** above 30× set speed, but not while paused.
+- **Zoom-in thresholds:** signal bars from 0.5 points per meter, lane
+  dividers from 2 and signs from 3. Turn-lane arrows are not drawn.

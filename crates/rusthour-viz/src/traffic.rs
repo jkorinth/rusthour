@@ -2,8 +2,8 @@
 //! [`Pacer`], one snapshot per frame, reset with the same seed (ADR-0004 §3).
 
 use rusthour_api::{
-    Config, InProcess, Network, NetworkError, Pacer, RoadId, Simulation, Status, VehicleSnapshot,
-    scale_from_slider,
+    Config, InProcess, Network, NetworkError, Pacer, RoadId, SignalSnapshot, Simulation, Status,
+    VehicleSnapshot, scale_from_slider,
 };
 use web_time::Instant;
 
@@ -28,6 +28,8 @@ pub struct Traffic {
     pub snapshot: VehicleSnapshot,
     /// Roads with stuck removals and their counts, refreshed with the snapshot.
     pub stuck_roads: Vec<(RoadId, u32)>,
+    /// Signal states, refreshed with the snapshot.
+    pub signals: SignalSnapshot,
     /// Smoothed real seconds per step, `0` until measured.
     pub step_cost_s: f64,
     /// Steps run in the last frame.
@@ -49,6 +51,7 @@ impl Traffic {
             pacer: Pacer::new(config.dt_ms),
             snapshot: VehicleSnapshot::default(),
             stuck_roads: Vec::new(),
+            signals: SignalSnapshot::default(),
             step_cost_s: 0.0,
             last_steps: 0,
             epoch: 0,
@@ -82,8 +85,14 @@ impl Traffic {
         self.sim = InProcess::with_network(self.config, SEED, network)
             .expect("validated when the map was loaded");
         self.epoch = self.epoch.wrapping_add(1);
+        self.refresh();
+    }
+
+    /// Takes the snapshots the frame draws.
+    fn refresh(&mut self) {
         self.sim.snapshot_into(&mut self.snapshot);
         self.sim.stuck_by_road_into(&mut self.stuck_roads);
+        self.sim.signals_into(&mut self.signals);
     }
 
     /// Changes the population, which restarts the simulation.
@@ -108,8 +117,7 @@ impl Traffic {
                 cost
             };
         }
-        self.sim.snapshot_into(&mut self.snapshot);
-        self.sim.stuck_by_road_into(&mut self.stuck_roads);
+        self.refresh();
     }
 
     /// Sim seconds to extrapolate the snapshot by when drawing: at 1× or

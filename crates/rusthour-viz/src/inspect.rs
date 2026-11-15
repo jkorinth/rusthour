@@ -4,11 +4,12 @@
 
 use eframe::egui::{self, Align2, Key, Pos2, Rect, Shape, Stroke, Vec2, pos2};
 use rusthour_api::{
-    Gone, Network, Placement, Point, RoadClass, RoadId, RoadInfo, Simulation, StopCause, TurnType,
-    VehicleId, VehicleInfo, VehicleSnapshot, WaitReason,
+    Gone, Network, Placement, Point, RoadClass, RoadId, RoadInfo, SignalSnapshot, Simulation,
+    StopCause, TurnType, VehicleId, VehicleInfo, VehicleSnapshot, WaitReason,
 };
 
 use crate::camera::{Camera, LANE_WIDTH_M};
+use crate::marks::signal_text;
 use crate::traffic::Traffic;
 use crate::world::{MIN_VEHICLE_PT, VEHICLE_WIDTH_M, shifted, to_mesh, vehicle_pose};
 
@@ -258,7 +259,7 @@ impl Inspector {
     }
 
     /// The panel: top right on wide screens, a bottom sheet on narrow ones.
-    pub fn show_panel(&mut self, ctx: &egui::Context, network: &Network) {
+    pub fn show_panel(&mut self, ctx: &egui::Context, network: &Network, signals: &SignalSnapshot) {
         let Some(selected) = self.selected else {
             return;
         };
@@ -271,18 +272,20 @@ impl Inspector {
                 };
                 let lines = match (self.gone, &self.info) {
                     (Some(g), info) => vec![gone_text(g, info.as_ref(), network)],
-                    (None, Some(info)) => vehicle_lines(info, network),
+                    (None, Some(info)) => vehicle_lines(info, network, signals),
                     (None, None) => vec![],
                 };
                 (title.to_owned(), lines)
             }
-            Selection::Road(r) => (
-                road_name(network, r),
-                self.road
+            Selection::Road(r) => {
+                let mut lines: Vec<String> = self
+                    .road
                     .as_ref()
                     .map(|info| road_lines(info, network))
-                    .unwrap_or_default(),
-            ),
+                    .unwrap_or_default();
+                lines.extend(signal_text(signals, r).map(|t| format!("signal: {t}")));
+                (road_name(network, r), lines)
+            }
         };
         let screen = ctx.content_rect();
         let narrow = screen.width() < NARROW_PT;
@@ -430,17 +433,19 @@ fn road_name(network: &Network, road: RoadId) -> String {
 /// Why the vehicle drives as it does, in plain words.
 // shortcut: no in-0.1/out-0.05 hysteresis on "following", the api reports the
 // core's 0.1 cut; the 5 Hz refresh limits flicker. Add it if trials see flicker.
-pub fn wait_text(info: &VehicleInfo, network: &Network) -> String {
+pub fn wait_text(info: &VehicleInfo, network: &Network, signals: &SignalSnapshot) -> String {
     match info.wait {
         WaitReason::FreeRoad => "driving freely".into(),
         WaitReason::Following { .. } if info.speed_mps < STANDING_MPS => "stuck in a queue".into(),
         WaitReason::Following { gap_m, .. } => format!("following traffic, {gap_m:.0} m gap"),
+        WaitReason::StopLine {
+            cause: StopCause::Red,
+        } => signal_text(signals, info.road)
+            .map_or_else(|| "red light".into(), |t| format!("at the signal: {t}")),
         WaitReason::StopLine { cause } => match cause {
             StopCause::Junction => "waiting at a junction",
             StopCause::Yield => "giving way",
             StopCause::Stop => "stopped at a stop sign",
-            // shortcut: no seconds left yet; add them from `signals_into` with M3.9.
-            StopCause::Red => "red light",
             StopCause::WrongLane => "in the wrong lane for its turn, waiting for a gap",
             _ => "waiting at the stop line",
         }
@@ -474,7 +479,11 @@ pub fn gone_text(gone: Gone, last: Option<&VehicleInfo>, network: &Network) -> S
 }
 
 /// The vehicle panel's lines.
-pub fn vehicle_lines(info: &VehicleInfo, network: &Network) -> Vec<String> {
+pub fn vehicle_lines(
+    info: &VehicleInfo,
+    network: &Network,
+    signals: &SignalSnapshot,
+) -> Vec<String> {
     let lanes = network
         .roads
         .get(info.road.0 as usize)
@@ -484,7 +493,7 @@ pub fn vehicle_lines(info: &VehicleInfo, network: &Network) -> Vec<String> {
         format!(
             "{:.0} km/h, {}",
             info.speed_mps * 3.6,
-            wait_text(info, network)
+            wait_text(info, network, signals)
         ),
         format!(
             "on {}, lane {} of {lanes}",
@@ -620,6 +629,7 @@ mod tests {
             id: (0..at.len() as u64).map(VehicleId).collect(),
             road: vec![RoadId(0); at.len()],
             lane: at.iter().map(|a| a.0).collect(),
+            lane_shift: vec![0.0; at.len()],
             offset_m: at.iter().map(|a| a.1).collect(),
             speed_mps: vec![0.0; at.len()],
             length_m: vec![4.5; at.len()],
@@ -738,6 +748,7 @@ mod tests {
     #[test]
     fn wait_reasons_and_departures_read_as_plain_words() {
         let net = east(1);
+        let no_signals = SignalSnapshot::default();
         let following = WaitReason::Following {
             leader: VehicleId(1),
             gap_m: 12.2,
@@ -761,9 +772,27 @@ mod tests {
                 "waiting for space on Hauptstraße ahead",
             ),
         ] {
-            assert_eq!(wait_text(&info(wait, speed), &net), text);
+            assert_eq!(wait_text(&info(wait, speed), &net, &no_signals), text);
         }
-        let lines = vehicle_lines(&info(WaitReason::FreeRoad, 10.0), &net);
+        // At a red light, with the seconds to green when the road has a signal.
+        let red = info(
+            WaitReason::StopLine {
+                cause: StopCause::Red,
+            },
+            0.0,
+        );
+        assert_eq!(wait_text(&red, &net, &no_signals), "red light");
+        let signals = SignalSnapshot {
+            tick: 0,
+            road: vec![red.road],
+            state: vec![rusthour_api::SignalState::Red],
+            next_change_s: vec![12.0],
+        };
+        assert_eq!(
+            wait_text(&red, &net, &signals),
+            "at the signal: red, green in 12 s"
+        );
+        let lines = vehicle_lines(&info(WaitReason::FreeRoad, 10.0), &net, &no_signals);
         assert_eq!(
             lines[1..4],
             [
@@ -863,7 +892,9 @@ mod tests {
             events,
             ..Default::default()
         };
-        let mut out = ctx.run_ui(input, |ui| world.show(ui, snap, 0.0, (net, &[]), ins));
+        let mut traffic = Traffic::new(net.clone()).expect("valid");
+        traffic.snapshot = snap.clone();
+        let mut out = ctx.run_ui(input, |ui| world.show(ui, &traffic, ins));
         out.textures_delta.clear();
     }
 
