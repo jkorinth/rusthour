@@ -1,5 +1,6 @@
 //! Regression tests for bugs found on `main` (AGENTS.md §5).
 
+use rusthour_core::network::lanes::Lanes;
 use rusthour_core::network::{EndControl, Network, Road};
 use rusthour_core::vehicle::idm::IdmParams;
 use rusthour_core::{Config, Engine};
@@ -72,4 +73,39 @@ fn regression_m2_trial_full_exit_holds_the_node() {
         0,
         "gridlock: not all arrived in 2 min"
     );
+}
+
+/// M3.8b: Berliner Ring, way 519137103 (`turn:lanes=through|right`) forks
+/// into a bypass and a roundabout entry, both within 30° of straight on. The
+/// `right` arrow matched no movement by type, so both lanes took both
+/// branches and the roundabout queue blocked the bypass. The arrows now go
+/// to the movements in order, rightmost first.
+#[test]
+fn regression_m3_8b_turn_lanes_at_a_straight_fork() {
+    let road = |from, to, lanes, dir: [f64; 2], turn_lanes: Vec<u8>| Road {
+        from,
+        to,
+        length_m: 50.0,
+        speed_limit_mps: 14.0,
+        lanes,
+        start_dir: dir,
+        end_dir: dir,
+        roundabout: false,
+        class: 0,
+        priority_road: false,
+        end_control: EndControl::None,
+        turn_lanes,
+    };
+    let net = Network {
+        nodes: vec![[0.0, 0.0], [0.0, 50.0], [20.0, 96.0], [-5.0, 100.0]],
+        roads: vec![
+            // Heading north; lane 0 `right`, lane 1 `through`.
+            road(0, 1, 2, [0.0, 1.0], vec![4, 2]),
+            road(1, 2, 1, [0.4, 0.916_515_138_991_168], vec![]), // bypass, slight right
+            road(1, 3, 1, [-0.1, 0.994_987_437_106_62], vec![]), // roundabout, slight left
+        ],
+        connections: vec![(0, 1), (0, 2)],
+    };
+    let lanes = Lanes::new(&net);
+    assert_eq!([1, 2].map(|to| lanes.from_mask(&net, 0, to)), [0b01, 0b10]);
 }
