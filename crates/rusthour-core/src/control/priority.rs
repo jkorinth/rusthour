@@ -295,8 +295,13 @@ impl Controller for Priority {
         });
         let n = self.arms.len();
         let turn = |i: usize| (self.arm(&aps[i]) + n - self.pointer as usize) % n;
-        let pick = top.min_by_key(|&i| (aps[i].slot != self.winner, since(i), turn(i)));
-        if let Some(i) = pick.filter(|_| stuck) {
+        // Only searched when stuck: it is O(heads²).
+        let pick = if stuck {
+            top.min_by_key(|&i| (aps[i].slot != self.winner, since(i), turn(i)))
+        } else {
+            None
+        };
+        if let Some(i) = pick {
             go[i] = true;
             if aps[i].slot != self.winner {
                 self.winner = aps[i].slot;
