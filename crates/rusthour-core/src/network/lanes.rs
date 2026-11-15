@@ -161,6 +161,10 @@ impl Lanes {
     pub fn entry(&self, net: &Network, from: u32, lane: u8, to: u32, after: Option<u32>) -> u8 {
         let target = &net.roads[to as usize];
         let last = target.lanes - 1;
+        // Fast path: lane heads ask this every step, mostly for one-lane roads.
+        if last == 0 {
+            return 0;
+        }
         let e = match self.movement(from, to).map(|m| m.turn) {
             Some(Turn::Right) => 0,
             Some(Turn::Left | Turn::LeftAcross | Turn::UTurn) => last,
