@@ -226,6 +226,14 @@ pub fn draw_scale_bar(
 /// (more than 3 flashes a second, a photosensitivity risk).
 pub const NEUTRAL_SIGNALS_ABOVE: f64 = 30.0;
 
+/// The time scale that decides whether signals strobe: the one reached, as
+/// the step budget may hold the wanted one back; 0 while paused.
+// shortcut: no hysteresis, a speed reached that hovers around 30× can switch the
+// bars every half second; add one if a trial sees it.
+pub fn signal_time_scale(wanted: f64, achieved: f64, paused: bool) -> f64 {
+    if paused { 0.0 } else { wanted.min(achieved) }
+}
+
 /// How a signal bar is drawn: never by colour alone.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct BarStyle {
@@ -374,6 +382,23 @@ mod tests {
             signal_style(SignalState::Red, NEUTRAL_SIGNALS_ABOVE),
             slow[0]
         );
+    }
+
+    #[test]
+    fn signals_go_neutral_by_the_speed_reached_not_the_one_asked() {
+        let red = |wanted, achieved, paused| {
+            signal_style(
+                SignalState::Red,
+                signal_time_scale(wanted, achieved, paused),
+            )
+        };
+        let (shown, neutral) = (red(1.0, 1.0, false), red(100.0, 100.0, false));
+        assert_ne!(shown, neutral);
+        // Asked 251×, held to 22× by the step budget: the phases are readable.
+        assert_eq!(red(251.0, 22.0, false), shown);
+        assert_eq!(red(251.0, 251.0, false), neutral);
+        // Paused, nothing strobes.
+        assert_eq!(red(1000.0, 1000.0, true), shown);
     }
 
     #[test]
