@@ -188,7 +188,7 @@ seed ⇒ identical state hash.
 | M3.11 | Select a vehicle or road to inspect it (speed, lane, trip time, route ahead, why it waits; road class, mean speed, removals, movement delays) and follow a vehicle with the camera; core diagnostics and api queries, then the viewer (ADR-0005, addendum M3.11) | done | feat/M3.11b-select-follow |
 | M3.10 | M3 user trial (docs/trials/M3.md), including what M2 left untested and M3.11; runs after M3.11 | done | docs/M3.10-trial |
 | M3.13 | M3 trial fixes (viewer, README): README for M3, road id and OSM way in the road panel, selection panel height, labels, neutral signals by achieved speed, stable controls width, shortcut list placement, finer zoom steps | done | fix/M3.13-trial-ux |
-| M3.14 | Viewer: build version and hash; continuous through lanes at turn pockets | claimed | fix/M3.14-version-lanes |
+| M3.14 | Viewer: build version and hash; continuous through lanes at turn pockets | done | fix/M3.14-version-lanes |
 
 ### M4 — Drivers & vehicles → `v0.5.0`
 
