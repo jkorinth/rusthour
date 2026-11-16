@@ -26,6 +26,24 @@ use map::MapSource;
 use traffic::Traffic;
 use world::World;
 
+/// Which build this is, e.g. "v0.4.0 · dev · 1a2b3c4", for bug reports:
+/// the Pages workflows set `RUSTHOUR_BUILD=release` for releases, and GitHub
+/// Actions sets `GITHUB_SHA`.
+fn build_label(version: &str, kind: Option<&str>, sha: Option<&str>) -> String {
+    let kind = kind.filter(|&k| k == "release").unwrap_or("dev");
+    let sha = sha.map_or("unknown", |s| s.get(..7).unwrap_or(s));
+    format!("v{version} · {kind} · {sha}")
+}
+
+/// [`build_label`] of this build.
+fn this_build() -> String {
+    build_label(
+        env!("CARGO_PKG_VERSION"),
+        option_env!("RUSTHOUR_BUILD"),
+        option_env!("GITHUB_SHA"),
+    )
+}
+
 /// What a loader hands to the app.
 pub enum Loaded {
     /// `.rhnet` bytes.
@@ -343,6 +361,8 @@ fn show_loading(ui: &mut egui::Ui, p: &Progress) {
             ui.label(format!("Loading {what}…"));
             ui.spinner();
         }
+        ui.add_space(12.0);
+        ui.weak(this_build());
     });
 }
 
@@ -605,6 +625,7 @@ fn show_shortcuts(ctx: &egui::Context, show_help: &mut bool, debug: &mut Debug, 
             if ui.checkbox(&mut shown, "Show frame times (F3)").changed() {
                 debug.toggle();
             }
+            ui.weak(format!("Rust Hour {}", this_build()));
         });
 }
 
@@ -766,6 +787,20 @@ mod tests {
             panic!("not ready");
         };
         assert_eq!(v.maps, ["bensheim-1km"]);
+    }
+
+    #[test]
+    fn build_label_names_version_kind_and_short_hash() {
+        let sha = "1a2b3c4d5e6f";
+        assert_eq!(
+            build_label("0.4.0", Some("release"), Some(sha)),
+            "v0.4.0 · release · 1a2b3c4"
+        );
+        assert_eq!(build_label("0.4.0", None, None), "v0.4.0 · dev · unknown");
+        assert_eq!(
+            build_label("0.4.0", Some(""), Some("abc")),
+            "v0.4.0 · dev · abc"
+        );
     }
 
     #[test]

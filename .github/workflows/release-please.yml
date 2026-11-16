@@ -46,6 +46,9 @@ jobs:
           tool: trunk@0.22.0
       - name: Trunk build (relative URLs, valid at any path)
         working-directory: crates/rusthour-viz
+        # Labels the build "release" in the viewer (main.rs, `build_label`).
+        env:
+          RUSTHOUR_BUILD: release
         run: trunk build --release
       # Bundled in the zip, so each release keeps the maps it can read (ADR-0003).
       - name: Add the tag's maps
