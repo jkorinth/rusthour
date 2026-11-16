@@ -187,7 +187,7 @@ seed ⇒ identical state hash.
 | M3.9 | `rusthour-viz`: lane dividers, lane-change animation, signal states at stop lines (distinct shapes, neutral above ~30×), stop/give-way marks when zoomed in, capped node discs, min/max zoom and a scale bar, arrived and removed counters, roads with removals marked | done | feat/M3.9-viewer-lanes-signals |
 | M3.11 | Select a vehicle or road to inspect it (speed, lane, trip time, route ahead, why it waits; road class, mean speed, removals, movement delays) and follow a vehicle with the camera; core diagnostics and api queries, then the viewer (ADR-0005, addendum M3.11) | done | feat/M3.11b-select-follow |
 | M3.10 | M3 user trial (docs/trials/M3.md), including what M2 left untested and M3.11; runs after M3.11 | done | docs/M3.10-trial |
-| M3.12 | M3 trial fixes (core, CLI): wrong-lane heads at the line, A5 motorway, `--dt-ms` validation; explain trial findings 11, 12, 15, 16 | claimed | fix/M3.12-wrong-lane |
+| M3.12 | M3 trial fixes (core, CLI): wrong-lane heads at the line, A5 motorway, `--dt-ms` validation; explain trial findings 11, 12, 15, 16 | done | fix/M3.12-wrong-lane |
 | M3.13 | M3 trial fixes (viewer, README): README for M3, road id and OSM way in the road panel, selection panel height, labels, neutral signals by achieved speed, stable controls width, shortcut list placement, finer zoom steps | done | fix/M3.13-trial-ux |
 | M3.14 | Viewer: build version and hash; continuous through lanes at turn pockets | done | fix/M3.14-version-lanes |
 
