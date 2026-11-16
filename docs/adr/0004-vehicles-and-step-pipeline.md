@@ -1,6 +1,6 @@
 # ADR-0004: Vehicle state layout and step pipeline (M2)
 
-- **Status:** proposed
+- **Status:** accepted
 - **Date:** 2026-10-22
 - **Roadmap:** M2.0; sets the interfaces for M2.1–M2.8
 
