@@ -1,6 +1,6 @@
 # ADR-0002: Map asset pipeline and the importer crate
 
-- **Status:** proposed
+- **Status:** accepted
 - **Date:** 2026-10-21
 - **Amends:** ADR-0001 (adds a fifth crate to the workspace)
 - **Amended:** 2026-10-21, M1.2: own importer on `osmpbf` instead of `osm2streets`

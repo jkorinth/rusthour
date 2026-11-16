@@ -1,6 +1,6 @@
 # ADR-0005: Lanes and intersections (M3)
 
-- **Status:** proposed
+- **Status:** accepted
 - **Date:** 2026-11-09
 - **Roadmap:** M3.0; sets the interfaces for M3.1–M3.10
 - **Builds on:** ADR-0004 and its addenda (M2.1b, M2.5b, M2 trial, M2.9,
@@ -200,7 +200,7 @@ Changes to the M2.5 rule:
     rules apply.
 - **Stop sign:** a stop head gets `go` only after it has stood
   (`v < 0.1 m/s`) within `2·s0` of the line. After that it behaves as
-  give-way. A per-arm `stopped` flag is hashed.
+  give-way. A per-arm `stood` flag is hashed.
   - An unstood stop head is not *competing*: no one yields to it, and the
     deadlock rule can't pick it.
   - The stop gate is applied last, after the deadlock rule, so it can't
@@ -414,7 +414,7 @@ pub enum NodeControl {           // control.rs, the only shared lines
 
 - **Hashed state:** every new column and every new piece of controller or
   router state is hashed: `held_ticks`, `lc_from`, `lc_ticks`,
-  `MobilParams`, delay averages, `stopped`, removal counts.
+  `MobilParams`, delay averages, `stood`, removal counts.
 - **Floats:** turn types, pseudo-angles and conflicts use only `cross`,
   `dot` and comparisons.
 - **Scratch buffers:** the lane-change candidate list and the per-lane
@@ -840,27 +840,6 @@ they stand.
 - **Zoom-in thresholds:** signal bars from 0.5 points per meter, lane
   dividers from 2 and signs from 3. Turn-lane arrows are not drawn.
 
-## Addendum (M3.14): through lanes across turn pockets
-
-`Placement` (ADR-0004 §3) drew each twin road's lanes from the shared line
-outward, so a left-turn pocket pushed that direction's through lanes out by
-a lane, and back on the next road. Streets with alternating pockets, such as
-Wormser Straße on bensheim-5km, zig-zagged.
-
-- **Pockets take a median:** a twin road's pockets are its leftmost lanes
-  that allow neither through nor right turns (`turn_lanes`). The pair's
-  pockets in both directions add up to a median, and each direction's
-  lanes move out by half of it, less its own pockets. The through lanes stay
-  where they are on the roads before and after.
-- **Straight on:** a road continues a twin pair at a node if each is the
-  other's straightest twin road there, within 30°. The median at the node is
-  the larger of the two. A road keeps a neighbour's larger median for 10 m,
-  then tapers to its own over 30 m; roads under 80 m taper end to end.
-- **Drawn as placed:** `Placement::center_line` gives the points where the
-  lanes move sideways, and the viewer fills the median as road.
-- **Not covered:** right-turn pockets at the kerb still widen the road
-  outward, and one-way roads stay centred on their line.
-
 ## Addendum (M3.7): lane choice as built
 
 These points differ from, or add to, §7. The milestone review decides
@@ -1052,3 +1031,24 @@ The milestone review decides whether they stand.
   Fallback re-plans in that half hour fell from 470 to 59. On the
   multi-lane bench grid arrivals rose 12% and fallback re-plans fell by
   62%.
+
+## Addendum (M3.14): through lanes across turn pockets
+
+`Placement` (ADR-0004 §3) drew each twin road's lanes from the shared line
+outward, so a left-turn pocket pushed that direction's through lanes out by
+a lane, and back on the next road. Streets with alternating pockets, such as
+Wormser Straße on bensheim-5km, zig-zagged.
+
+- **Pockets take a median:** a twin road's pockets are its leftmost lanes
+  that allow neither through nor right turns (`turn_lanes`). The pair's
+  pockets in both directions add up to a median, and each direction's
+  lanes move out by half of it, less its own pockets. The through lanes stay
+  where they are on the roads before and after.
+- **Straight on:** a road continues a twin pair at a node if each is the
+  other's straightest twin road there, within 30°. The median at the node is
+  the larger of the two. A road keeps a neighbour's larger median for 10 m,
+  then tapers to its own over 30 m; roads under 80 m taper end to end.
+- **Drawn as placed:** `Placement::center_line` gives the points where the
+  lanes move sideways, and the viewer fills the median as road.
+- **Not covered:** right-turn pockets at the kerb still widen the road
+  outward, and one-way roads stay centred on their line.
