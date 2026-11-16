@@ -147,7 +147,8 @@ impl Priority {
     }
 
     /// Whether `a` is held only because it must stand at a stop sign first.
-    /// Valid after `decide` for the same approaches; for diagnostics.
+    /// Valid after `decide` for the same approaches; `decide` applies it
+    /// last, and the engine uses it to label why a head waits.
     #[must_use]
     pub fn holds_at_stop_sign(&self, a: &Approach) -> bool {
         let arm = &self.arms[self.arm(a)];

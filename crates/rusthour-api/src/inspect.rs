@@ -157,8 +157,8 @@ pub struct MovementInfo {
     pub prior_s: f32,
 }
 
-/// A road, as seen by the inspector.
-// shortcut: no `class` yet, the road class arrives with schema 4 (M3.2); add the field then.
+/// A road, as seen by the inspector. Static attributes such as the class
+/// are read from [`Network`].
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct RoadInfo {
     /// The road.
