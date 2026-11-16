@@ -833,6 +833,27 @@ they stand.
 - **Zoom-in thresholds:** signal bars from 0.5 points per meter, lane
   dividers from 2 and signs from 3. Turn-lane arrows are not drawn.
 
+## Addendum (M3.14): through lanes across turn pockets
+
+`Placement` (ADR-0004 §3) drew each twin road's lanes from the shared line
+outward, so a left-turn pocket pushed that direction's through lanes out by
+a lane, and back on the next road. Streets with alternating pockets, such as
+Wormser Straße on bensheim-5km, zig-zagged.
+
+- **Pockets take a median:** a twin road's pockets are its leftmost lanes
+  that allow neither through nor right turns (`turn_lanes`). The pair's
+  pockets in both directions add up to a median, and each direction's
+  lanes move out by half of it, less its own pockets. The through lanes stay
+  where they are on the roads before and after.
+- **Straight on:** a road continues a twin pair at a node if each is the
+  other's straightest twin road there, within 30°. The median at the node is
+  the larger of the two. A road keeps a neighbour's larger median for 10 m,
+  then tapers to its own over 30 m; roads under 80 m taper end to end.
+- **Drawn as placed:** `Placement::center_line` gives the points where the
+  lanes move sideways, and the viewer fills the median as road.
+- **Not covered:** right-turn pockets at the kerb still widen the road
+  outward, and one-way roads stay centred on their line.
+
 ## Addendum (M3.7): lane choice as built
 
 These points differ from, or add to, §7. The milestone review decides
