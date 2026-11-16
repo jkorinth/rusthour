@@ -25,6 +25,8 @@ pub const FOLLOW_HINT_ABOVE: f64 = 30.0;
 const FOLLOW_BREAK_PT: f32 = 2.0;
 /// Below this speed a following vehicle reads as standing in a queue (m/s).
 const STANDING_MPS: f32 = 0.1;
+/// Below this acceleration (either way, m/s²) a slow free vehicle is just slow.
+const ACCEL_SHOWN_MPS2: f32 = 0.1;
 /// Panel width on wide screens, in points.
 const PANEL_WIDTH_PT: f32 = 280.0;
 /// Narrower screens get a bottom sheet: the control strip (about 560 pt) takes the top.
@@ -435,7 +437,7 @@ fn road_name(network: &Network, road: RoadId) -> String {
 // core's 0.1 cut; the 5 Hz refresh limits flicker. Add it if trials see flicker.
 pub fn wait_text(info: &VehicleInfo, network: &Network, signals: &SignalSnapshot) -> String {
     match info.wait {
-        WaitReason::FreeRoad => "driving freely".into(),
+        WaitReason::FreeRoad => free_text(info, network).into(),
         WaitReason::Following { .. } if info.speed_mps < STANDING_MPS => "stuck in a queue".into(),
         WaitReason::Following { gap_m, .. } => format!("following traffic, {gap_m:.0} m gap"),
         WaitReason::StopLine {
@@ -455,6 +457,24 @@ pub fn wait_text(info: &VehicleInfo, network: &Network, signals: &SignalSnapshot
             road_name(network, next_road)
         ),
         _ => "waiting".into(),
+    }
+}
+
+/// A vehicle with nobody close ahead: well below its wanted speed it is
+/// pulling away or slowing for the road end, not driving freely.
+fn free_text(info: &VehicleInfo, network: &Network) -> &'static str {
+    let limit = network
+        .roads
+        .get(info.road.0 as usize)
+        .map_or(f64::INFINITY, |r| r.speed_limit_mps);
+    if f64::from(info.speed_mps) >= 0.5 * limit * f64::from(info.driver.desired_speed_factor) {
+        "driving freely"
+    } else if info.accel_mps2 > ACCEL_SHOWN_MPS2 {
+        "pulling away"
+    } else if info.accel_mps2 < -ACCEL_SHOWN_MPS2 {
+        "slowing down"
+    } else {
+        "moving slowly"
     }
 }
 
@@ -554,11 +574,14 @@ fn class_text(c: RoadClass) -> &'static str {
 
 /// The road panel's lines; the class comes from the map.
 pub fn road_lines(info: &RoadInfo, network: &Network) -> Vec<String> {
-    let class = network
-        .roads
-        .get(info.road.0 as usize)
-        .map_or(RoadClass::Unknown, |r| r.class);
+    let road = network.roads.get(info.road.0 as usize);
+    let class = road.map_or(RoadClass::Unknown, |r| r.class);
+    let id = match road.and_then(|r| r.osm) {
+        Some(osm) => format!("road {} · OSM way {}", info.road.0, osm.way),
+        None => format!("road {}", info.road.0),
+    };
     let mut lines = vec![
+        id,
         format!(
             "{}{} lane{}, limit {:.0} km/h, {:.0} m",
             class_text(class),
@@ -821,6 +844,23 @@ mod tests {
     }
 
     #[test]
+    fn a_slow_vehicle_on_a_free_road_says_why_it_is_slow() {
+        let net = east(1);
+        let no_signals = SignalSnapshot::default();
+        let free = |speed_mps, accel_mps2| VehicleInfo {
+            accel_mps2,
+            ..info(WaitReason::FreeRoad, speed_mps)
+        };
+        let text = |i| wait_text(&i, &net, &no_signals);
+        // Pulling away from the line at green, 1 km/h.
+        assert_eq!(text(free(0.3, 1.2)), "pulling away");
+        // Braking for the road end with nobody ahead.
+        assert_eq!(text(free(3.0, -1.5)), "slowing down");
+        // Near the wanted speed (13.9 m/s here) it drives freely, whatever the accel.
+        assert_eq!(text(free(12.0, 0.3)), "driving freely");
+    }
+
+    #[test]
     fn movements_read_as_delay_against_the_prior() {
         let net = east(1);
         let road = RoadInfo {
@@ -839,9 +879,17 @@ mod tests {
                 prior_s: 4.0,
             }],
         };
-        assert!(road_lines(&road, &net)[0].starts_with("residential street, 1 lane,"));
+        let mut net = net;
+        assert_eq!(road_lines(&road, &net)[0], "road 0");
+        net.roads[0].osm = Some(rusthour_api::OsmWayPart {
+            way: 641_647_725,
+            from_node: 1,
+            to_node: 2,
+        });
+        assert_eq!(road_lines(&road, &net)[0], "road 0 · OSM way 641647725");
+        assert!(road_lines(&road, &net)[1].starts_with("residential street, 1 lane,"));
         assert_eq!(
-            road_lines(&road, &net)[3],
+            road_lines(&road, &net)[4],
             "→ Hauptstraße (left): 12 s, expected 4 s"
         );
     }
