@@ -33,7 +33,7 @@ const PANEL_WIDTH_PT: f32 = 280.0;
 const NARROW_PT: f32 = 880.0;
 
 /// What the user selected.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Selection {
     Vehicle(VehicleId),
     Road(RoadId),
@@ -342,8 +342,13 @@ impl Inspector {
                 } else {
                     0.6 * screen.height()
                 };
+                // Its own scroll state per selection, so each opens at the top.
+                // The area lays out in last frame's size: without the minimum
+                // the panel never grows past the first content it showed.
                 egui::ScrollArea::vertical()
+                    .id_salt(selected)
                     .max_height(max_height)
+                    .min_scrolled_height(max_height)
                     .show(ui, |ui| {
                         for line in &lines {
                             ui.label(line);
