@@ -25,8 +25,10 @@ enum Command {
         /// Number of fixed timesteps to simulate.
         #[arg(long, default_value_t = 1000)]
         steps: u64,
-        /// Timestep length in milliseconds.
-        #[arg(long, default_value_t = Config::default().dt_ms)]
+        /// Timestep length in milliseconds, 1 to 1000; the driver model is
+        /// tuned for 100.
+        #[arg(long, default_value_t = Config::default().dt_ms,
+              value_parser = clap::value_parser!(u32).range(1..=1000))]
         dt_ms: u32,
         /// Vehicles to keep on the network (needs --map).
         #[arg(long, default_value_t = 0, requires = "map")]

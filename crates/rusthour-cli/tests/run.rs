@@ -127,3 +127,20 @@ fn report_stuck_lists_the_roads_with_removals() {
     assert_eq!(first["roundabout"], true);
     std::fs::remove_dir_all(dir).ok();
 }
+
+/// M3 trial finding 2: `--dt-ms 0` panicked, and 100 s steps ran silently.
+#[test]
+fn regression_m3_12_dt_ms_outside_1_to_1000_is_a_clear_error() {
+    for dt in ["0", "1001", "100000"] {
+        let out = Command::new(env!("CARGO_BIN_EXE_rusthour"))
+            .args(["run", "--steps", "1", "--dt-ms", dt])
+            .output()
+            .unwrap();
+        assert_eq!(out.status.code(), Some(2), "--dt-ms {dt}");
+        let err = String::from_utf8_lossy(&out.stderr);
+        assert!(err.contains("--dt-ms") && err.contains("1..=1000"), "{err}");
+    }
+    for dt in ["1", "1000"] {
+        assert_eq!(run(&["--steps", "2", "--dt-ms", dt])["tick"], 2);
+    }
+}
