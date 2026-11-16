@@ -44,9 +44,9 @@ const DIVIDERS_FROM_SCALE: f32 = 2.0;
 const KEY_PAN_SPEED: f32 = 600.0;
 /// Zoom per `+`/`-` press.
 const KEY_ZOOM_STEP: f32 = 1.5;
-/// Zoom per screen point of scrolling: about ×1.4 per native wheel notch
-/// (40 points), as in web maps.
-const SCROLL_ZOOM_PER_POINT: f32 = 0.0084;
+/// Zoom per screen point of scrolling: ×1.2 per native wheel notch (40
+/// points), fine enough not to overshoot; trackpads scroll in smaller steps.
+const SCROLL_ZOOM_PER_POINT: f32 = 0.004_558; // ln(1.2) / 40
 /// Room left around the map by "fit": keeps it clear of the overlays at the
 /// top and bottom corners.
 const FIT_PADDING: Vec2 = Vec2::new(8.0, 40.0);
@@ -285,12 +285,11 @@ impl World {
             viewport,
         };
         marks.signs(painter, &self.signs);
-        // Paused, nothing strobes: show the states at any speed.
-        let time_scale = if traffic.pacer.is_paused() {
-            0.0
-        } else {
-            traffic.pacer.scale()
-        };
+        let time_scale = marks::signal_time_scale(
+            traffic.pacer.scale(),
+            traffic.pacer.achieved_scale(),
+            traffic.pacer.is_paused(),
+        );
         marks.signals(painter, &traffic.signals, time_scale, hover)
     }
 
@@ -758,6 +757,32 @@ mod tests {
             frame(&ctx, &mut world, vec![key(Key::Minus)]);
         }
         assert!((world.camera.expect("set").scale - fit).abs() < 1e-4);
+    }
+
+    #[test]
+    fn one_wheel_notch_zooms_by_about_a_fifth() {
+        let ctx = egui::Context::default();
+        let mut world = World::new(&crate::demo::map().network);
+        frame(&ctx, &mut world, vec![]);
+        let fit = world.camera.expect("set on the first frame").scale;
+        let notch = Event::MouseWheel {
+            unit: egui::MouseWheelUnit::Line,
+            delta: egui::vec2(0.0, 1.0),
+            phase: egui::TouchPhase::Move,
+            modifiers: Modifiers::NONE,
+            source: egui::MouseWheelSource::Wheel,
+        };
+        frame(
+            &ctx,
+            &mut world,
+            vec![Event::PointerMoved(Pos2::new(400.0, 300.0)), notch],
+        );
+        // egui spreads a notch over a few frames.
+        for _ in 0..30 {
+            frame(&ctx, &mut world, vec![]);
+        }
+        let step = world.camera.expect("set").scale / fit;
+        assert!((1.15..=1.25).contains(&step), "{step}");
     }
 
     #[test]
