@@ -200,6 +200,7 @@ seed ⇒ identical state hash.
 | M4.2 | Vehicle classes: car, van, truck, bus | todo | |
 | M4.3 | Fleet/driver mix configurable per scenario | todo | |
 | M4.4 | `rusthour-viz`: live parameter panel, color by driver/vehicle type, inspect a vehicle | todo | |
+| M4.7 | Calibrate turn costs (`routing::turn_s`) and right-of-way patience (`PATIENCE_MS`) against measured junction delays (M3 architect review) | todo | |
 
 ### M5 — Demand & scenarios → `v0.6.0`
 

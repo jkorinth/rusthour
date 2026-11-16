@@ -37,7 +37,7 @@ const YIELD_PRIOR_S: f64 = 4.0;
 const STOP_PRIOR_S: f64 = 6.0;
 
 /// Static cost of a turn (s).
-// shortcut: guessed values from ADR-0005, tune in the M3 trial.
+// shortcut: guessed values from ADR-0005, and the M3 trial passed on them; calibrate with M4.7.
 fn turn_s(turn: Turn) -> f64 {
     match turn {
         Turn::Straight => 0.0,
