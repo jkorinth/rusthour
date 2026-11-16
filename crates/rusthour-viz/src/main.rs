@@ -383,6 +383,9 @@ fn sim_keys(ctx: &egui::Context, t: &mut Traffic) {
     }
 }
 
+/// Room for the longest speed readout, "1000× (running at 999×)", in points.
+const SPEED_READOUT_PT: f32 = 170.0;
+
 /// Play/pause, step, speed, reset, population and the readouts.
 fn show_sim_controls(ui: &mut egui::Ui, v: &mut Viewer) {
     let t = &mut v.traffic;
@@ -414,11 +417,15 @@ fn show_sim_controls(ui: &mut egui::Ui, v: &mut Viewer) {
         if speed.changed() {
             t.pacer.set_scale(traffic::scale_at(exp));
         }
-        ui.label(traffic::speed_label(
-            t.pacer.scale(),
-            t.pacer.achieved_scale(),
-            paused,
-        ));
+        // A fixed width, so the buttons after it don't move as the readout changes.
+        ui.scope(|ui| {
+            ui.set_min_width(SPEED_READOUT_PT);
+            ui.label(traffic::speed_label(
+                t.pacer.scale(),
+                t.pacer.achieved_scale(),
+                paused,
+            ));
+        });
         if ui
             .button("Reset")
             .on_hover_text("Start over with the same seed: the same traffic again")
@@ -495,7 +502,7 @@ fn show_ready(
         .frame(egui::Frame::central_panel(ui.style()).inner_margin(0.0))
         .show(ui, |ui| show_world(ui, v));
 
-    egui::Area::new(egui::Id::unique("view_controls"))
+    let controls = egui::Area::new(egui::Id::unique("view_controls"))
         .anchor(Align2::LEFT_TOP, [8.0, 8.0])
         .show(&ctx, |ui| {
             egui::Frame::popup(ui.style()).show(ui, |ui| {
@@ -531,7 +538,9 @@ fn show_ready(
                 });
                 show_sim_controls(ui, v);
             });
-        });
+        })
+        .response
+        .rect;
 
     if let Some(note) = &v.note {
         let mut close = false;
@@ -571,11 +580,19 @@ fn show_ready(
     v.inspect
         .show_panel(&ctx, v.traffic.network(), &v.traffic.signals);
 
+    show_shortcuts(&ctx, show_help, debug, controls.bottom());
+    chosen
+}
+
+/// The `?` list of shortcuts, `below` the controls (screen y), clear of the
+/// selection panel at the top right.
+fn show_shortcuts(ctx: &egui::Context, show_help: &mut bool, debug: &mut Debug, below: f32) {
     egui::Window::new("Keyboard shortcuts")
+        .anchor(Align2::LEFT_TOP, [8.0, below + 8.0])
         .open(show_help)
         .collapsible(false)
         .resizable(false)
-        .show(&ctx, |ui| {
+        .show(ctx, |ui| {
             egui::Grid::new("shortcuts").striped(true).show(ui, |ui| {
                 for (keys, action) in world::SHORTCUTS {
                     ui.label(*keys);
@@ -589,7 +606,6 @@ fn show_ready(
                 debug.toggle();
             }
         });
-    chosen
 }
 
 #[cfg(not(target_arch = "wasm32"))]
