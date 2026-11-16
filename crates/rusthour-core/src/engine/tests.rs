@@ -378,12 +378,17 @@ fn lane_node(lanes: [u8; 3]) -> Network {
 
 /// Puts a car on `lane` of road 0, `pos_m` from its start, at rest.
 fn park(e: &mut Engine, lane: u8, pos_m: f64, route: &[u32]) -> usize {
+    put_on(e, lane, pos_m, route, car())
+}
+
+/// Like [`park`], with the given driver.
+fn put_on(e: &mut Engine, lane: u8, pos_m: f64, route: &[u32], params: IdmParams) -> usize {
     let id = e.vehicles.spawn(crate::vehicle::NewVehicle {
         road: 0,
         lane,
         pos_m,
         speed_mps: 0.0,
-        params: car(),
+        params,
         route,
         depart_tick: 0,
     });
@@ -575,4 +580,45 @@ fn at_most_four_fallback_replans_run_per_step() {
         (4, 6),
         "the rest retry next step"
     );
+}
+
+/// M3 trial finding 1: a left turner beside a slow, dense queue in the left
+/// lane got no gap, waited at the line in the wrong lane and re-planned.
+/// The car behind it in the queue now lets it in.
+#[test]
+fn a_turner_merges_into_a_slow_queue() {
+    let mut e = Engine::with_network(Config::default(), 1, fork(1));
+    let mut crawler = car();
+    crawler.desired_speed_factor = 0.1;
+    // A queue in lane 1 crawling at 1.4 m/s behind its slow head.
+    for i in 0..30 {
+        let params = if i == 0 { crawler } else { car() };
+        let q = put_on(&mut e, 1, 290.0 - 8.0 * f64::from(i), &[0, 2, 3, 4], params);
+        e.vehicles.mobil[q].threshold_mps2 = f64::INFINITY; // stays in lane 1
+    }
+    e.step(100);
+    let s = park(&mut e, 0, 150.0, &[0, 1, 4]);
+    while e.vehicles.road(s) == 0 {
+        e.step(1);
+        assert!(e.tick() < 3000, "never left road 0");
+    }
+    assert_eq!(e.vehicles.road(s), 1, "left, from the left lane");
+    assert_eq!(e.fallback_replans(), 0);
+}
+
+/// A periodic re-plan near the line keeps to the movements of the
+/// vehicle's lane; further back it may take any (finding 1: re-plans in a
+/// turn lane sent cars to the line in the wrong lane).
+#[test]
+fn a_replan_near_the_line_keeps_to_the_lanes_movements() {
+    for (pos_m, route) in [(250.0, vec![0, 2, 3, 4]), (50.0, vec![0, 1, 4])] {
+        let mut e = Engine::with_network(Config::default(), 1, fork(1));
+        // Straight on from lane 0; left (lane 1 only) is shorter.
+        let s = park(&mut e, 0, pos_m, &[0, 2, 3, 4]);
+        e.vehicles.mobil[s].threshold_mps2 = f64::INFINITY;
+        let period = REROUTE_PERIOD_MS / u64::from(e.config.dt_ms);
+        e.tick = period - s as u64 % period;
+        assert_eq!(e.update_routes(), 1);
+        assert_eq!(e.vehicles.route[s], route, "at {pos_m} m");
+    }
 }

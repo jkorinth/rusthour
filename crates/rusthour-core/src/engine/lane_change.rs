@@ -2,6 +2,8 @@
 //! M3.6), with a route incentive towards the lanes of the next movement
 //! (§7, M3.7).
 
+use std::collections::VecDeque;
+
 use super::{Engine, MAX_DECEL_MPS2, OUT_OF_TOWN_MPS, leader_ahead, no_right_pass};
 use crate::behavior::mobil::{self, Accels};
 use crate::network::Network;
@@ -108,6 +110,64 @@ impl Engine {
     }
 }
 
+/// Where the lane choice zone before the line starts for `slot` (m to the end).
+pub(super) fn route_zone_m(vs: &Vehicles, slot: usize) -> f64 {
+    ROUTE_ZONE_M.max(3.0 * vs.speed_mps[slot] * vs.params[slot].time_headway_s)
+}
+
+/// The lane `slot` must change to: one step towards the lanes of its next
+/// movement, if it is in the zone and its own lane doesn't serve it.
+fn merge_to(net: &Network, lanes: &Lanes, vs: &Vehicles, slot: usize) -> Option<u8> {
+    let (r, lane) = (vs.road(slot), vs.lane_of(slot));
+    let road = &net.roads[r as usize];
+    if road.length_m - vs.pos_m[slot] >= route_zone_m(vs, slot) {
+        return None;
+    }
+    let &to = vs.route[slot].get(vs.route_pos[slot] as usize + 1)?;
+    let serves = lanes.from_mask(net, r, to);
+    if serves >> lane & 1 == 1 {
+        return None;
+    }
+    // The nearest lane that serves it, the right one on a tie.
+    let k = (0..road.lanes)
+        .filter(|&k| serves >> k & 1 == 1)
+        .min_by_key(|&k| k.abs_diff(lane))?;
+    Some(if k > lane { lane + 1 } else { lane - 1 })
+}
+
+/// Cap on the acceleration of `slot` so that the nearest vehicle in the
+/// lane `side` beside it with its rear ahead of `slot` can merge in front of
+/// it, if it must ([`merge_to`]); like a leader. `state` carries, down the
+/// lane of `slot`, how many of `side`'s vehicles have their rear ahead and
+/// that nearest one if it must merge.
+pub(super) fn merge_cap(
+    net: &Network,
+    lanes: &Lanes,
+    vs: &Vehicles,
+    side: &VecDeque<u32>,
+    state: &mut (usize, Option<usize>),
+    slot: usize,
+    v0: f64,
+) -> f64 {
+    let (x, (ahead, merger)) = (vs.pos_m[slot], state);
+    let rear = |o: usize| vs.pos_m[o] - vs.params[o].length_m;
+    let before = *ahead;
+    while side.get(*ahead).is_some_and(|&o| rear(o as usize) > x) {
+        *ahead += 1;
+    }
+    if *ahead != before {
+        let m = side[*ahead - 1] as usize;
+        *merger = (merge_to(net, lanes, vs, m) == Some(vs.lane_of(slot))).then_some(m);
+    }
+    merger.map_or(f64::INFINITY, |m| {
+        let leader = Leader {
+            gap_m: rear(m) - x,
+            speed_mps: vs.speed_mps[m],
+        };
+        idm::acceleration(&vs.params[slot], v0, vs.speed_mps[slot], Some(leader))
+    })
+}
+
 /// IDM acceleration of `slot` behind `leader`, as phase 4 clamps it.
 fn accel(net: &Network, vs: &Vehicles, slot: usize, leader: Option<Leader>) -> f64 {
     let p = &vs.params[slot];
@@ -189,7 +249,7 @@ fn best_change(net: &Network, lanes: &Lanes, vs: &Vehicles, q: usize, i: usize) 
             .unwrap_or(0)
     };
     let p = &vs.params[c];
-    let zone = ROUTE_ZONE_M.max(3.0 * vs.speed_mps[c] * p.time_headway_s);
+    let zone = route_zone_m(vs, c);
     let dist_m = net.roads[r as usize].length_m - vs.pos_m[c];
     let penalty = 2.0 * p.comfort_decel_mps2 * (1.0 - dist_m / zone).max(0.0);
     let a_c = accel(net, vs, c, leader_of(net, lanes, vs, c, from, old_leader));

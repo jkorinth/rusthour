@@ -965,3 +965,47 @@ whether they stand.
     against costs that include turn costs and delays, so each search
     expands nearly the whole grid. A tighter admissible bound is the main
     lever left for the 1 ms budget.
+
+## Addendum (M3.12): trial fixes, wrong lane at the line
+
+These points differ from, or add to, §6 and §7 and the M3.7 addendum. The
+milestone review decides whether they stand.
+
+- **Why cars waited in the wrong lane** (M3 trial, finding 1), on
+  bensheim-5km at 5,000 vehicles, seed 42, first 30 simulated minutes:
+  - *No gap in a dense lane:* MOBIL needs `s0` to both the new leader and
+    the new follower, so a slot of about 8.5 m. A standing or crawling
+    queue leaves 2–4 m, so a car that has to merge into it never finds one
+    and reaches the line in the wrong lane. The fallback re-plan then needs
+    10 s of standing outside red per car, every cycle.
+  - *Re-plans in a turn lane:* 39% of the cars that reached the line in the
+    wrong lane had got there by the periodic re-plan (every 180 s, M2.9),
+    which picked a movement that their lane, chosen for the old route,
+    doesn't serve.
+  - The fallback itself fires as designed: re-planned cars that come back
+    to the same line in the wrong lane were 12 in that half hour.
+- **Cooperative merging:** in phase 4 a vehicle treats as a leader the
+  nearest vehicle beside it, with its rear ahead of the vehicle's front,
+  that must change into its lane: in the zone before the line, its lane
+  doesn't serve its next movement, and this lane is one step towards one
+  that does. The follower so leaves a gap that MOBIL's safety check
+  accepts. Only a vehicle fully behind the merging car yields, so two cars
+  side by side never wait for each other. It needs no new state: whether a
+  car must merge is computed from its route and position.
+- **Re-plans near the line:** a periodic re-plan within the zone of a
+  multi-lane road starts with a movement the vehicle's lane serves
+  (`Router::route_from_any`, as the fallback). Further back, and on
+  one-lane roads, it may take any movement as before.
+- **Measured** on bensheim-5km, two simulated hours (`main` before):
+
+  | Vehicles, seed | Arrivals before → after | Removed per arrival before → after |
+  | --- | --- | --- |
+  | 4,000, 42 | 12,308 → 12,757 | 1.15% → 0.53% |
+  | 4,000, 1 | 12,433 → 12,768 | 0.66% → 0.61% |
+  | 5,000, 42 | 11,931 → 12,563 | 1.38% → 1.76% |
+  | 5,000, 1–3 (mean) | 11,968 → 12,241 | 1.72% → 1.45% |
+
+  In the first 30 minutes at 5,000 the time heads spent in the wrong lane
+  at the line fell from 3.0 h to 1.3 h and fallback re-plans from 470 to
+  104. On the multi-lane bench grid arrivals rose 12% and fallback
+  re-plans fell by 62%.

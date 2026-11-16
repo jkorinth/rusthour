@@ -40,7 +40,9 @@ use rusthour_core::{Config, Engine, Stream, run_and_hash};
 /// Changed in M3.7: MOBIL adds a route incentive, heads stop in a lane that
 /// doesn't serve their movement, and the hash includes each slot's
 /// wrong-lane counter and the fallback re-plan count.
-const GOLDEN_HASH: u64 = 916_536_465_177_624_888;
+/// Changed in M3.12: a car lets in a car beside it that must merge into its
+/// lane, and a re-plan near the line keeps to the movements of the lane.
+const GOLDEN_HASH: u64 = 12_736_426_139_658_519_217;
 
 /// A four-road ring with a short road and a merging side road that routing
 /// excludes. Random demand keeps 10 vehicles on the ring, and hand-placed

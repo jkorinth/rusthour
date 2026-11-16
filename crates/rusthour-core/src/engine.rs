@@ -394,16 +394,28 @@ impl Engine {
             }
             let s = usize::try_from(s).expect("slot fits usize");
             let k = vs.route_pos[s] as usize;
-            let route = &mut vs.route[s];
-            if k + 1 >= route.len() {
+            if k + 1 >= vs.route[s].len() {
                 continue; // free slot (empty route) or on its destination
             }
-            let trip = Trip {
-                origin: route[k],
-                destination: route[route.len() - 1],
-            };
+            let (net, lanes) = (&self.network, &self.lanes);
+            let (r, lane) = (vs.road(s), vs.lane_of(s));
+            let dest = vs.route[s][vs.route[s].len() - 1];
             n += 1;
-            if self.router.route(&self.network, trip, &mut self.route) {
+            // Near the line, only the movements its lane serves (ADR-0005, M3.12).
+            let road = &net.roads[r as usize];
+            let found = if road.lanes > 1 && road.length_m - vs.pos_m[s] < route_zone_m(vs, s) {
+                let serves = |to: u32| lanes.from_mask(net, r, to) >> lane & 1 == 1;
+                self.router
+                    .route_from_any(net, r, serves, dest, &mut self.route)
+            } else {
+                let trip = Trip {
+                    origin: r,
+                    destination: dest,
+                };
+                self.router.route(net, trip, &mut self.route)
+            };
+            let route = &mut vs.route[s];
+            if found {
                 // Drop the roads already driven, so a detour needs less room.
                 route.clear();
                 route.extend_from_slice(&self.route);
@@ -543,6 +555,15 @@ impl Engine {
                 (has_left && road.speed_limit_mps > OUT_OF_TOWN_MPS).then(|| vs.lane(q + 1))
             });
             let mut passed = 0;
+            // The lanes to either side on a multi-lane road.
+            let sides = lane.front().map_or([None, None], |&h| {
+                let (n, l) = (
+                    net.roads[vs.road(h as usize) as usize].lanes,
+                    vs.lane_of(h as usize),
+                );
+                [(l > 0).then(|| q - 1), (l + 1 < n).then(|| q + 1)]
+            });
+            let mut side_ahead = [(0, None); 2];
             for &s in lane {
                 let s = s as usize;
                 let (p, v) = (&vs.params[s], vs.speed_mps[s]);
@@ -576,6 +597,12 @@ impl Engine {
                 let mut a = idm::acceleration(p, v0, v, leader);
                 if let Some(left) = left {
                     a = a.min(right_pass_cap(vs, left, &mut passed, s, v0));
+                }
+                // Let in a car ahead beside that must merge into this lane (M3.12).
+                for (side, state) in sides.iter().zip(&mut side_ahead) {
+                    if let &Some(side) = side {
+                        a = a.min(merge_cap(net, lanes, vs, vs.lane(side), state, s, v0));
+                    }
                 }
                 accel[s] = a.max(-MAX_DECEL_MPS2);
                 ahead = Some(s);
@@ -956,6 +983,7 @@ fn entering(route: &[u32], params: IdmParams, v: f64, tick: u64) -> NewVehicle<'
 
 mod inspect;
 mod lane_change;
+use lane_change::{merge_cap, route_zone_m};
 
 #[cfg(test)]
 mod tests;
