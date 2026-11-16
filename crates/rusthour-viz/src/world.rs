@@ -113,7 +113,7 @@ impl World {
         };
         let labels = labels::candidates(network);
         let lines: Vec<_> = (0..network.roads.len())
-            .map(|i| drawn_line(network, &placement, i))
+            .map(|i| drawn_line(&placement, i))
             .collect();
         Self {
             dividers: marks::build_dividers(network, &lines),
@@ -276,8 +276,7 @@ impl World {
             dividers.transform(camera.mesh_transform(viewport));
             painter.add(Shape::mesh(dividers));
         }
-        let hot = (traffic.network(), traffic.stuck_roads.as_slice());
-        draw_hot_roads(painter, camera, viewport, &self.placement, hot);
+        draw_hot_roads(painter, camera, viewport, &self.lines, &traffic.stuck_roads);
         let marks = marks::Marks {
             placement: &self.placement,
             network: traffic.network(),
@@ -429,17 +428,17 @@ fn draw_hot_roads(
     painter: &egui::Painter,
     camera: Camera,
     viewport: Rect,
-    placement: &Placement,
-    (network, hot): (&Network, &[(RoadId, u32)]),
+    lines: &[Vec<Point>],
+    hot: &[(RoadId, u32)],
 ) {
     let to_screen = camera.mesh_transform(viewport);
     let max = hot.iter().map(|&(_, n)| n).max().unwrap_or(0);
     let [r, g, b, _] = HOT_ROAD_COLOR.to_array();
     for &(road, n) in hot {
         // The line the road is drawn on, so a twin's jam shows on its own direction.
-        let line = drawn_line(network, placement, road.0 as usize)
-            .into_iter()
-            .map(|p| to_screen * to_mesh(p))
+        let line = lines[road.0 as usize]
+            .iter()
+            .map(|&p| to_screen * to_mesh(p))
             .collect();
         let color = Color32::from_rgba_unmultiplied(r, g, b, traffic::hot_road_alpha(n, max));
         painter.add(Shape::line(
@@ -449,18 +448,17 @@ fn draw_hot_roads(
     }
 }
 
-/// Road `i`'s drawn center line (world): right of its geometry if it has a twin.
-fn drawn_line(network: &Network, placement: &Placement, i: usize) -> Vec<Point> {
-    let road = &network.roads[i];
+/// Road `i`'s points and how far right of each the middle of its lanes lies,
+/// as `placement` puts them: right of a twin's shared line, around pockets.
+fn center_line(placement: &Placement, i: usize) -> (Vec<Point>, Vec<f64>) {
     let id = RoadId(u32::try_from(i).expect("road ids are u32"));
-    if placement.has_twin(id) {
-        shifted(
-            &road.geometry,
-            f64::from(road.lanes) * f64::from(LANE_WIDTH_M) / 2.0,
-        )
-    } else {
-        road.geometry.clone()
-    }
+    placement.center_line(id, LANE_WIDTH_M).into_iter().unzip()
+}
+
+/// Road `i`'s drawn center line (world), the middle of its lanes.
+fn drawn_line(placement: &Placement, i: usize) -> Vec<Point> {
+    let (points, right) = center_line(placement, i);
+    shifted_by(&points, &right)
 }
 
 /// A one-point outline around label text, drawn under it.
@@ -504,9 +502,14 @@ pub fn vehicle_quad(front: Pos2, dir: Vec2, length: f32, width: f32) -> [Pos2; 4
     [front + side, front - side, rear - side, rear + side]
 }
 
-/// `points` moved `d` meters to the right of their direction, keeping that
+/// `points` moved `dist` meters to the right of their direction, keeping that
 /// distance from each segment at corners (`y` north).
 pub fn shifted(points: &[Point], dist: f64) -> Vec<Point> {
+    shifted_by(points, &vec![dist; points.len()])
+}
+
+/// As [`shifted`], each point by its own distance in `dists`.
+pub fn shifted_by(points: &[Point], dists: &[f64]) -> Vec<Point> {
     let right = |p0: Point, p1: Point| {
         let len = (p1.x - p0.x).hypot(p1.y - p0.y);
         ((p1.y - p0.y) / len, -(p1.x - p0.x) / len)
@@ -515,7 +518,8 @@ pub fn shifted(points: &[Point], dist: f64) -> Vec<Point> {
     points
         .iter()
         .enumerate()
-        .map(|(i, p)| {
+        .zip(dists)
+        .map(|((i, p), &dist)| {
             let before = segments[i.saturating_sub(1)];
             let after = segments[i.min(segments.len() - 1)];
             let (mx, my) = (before.0 + after.0, before.1 + after.1);
@@ -544,10 +548,9 @@ pub fn to_mesh(p: Point) -> Pos2 {
     pos2(p.x as f32, -p.y as f32)
 }
 
-/// Tessellates roads as thick polylines with round ends, one lane width per
-/// lane, in world meters.
-/// Roads with a twin are drawn right of their shared line, as `placement`
-/// puts their lanes (ADR-0004 §3).
+/// Tessellates roads as bands with round ends, one lane width per lane, in
+/// world meters. Roads with a twin are drawn right of their shared line, as
+/// `placement` puts their lanes (ADR-0004 §3), with any median between.
 pub fn build_mesh(network: &Network, placement: &Placement) -> Mesh {
     let options = epaint::TessellationOptions {
         // Feathering and pixel rounding work in screen pixels, but this mesh
@@ -565,7 +568,17 @@ pub fn build_mesh(network: &Network, placement: &Placement) -> Mesh {
 
     for (i, road) in network.roads.iter().enumerate() {
         let width = f32::from(road.lanes) * LANE_WIDTH_M;
-        let line: Vec<_> = drawn_line(network, placement, i)
+        let (points, right) = center_line(placement, i);
+        let half = f64::from(width) / 2.0;
+        // The lanes, and a twin's median up to the shared line, if any.
+        let inner: Vec<_> = right.iter().map(|r| (r - half).min(0.0)).collect();
+        let outer: Vec<_> = right.iter().map(|r| r + half).collect();
+        strip(
+            &shifted_by(&points, &inner),
+            &shifted_by(&points, &outer),
+            &mut mesh,
+        );
+        let line: Vec<_> = shifted_by(&points, &right)
             .into_iter()
             .map(to_mesh)
             .collect();
@@ -578,9 +591,24 @@ pub fn build_mesh(network: &Network, placement: &Placement) -> Mesh {
                 &mut mesh,
             );
         }
-        tessellator.tessellate_shape(Shape::line(line, (width, ROAD_COLOR)), &mut mesh);
     }
     mesh
+}
+
+/// Fills the band between the polylines `left` and `right` (world, same
+/// length) in road color.
+fn strip(left: &[Point], right: &[Point], mesh: &mut Mesh) {
+    #[expect(clippy::cast_possible_truncation, reason = "far below u32::MAX")]
+    let base = mesh.vertices.len() as u32;
+    for (&l, &r) in left.iter().zip(right) {
+        mesh.colored_vertex(to_mesh(l), ROAD_COLOR);
+        mesh.colored_vertex(to_mesh(r), ROAD_COLOR);
+    }
+    for k in (0u32..).step_by(2).take(left.len() - 1) {
+        let b = base + k;
+        mesh.add_triangle(b, b + 1, b + 2);
+        mesh.add_triangle(b + 1, b + 3, b + 2);
+    }
 }
 
 #[cfg(test)]
