@@ -968,44 +968,80 @@ whether they stand.
 
 ## Addendum (M3.12): trial fixes, wrong lane at the line
 
-These points differ from, or add to, §6 and §7 and the M3.7 addendum. The
-milestone review decides whether they stand.
+These points differ from, or add to, §5, §6 and §7 and the M3.7 addendum.
+The milestone review decides whether they stand.
 
-- **Why cars waited in the wrong lane** (M3 trial, finding 1), on
+- **Why cars waited in the wrong lane** (M3 trial, finding 1), measured on
   bensheim-5km at 5,000 vehicles, seed 42, first 30 simulated minutes:
+  - *Widenings:* all three approaches of the Schwanheimer Straße /
+    Rodensteinstraße / Am Rinnentor junction (roads 2262, 2261 and 143) are
+    three-lane turn pockets fed by a two-lane road. A straight entry keeps
+    the lane index (§5), so every car arrived in lanes 0 and 1, and left
+    turners had to merge into the new left lane through the standing queue.
   - *No gap in a dense lane:* MOBIL needs `s0` to both the new leader and
     the new follower, so a slot of about 8.5 m. A standing or crawling
-    queue leaves 2–4 m, so a car that has to merge into it never finds one
-    and reaches the line in the wrong lane. The fallback re-plan then needs
-    10 s of standing outside red per car, every cycle.
+    queue leaves 2–4 m, so a car that has to merge into it never finds one.
+    The fallback re-plan then costs 10 s of standing outside red per car,
+    every cycle.
   - *Re-plans in a turn lane:* 39% of the cars that reached the line in the
     wrong lane had got there by the periodic re-plan (every 180 s, M2.9),
-    which picked a movement that their lane, chosen for the old route,
-    doesn't serve.
-  - The fallback itself fires as designed: re-planned cars that come back
-    to the same line in the wrong lane were 12 in that half hour.
+    which picked a movement their lane, chosen for the old route, doesn't
+    serve.
+  - The fallback itself fires as designed: re-planned cars that came back to
+    the same line in the wrong lane numbered 12 in that half hour.
+- **Entry lanes at a widening:** where the next road has more lanes than
+  the current one, the entry lane is the nearest that serves the vehicle's
+  following movement, as on a road shorter than 60 m (§5). Drivers pick
+  their lane where turn lanes open. Two lanes entering the same lane of the
+  wider road conflict at the node, like a lane drop.
 - **Cooperative merging:** in phase 4 a vehicle treats as a leader the
-  nearest vehicle beside it, with its rear ahead of the vehicle's front,
-  that must change into its lane: in the zone before the line, its lane
-  doesn't serve its next movement, and this lane is one step towards one
-  that does. The follower so leaves a gap that MOBIL's safety check
-  accepts. Only a vehicle fully behind the merging car yields, so two cars
-  side by side never wait for each other. It needs no new state: whether a
-  car must merge is computed from its route and position.
+  nearest vehicle beside it whose rear is ahead of its front and that must
+  change into its lane: in the zone before the line, its own lane doesn't
+  serve its next movement, and this lane is one step towards one that does.
+  The follower so leaves a gap that MOBIL's safety check accepts. Only a
+  vehicle fully behind the merging car yields, so two cars side by side
+  never wait for each other. It adds no state: whether a car must merge
+  follows from its route and position.
+  - *Cost:* about 6% of the step on bensheim-5km at 4,000 vehicles (CPU
+    time of the first 30 minutes), for about 2% more arrivals at 5,000.
+    Flagging only the follower of a blocked merger during MOBIL would be
+    cheaper, at the price of a hashed column.
 - **Re-plans near the line:** a periodic re-plan within the zone of a
   multi-lane road starts with a movement the vehicle's lane serves
   (`Router::route_from_any`, as the fallback). Further back, and on
   one-lane roads, it may take any movement as before.
+- **The split junction itself was not the cause.** Nodes 117 and 860 are
+  joined by the 13 m one-lane links 1452 and 1453, which give way at the far
+  node (M3.4). Over two hours their heads waited for room on the exit roads
+  (Am Rinnentor, Schwanheimer Straße west), never to give way, and they held
+  0.2–0.5 vehicles on average; on road 143 the left-only lane falls back to
+  the default rule and so serves the link, as both lanes do in reality. So
+  lanes inherited by a link, arrows looking through it and a shared signal
+  phase are not needed for this junction.
+- **Left open:** Rodensteinstraße road 2028 (`slight_left|through`, 125 m),
+  where cars entering by a right turn must cross to the left lane, whose
+  queue backs up from a signal 28 m on. It is a weaving section; its time
+  in the wrong lane fell from 2,055 s to 870 s per half hour.
 - **Measured** on bensheim-5km, two simulated hours (`main` before):
 
   | Vehicles, seed | Arrivals before → after | Removed per arrival before → after |
   | --- | --- | --- |
-  | 4,000, 42 | 12,308 → 12,757 | 1.15% → 0.53% |
-  | 4,000, 1 | 12,433 → 12,768 | 0.66% → 0.61% |
-  | 5,000, 42 | 11,931 → 12,563 | 1.38% → 1.76% |
-  | 5,000, 1–3 (mean) | 11,968 → 12,241 | 1.72% → 1.45% |
+  | 4,000, 42 | 12,308 → 13,043 | 1.15% → 0.55% |
+  | 4,000, 1 | 12,433 → 12,481 | 0.66% → 0.71% |
+  | 5,000, 42 | 11,931 → 11,996 | 1.38% → 1.60% |
+  | 5,000, 1–3 (mean) | 11,968 → 12,349 | 1.72% → 1.60% |
 
-  In the first 30 minutes at 5,000 the time heads spent in the wrong lane
-  at the line fell from 3.0 h to 1.3 h and fallback re-plans from 470 to
-  104. On the multi-lane bench grid arrivals rose 12% and fallback
-  re-plans fell by 62%.
+  Removals at 5,000 are on one-lane residential streets, not on the
+  approaches changed here. Time spent by heads in the wrong lane at the
+  line, first 30 minutes at 5,000:
+
+  | Road | Before | After |
+  | --- | ---: | ---: |
+  | 2262, Rodensteinstraße southbound (the trial's) | 790 s | 12 s |
+  | 2261, Rodensteinstraße northbound | 689 s | 17 s |
+  | 143, Schwanheimer Straße eastbound | 291 s | 23 s |
+  | All roads | 3.0 h | 0.65 h |
+
+  Fallback re-plans in that half hour fell from 470 to 59. On the
+  multi-lane bench grid arrivals rose 12% and fallback re-plans fell by
+  62%.
