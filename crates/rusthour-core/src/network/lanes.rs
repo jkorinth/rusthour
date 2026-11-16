@@ -199,7 +199,8 @@ impl Lanes {
 
     /// The lane of `to` that a vehicle in `lane` of `from` enters. `after` is
     /// the road it takes next, if any: a short `to` leaves no room to change
-    /// lanes, so the vehicle enters the nearest lane that serves that turn.
+    /// lanes, and a wider one opens turn lanes, so there the vehicle enters
+    /// the nearest lane that serves that turn.
     #[must_use]
     pub fn entry(&self, net: &Network, from: u32, lane: u8, to: u32, after: Option<u32>) -> u8 {
         let target = &net.roads[to as usize];
@@ -213,8 +214,11 @@ impl Lanes {
             Some(Turn::Left | Turn::LeftAcross | Turn::UTurn) => last,
             _ => lane.min(last),
         };
+        // A widening (turn lanes opening) is where drivers pick their lane too.
         let mask = after
-            .filter(|_| target.length_m < SHORT_ROAD_M)
+            .filter(|_| {
+                target.length_m < SHORT_ROAD_M || target.lanes > net.roads[from as usize].lanes
+            })
             .map_or(u16::MAX, |c| self.from_mask(net, to, c));
         (0..=last)
             .filter(|&l| mask & (1 << l) != 0)
@@ -308,5 +312,46 @@ mod tests {
         let net = node([2, 1, 1, 1, 1, 2, 1, 2], &[], all);
         let l = Lanes::new(&net);
         assert_eq!([0, 1].map(|lane| l.entry(&net, 0, lane, 4, None)), [0, 0]);
+    }
+
+    /// M3 trial finding 1: a two-lane road widening into a three-lane
+    /// approach kept every car in lanes 0 and 1, so left turners had to
+    /// merge into the new left lane through the queue.
+    #[test]
+    fn regression_m3_12_a_widening_enters_the_lane_of_the_next_turn() {
+        let road = |from: u32, to: u32, lanes: u8, dir: [f64; 2]| Road {
+            from,
+            to,
+            length_m: 100.0,
+            speed_limit_mps: 10.0,
+            lanes,
+            start_dir: dir,
+            end_dir: dir,
+            roundabout: false,
+            class: 0,
+            priority_road: false,
+            end_control: EndControl::None,
+            turn_lanes: vec![],
+        };
+        let (n, w) = ([0.0, 1.0], [-1.0, 0.0]);
+        // Road 1 (3 lanes) turns left onto 2 from lane 2 or goes straight onto 3.
+        let net = |lanes_before: u8| Network {
+            nodes: vec![[0.0; 2]; 5],
+            roads: vec![
+                road(0, 1, lanes_before, n),
+                road(1, 2, 3, n),
+                road(2, 3, 1, w),
+                road(2, 4, 1, n),
+            ],
+            connections: vec![(0, 1), (1, 2), (1, 3)],
+        };
+        let wide = net(2);
+        let l = Lanes::new(&wide);
+        let e = |lane, after| l.entry(&wide, 0, lane, 1, Some(after));
+        assert_eq!([e(0, 2), e(1, 2), e(0, 3), e(1, 3)], [2, 2, 0, 1]);
+        // No widening: the lane stays, and MOBIL moves the car later.
+        let same = net(3);
+        let l = Lanes::new(&same);
+        assert_eq!(l.entry(&same, 0, 0, 1, Some(2)), 0);
     }
 }
