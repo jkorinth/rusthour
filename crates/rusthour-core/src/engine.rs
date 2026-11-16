@@ -31,7 +31,7 @@ const MAX_ROUTES_PER_STEP: u32 = 8;
 const STUCK_SPEED_MPS: f64 = 0.1;
 /// Wait after which a head among equal-ranked conflicting heads is served
 /// first-come, so a steady stream from the right can't starve it (M3.3).
-// shortcut: guessed; tune in the M3 trial.
+// shortcut: guessed, and the M3 trial passed on it; calibrate with M4.7.
 const PATIENCE_MS: u64 = 10_000;
 /// Speed limits above this are outside towns, where passing on the right is
 /// banned (`StVO` §7; just above 50 km/h, so 13.9 m/s maps count as town).
