@@ -190,6 +190,7 @@ seed ⇒ identical state hash.
 | M3.12 | M3 trial fixes (core, CLI): wrong-lane heads at the line, A5 motorway, `--dt-ms` validation; explain trial findings 11, 12, 15, 16 | done | fix/M3.12-wrong-lane |
 | M3.13 | M3 trial fixes (viewer, README): README for M3, road id and OSM way in the road panel, selection panel height, labels, neutral signals by achieved speed, stable controls width, shortcut list placement, finer zoom steps | done | fix/M3.13-trial-ux |
 | M3.14 | Viewer: build version and hash; continuous through lanes at turn pockets | done | fix/M3.14-version-lanes |
+| M3.15 | M3 milestone review fixes: symmetric conflict at a shared exit road, stale docs and shortcuts, `Config` validation in the api, M4 backlog for deferred items | claimed | fix/M3.15-review |
 
 ### M4 — Drivers & vehicles → `v0.5.0`
 
