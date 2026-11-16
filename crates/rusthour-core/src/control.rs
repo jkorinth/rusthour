@@ -56,7 +56,7 @@ pub enum NodeControl {
 
 impl NodeControl {
     /// Whether `a` waits only to stand at a stop sign first; valid after
-    /// `decide`, for diagnostics.
+    /// `decide`. The engine uses it to label why a head waits.
     #[must_use]
     pub fn holds_at_stop_sign(&self, a: &Approach) -> bool {
         match self {
@@ -65,7 +65,9 @@ impl NodeControl {
         }
     }
 
-    /// Whether `a` faces an amber or red signal at `tick`; for diagnostics.
+    /// Whether `a` faces an amber or red signal at `tick`. Besides labelling
+    /// why a head waits, this changes behaviour: a wrong-lane head at red
+    /// waits for green without counting towards its fallback re-plan.
     #[must_use]
     pub fn holds_at_red(&self, a: &Approach, tick: u64) -> bool {
         match self {

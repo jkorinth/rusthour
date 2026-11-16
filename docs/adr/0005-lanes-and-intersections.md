@@ -628,6 +628,13 @@ fn inspect_road(&self, road: RoadId) -> Option<RoadInfo>; // None: unknown id
 - **Cost:** one vehicle or one road per call. The viewer refreshes at
   about 5 Hz, so the `Vec`s allocated per call don't matter. An `_into`
   shape can come with M8 if a remote panel needs it.
+- **As built:** two deviations from the sketch above.
+  - `RoadInfo` has no `class` field: the viewer reads the class from its
+    `Network` copy, like the geometry.
+  - Only the enums (`Gone`, `WaitReason`, `StopCause`, `TurnType`) are
+    `#[non_exhaustive]`. The structs are plain data that frontends build
+    in tests, so adding a field to them is a Rust-API break, made with a
+    `feat(api)!` commit.
 
 ### Viewer (M3.11b)
 

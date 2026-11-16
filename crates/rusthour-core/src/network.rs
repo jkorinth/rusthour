@@ -42,8 +42,10 @@ pub struct Road {
     pub turn_lanes: Vec<u8>,
 }
 
-/// What traffic on a road meets at the road's end.
-// shortcut: `Signals` ranks as unsigned until M3.4 adds the signal controller.
+/// What traffic on a road meets at the road's end. At a signal node, arms
+/// rank by signal (controller and routing prior), never by [`rank`].
+///
+/// [`rank`]: crate::control::priority::rank
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub enum EndControl {
     /// No sign or signal.
