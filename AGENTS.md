@@ -133,7 +133,10 @@ approval, a module-level `allow`, and `// SAFETY:` comments.
   and its fix adds exactly one test reproducing it, named
   `regression_<issue-number>_<slug>`. A bug a property finds in an unmerged
   PR is covered by the case proptest saves to the regressions file; no issue
-  or named test is needed.
+  or named test is needed. While GitHub issues are disabled on the
+  repository, the bug goes into a roadmap item (or a trial doc, §8)
+  instead, and the test is named `regression_<roadmap-id>_<slug>` with the
+  ID in lower case and `_` for `.`, e.g. `regression_m3_12_<slug>`.
 - **Determinism:** any change to `rusthour-core` must keep the determinism test
   passing (same seed ⇒ same state hash). Intentional changes update the golden
   hash in the same PR with a note.
@@ -191,3 +194,5 @@ Before the release PR for a milestone is merged:
    confusing, screenshots where useful.
 4. Bugs become issues (each fix gets a regression test); UX issues go to the UX
    designer for triage. Blocking findings must be fixed before release.
+   While GitHub issues are disabled, bugs are listed as numbered findings
+   in the trial doc and fixed under a roadmap item (§5).
