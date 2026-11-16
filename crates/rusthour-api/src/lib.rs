@@ -91,6 +91,9 @@ pub trait Simulation {
     fn signals_into(&self, out: &mut SignalSnapshot);
 }
 
+/// Step lengths the driver model can run at (ms); it is tuned for 100.
+const DT_MS: std::ops::RangeInclusive<u32> = 1..=1000;
+
 /// A simulation running in the caller's process (and thread).
 #[derive(Debug, Clone)]
 pub struct InProcess {
@@ -101,8 +104,18 @@ pub struct InProcess {
 
 impl InProcess {
     /// Starts a new in-process simulation on an empty network.
+    ///
+    /// # Panics
+    ///
+    /// If `config.dt_ms` is outside 1..=1000;
+    /// [`with_network`](Self::with_network) returns an error instead.
     #[must_use]
     pub fn new(config: Config, seed: u64) -> Self {
+        assert!(
+            DT_MS.contains(&config.dt_ms),
+            "dt_ms must be 1 to 1000, got {}",
+            config.dt_ms
+        );
         Self {
             engine: rusthour_core::Engine::new(config, seed),
             network: Network::default(),
@@ -114,8 +127,14 @@ impl InProcess {
     /// # Errors
     ///
     /// Returns a [`NetworkError`] if the network is inconsistent, e.g. a road
-    /// references a missing node or has zero length.
+    /// references a missing node or has zero length, or if `config.dt_ms` is
+    /// outside 1..=1000.
     pub fn with_network(config: Config, seed: u64, network: Network) -> Result<Self, NetworkError> {
+        if !DT_MS.contains(&config.dt_ms) {
+            return Err(NetworkError::BadStepLength {
+                dt_ms: config.dt_ms,
+            });
+        }
         let core = network.to_core()?;
         Ok(Self {
             engine: rusthour_core::Engine::with_network(config, seed, core),

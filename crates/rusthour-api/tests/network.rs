@@ -363,6 +363,23 @@ proptest! {
     }
 }
 
+proptest! {
+    /// A step length outside 1..=1000 ms is an error, not a division by zero.
+    #[test]
+    fn the_step_length_is_validated(
+        network in valid_network(),
+        dt_ms in prop_oneof![Just(0u32), 0..2000u32, any::<u32>()],
+    ) {
+        let config = Config { dt_ms, ..Config::default() };
+        let loaded = InProcess::with_network(config, 1, network).err();
+        if (1..=1000).contains(&dt_ms) {
+            prop_assert_eq!(loaded, None);
+        } else {
+            prop_assert_eq!(loaded, Some(NetworkError::BadStepLength { dt_ms }));
+        }
+    }
+}
+
 #[test]
 fn error_messages_name_the_offending_item_and_value() {
     let messages = [

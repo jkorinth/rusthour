@@ -249,7 +249,8 @@ pub struct Network {
     pub connections: Vec<Connection>,
 }
 
-/// Why a [`Network`] was rejected. Indices refer to the network's lists.
+/// Why a [`Network`] (or the config it was loaded with) was rejected.
+/// Indices refer to the network's lists.
 #[derive(Debug, Clone, PartialEq)]
 #[non_exhaustive]
 pub enum NetworkError {
@@ -357,6 +358,11 @@ pub enum NetworkError {
     },
     /// The network has more than `u32::MAX` nodes or roads.
     TooLarge,
+    /// The config's step length is outside 1..=1000 ms.
+    BadStepLength {
+        /// The rejected `dt_ms`.
+        dt_ms: u32,
+    },
 }
 
 impl fmt::Display for NetworkError {
@@ -446,6 +452,9 @@ impl fmt::Display for NetworkError {
                 from_road.0, to_road.0
             ),
             Self::TooLarge => write!(f, "the network has more than {} nodes or roads", u32::MAX),
+            Self::BadStepLength { dt_ms } => {
+                write!(f, "the step length must be 1 to 1000 ms, got {dt_ms}")
+            }
         }
     }
 }
