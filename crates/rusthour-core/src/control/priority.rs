@@ -163,10 +163,13 @@ impl Priority {
         let (Some(a2), Some(b2)) = (exit(a.to_road), exit(b.to_road)) else {
             return true;
         };
+        if a2 == b2 {
+            return a.to_lane == b.to_lane;
+        }
         let (a1, b1) = (self.arms[self.arm(a)].point, self.arms[self.arm(b)].point);
         let (lo, hi) = (a1.min(a2), a1.max(a2));
         let inside = |p| lo < p && p < hi;
-        (a2 == b2 && a.to_lane == b.to_lane) || a1 != b1 && inside(b1) != inside(b2)
+        a1 != b1 && inside(b1) != inside(b2)
     }
 }
 
@@ -607,6 +610,20 @@ mod tests {
     }
 
     proptest! {
+        /// Whether two movements conflict doesn't depend on which one asks,
+        /// also when both enter one exit road (in the same or different lanes).
+        #[test]
+        fn conflict_is_symmetric(
+            a in (0..4u32, 0..2u8, 4..8u32, 0..2u8),
+            b in (0..4u32, 0..2u8, 4..8u32, 0..2u8),
+        ) {
+            let net = node([(false, 8.3, 2); 4]);
+            let p = priority(&net);
+            let ap = |(road, lane, to_road, to_lane)| Approach { lane, to_road, to_lane, ..ap(road, 0, 2.0, 0.0) };
+            let (a, b) = (ap(a), ap(b));
+            prop_assert_eq!(p.conflict(&a, &b), p.conflict(&b, &a), "{:?} vs {:?}", a, b);
+        }
+
         /// On every tick: if any unblocked head is arriving, one of them
         /// gets `go` (no deadlock), and an unblocked head told to stop
         /// always has such a head of at least its class (no major waits for

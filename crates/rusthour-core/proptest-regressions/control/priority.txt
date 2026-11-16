@@ -5,3 +5,4 @@
 # It is recommended to check this file in to source control so that
 # everyone who runs the test benefits from these saved cases.
 cc 183a76ebe46daf4a2888deb07bc5c5ce00e3cdc96c8d7430761fe577a8a4fa38 # shrinks to classes = [(false, 8.3, 1), (false, 8.3, 1), (false, 8.3, 1), (false, 8.3, 1)], ticks = [[None, Some((0, 0.0, 0.0)), None, None]]
+cc e697144ed2585e6f74834e403674c6441034b70348c588a33bce0a53ac351b7f # shrinks to a = (2, 0, 6, 1), b = (1, 0, 6, 0)
