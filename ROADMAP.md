@@ -190,7 +190,7 @@ seed ⇒ identical state hash.
 | M3.12 | M3 trial fixes (core, CLI): wrong-lane heads at the line, A5 motorway, `--dt-ms` validation; explain trial findings 11, 12, 15, 16 | done | fix/M3.12-wrong-lane |
 | M3.13 | M3 trial fixes (viewer, README): README for M3, road id and OSM way in the road panel, selection panel height, labels, neutral signals by achieved speed, stable controls width, shortcut list placement, finer zoom steps | done | fix/M3.13-trial-ux |
 | M3.14 | Viewer: build version and hash; continuous through lanes at turn pockets | done | fix/M3.14-version-lanes |
-| M3.15 | M3 milestone review fixes: symmetric conflict at a shared exit road, stale docs and shortcuts, `Config` validation in the api, M4 backlog for deferred items | claimed | fix/M3.15-review |
+| M3.15 | M3 milestone review fixes: symmetric conflict at a shared exit road, stale docs and shortcuts, `Config` validation in the api, M4 backlog for deferred items | done | fix/M3.15-review |
 
 ### M4 — Drivers & vehicles → `v0.5.0`
 
@@ -200,7 +200,11 @@ seed ⇒ identical state hash.
 | M4.2 | Vehicle classes: car, van, truck, bus | todo | |
 | M4.3 | Fleet/driver mix configurable per scenario | todo | |
 | M4.4 | `rusthour-viz`: live parameter panel, color by driver/vehicle type, inspect a vehicle | todo | |
+| M4.5 | Routing: tighter admissible A* bound from ALT landmarks (about 8, farthest-first) on free-flow travel time plus static turn cost, precomputed at load; precompute `Turn::of` per (arm, exit) in `Priority::new`; target `step_multilane/5000` ≤ 0.7 ms (M3 architect review) | todo | |
+| M4.6 | Move `holds_at_red` and `holds_at_stop_sign` into the `Controller` trait (default `false`), so a new controller touches no shared match blocks; with the next new controller (M3 architect review) | todo | |
 | M4.7 | Calibrate turn costs (`routing::turn_s`) and right-of-way patience (`PATIENCE_MS`) against measured junction delays (M3 architect review) | todo | |
+| M4.8 | Viewer fixes from the M3 UX review, candidates for a 0.4.x patch: draw the route line through `Placement::center_line` like the lanes (N2); the follow hint compares the speed reached, not the speed set (N3) | todo | |
+| M4.9 | Viewer and CLI polish from the M3 UX review: `rusthour-viz --road <id>` and `?road=<id>` select and centre a road (N1); build label falls back to the git commit, shows on the map-error screen, README says where it is (N4); controls wrap into two rows below about 600 pt (N5); CLI usage line without `--map` doesn't suggest `--steps` is required (N6); bolder outline for the selected road (N7) | todo | |
 
 ### M5 — Demand & scenarios → `v0.6.0`
 
@@ -212,6 +216,7 @@ seed ⇒ identical state hash.
 | M5.4 | Boundary/highway through-traffic and network exits | todo | |
 | M5.5 | Imperfect route knowledge: share of drivers with navigation, information delay, local-only observation | todo | |
 | M5.6 | `rusthour-viz`: clock & day display, jump to time, scenario picker | todo | |
+| M5.7 | Coordinated signal plans (offsets, several plans per node by time of day) in scenarios; today every signal runs one plan at offset 0 (M3 architect review) | todo | |
 
 ### M6 — Statistics & batch CLI → `v0.7.0`
 
