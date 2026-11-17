@@ -1,5 +1,58 @@
 # Changelog
 
+## [0.4.0](https://github.com/jkorinth/rusthour/compare/v0.3.0...v0.4.0) (2026-11-17)
+
+
+### ⚠ BREAKING CHANGES
+
+* **api:** `Placement::place` takes `lane: f32` instead of `u8`; pass `f32::from(lane)`. The wire format only gains a field.
+* **api:** `NETWORK_SCHEMA_VERSION` is 4, so schema-3 `.rhnet` maps must be re-imported, and `Road` has four new fields. JSON networks without them still load.
+* **api:** Status has two new fields, Simulation has a new required method, and PROTOCOL_VERSION is 3.
+
+### Features
+
+* **api:** add road class, priority roads, end controls and turn lanes (network schema 4) ([be9760c](https://github.com/jkorinth/rusthour/commit/be9760cd3394c0f4bb768aeafaf5600cda7c4999))
+* **api:** inspect a vehicle or road ([2fb74e0](https://github.com/jkorinth/rusthour/commit/2fb74e04a0ac67abd752c2a6e8d86e9d41729d5e))
+* **api:** lane shift in the vehicle snapshot for lane-change animation ([5f7fd29](https://github.com/jkorinth/rusthour/commit/5f7fd29524da0c70a1d98b697c40b6bdb70e28db))
+* **api:** report arrivals and stuck removals, per road ([a7a1869](https://github.com/jkorinth/rusthour/commit/a7a1869003a1efb5e1d7c7332e2913624a215993))
+* **cli:** print removals per arrival and report the roads with stuck removals ([b891938](https://github.com/jkorinth/rusthour/commit/b891938ea0c53a4dd66716ac863f0c0ec075a470))
+* **core:** count arrivals and stuck removals per road, exempt ring heads from no room ([fc84989](https://github.com/jkorinth/rusthour/commit/fc849899014beee73d5b029057e61765ff53cee2))
+* **core:** fixed-time traffic signals ([bd80852](https://github.com/jkorinth/rusthour/commit/bd80852f10ace212668d2431638aabd034db046b))
+* **core:** insert vehicles mid-lane and move them between lanes ([f9d5e71](https://github.com/jkorinth/rusthour/commit/f9d5e71ce10f9e00f18ef2762f5f5a63ec50e82d))
+* **core:** lane choice ahead of intersections ([37c0794](https://github.com/jkorinth/rusthour/commit/37c0794e9f7e3359ae6af1bfc47f5302dc3627d0))
+* **core:** lane sets per movement, entry lanes on transfer, zipper at lane drops ([573b095](https://github.com/jkorinth/rusthour/commit/573b095d46e3babf22ee461d349a7247b4724245))
+* **core:** MOBIL lane changing with keep-right and no passing on the right ([a225d5e](https://github.com/jkorinth/rusthour/commit/a225d5e55793a7bad84b3e9e82dace6bbc275287))
+* **core:** right of way from signs, priority roads and road class ([a6acbc1](https://github.com/jkorinth/rusthour/commit/a6acbc1499d188a0df97d4eade8de5d90ac1163e))
+* **core:** turn costs and per-movement delays in routing ([1604aaf](https://github.com/jkorinth/rusthour/commit/1604aaf4b5d728d4e4b56a7bff652815b5737629))
+* **core:** wait reasons and recent exits for inspection ([b037b92](https://github.com/jkorinth/rusthour/commit/b037b9204593577eaf019de976a49e5e169270c3))
+* **import:** read right of way from the map and report it ([be92002](https://github.com/jkorinth/rusthour/commit/be920020559c92939b7b1a7ffaf5bc2883a22799))
+* **viz:** lane dividers, signal bars, signs, scale bar and zoom limits ([33ed279](https://github.com/jkorinth/rusthour/commit/33ed279b0cc3f3a9eaf9cfe99e57f0747faf59c8))
+* **viz:** select a vehicle or road, inspect it and follow it ([23e1caa](https://github.com/jkorinth/rusthour/commit/23e1caab447238683b949154a98e7d7fce36633b))
+* **viz:** show arrivals and stuck removals, and tint the roads that gridlock ([e7ec207](https://github.com/jkorinth/rusthour/commit/e7ec2074195bc0be8b110717dfb8d84ca3011c26))
+* **viz:** show the version, build kind and commit ([580bd47](https://github.com/jkorinth/rusthour/commit/580bd4730675a6284f8c7bc954458fe7b4ae292f))
+
+
+### Bug Fixes
+
+* **api:** reject a step length outside 1 to 1000 ms when loading a network ([74b84b9](https://github.com/jkorinth/rusthour/commit/74b84b93b37673ddeefe04597a312e0a642af1e8))
+* **cli:** reject a --dt-ms outside 1 to 1000 ([877b64f](https://github.com/jkorinth/rusthour/commit/877b64f10c5ccc49463cb1cc16bd38e20b1adde7))
+* **core:** don't yield between lanes entering different lanes of one road ([9565c41](https://github.com/jkorinth/rusthour/commit/9565c414d2b1b8d6abfe1842cf30de3c8c4c9e1f))
+* **core:** let cars merge into dense lanes before the line ([ee79dde](https://github.com/jkorinth/rusthour/commit/ee79dde9efec8acfad739fafcd9cb4c9190d7516))
+* **core:** make a lane change to the current lane a no-op ([e17630f](https://github.com/jkorinth/rusthour/commit/e17630f3a516b70aee3877b1e17817a3ece3e61c))
+* **core:** match turn-lane arrows to movements in order at straight forks ([1110aba](https://github.com/jkorinth/rusthour/commit/1110aba4f5c0470c47095dce0e47a175d6f919af))
+* **core:** pick the turn lane where a road widens before a junction ([6d00b01](https://github.com/jkorinth/rusthour/commit/6d00b014d8e4b49de599a45c07cbf908ce06362c))
+* **viz:** keep through lanes straight across left-turn pockets ([04d3bd0](https://github.com/jkorinth/rusthour/commit/04d3bd0e74052abe65165dcb7af3f91596bf0c04))
+* **viz:** neutral signals by the speed reached, finer scroll zoom ([5335e71](https://github.com/jkorinth/rusthour/commit/5335e71ca7c8443ea512af0fe82ff7d38be9cac1))
+* **viz:** say which schema a map has when the viewer can't read it ([85b9e1b](https://github.com/jkorinth/rusthour/commit/85b9e1bc3bce6afd05681c49e3a0ff79bb96f6e4))
+* **viz:** selection panel grows to its content and opens at the top ([67d238c](https://github.com/jkorinth/rusthour/commit/67d238c80de31648c78a83a30ecb5f1d5da5884e))
+* **viz:** show the road id and OSM way, and why a free car is slow ([366fe26](https://github.com/jkorinth/rusthour/commit/366fe26db0f86b51e425cf7a39886fe99d99e14b))
+* **viz:** steady controls width, shortcut list below the controls ([5e5fc1d](https://github.com/jkorinth/rusthour/commit/5e5fc1d0c26ce72f9b962aaa4f4db3254020fbf2))
+
+
+### Performance Improvements
+
+* **core:** skip the deadlock search and one-lane entry lookups in the step ([d78aee2](https://github.com/jkorinth/rusthour/commit/d78aee24d6e238bff6476734ed1249768568d618))
+
 ## [0.3.0](https://github.com/jkorinth/rusthour/compare/v0.2.0...v0.3.0) (2026-11-08)
 
 
