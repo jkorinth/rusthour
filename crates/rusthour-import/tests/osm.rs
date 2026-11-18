@@ -383,7 +383,7 @@ proptest! {
             prop_assert_eq!(r.priority_road, designated);
             prop_assert_ne!(r.class, RoadClass::Unknown);
         }
-        // OSM refs identify roads (M7.0) and match the end nodes.
+        // OSM refs identify roads (M5.0) and match the end nodes.
         let mut refs = HashSet::new();
         for r in &network.roads {
             let o = r.osm.unwrap();

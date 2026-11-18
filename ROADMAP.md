@@ -119,7 +119,7 @@ release PR.
 | ID | Item | Status | Owner |
 | --- | --- | --- | --- |
 | M1.1 | ADR: viz framework choice (Bevy vs macroquad vs eframe), decided by architect + UX | done | docs/M1.1-viz-framework |
-| M1.2 | `rusthour-import` crate: OSM extract → network via our own `osmpbf`-based importer (lanes, intersections, speed limits; ADR-0002), behind the `osm` feature, with a `rusthour-import` binary taking an area name from `data/areas.toml`. Carry OSM source ids into the network types and asset (OSM node id for intersections; way id plus endpoint node ids for roads, since the importer splits ways) so M7.0 needs no format bump or re-import | done | feat/M1.2-osm-importer |
+| M1.2 | `rusthour-import` crate: OSM extract → network via our own `osmpbf`-based importer (lanes, intersections, speed limits; ADR-0002), behind the `osm` feature, with a `rusthour-import` binary taking an area name from `data/areas.toml`. Carry OSM source ids into the network types and asset (OSM node id for intersections; way id plus endpoint node ids for roads, since the importer splits ways) so M5.0 needs no format bump or re-import | done | feat/M1.2-osm-importer |
 | M1.3 | `.rhnet` asset format in `rusthour-import` (header, versioning, pure-Rust compression), readable on wasm32 without OSM parsing | done | feat/M1.3-rhnet-format |
 | M1.4 | `rusthour-api`: network data types, load a validated network into the simulation (bytes are decoded by `rusthour-import`, ADR-0002), query geometry for rendering | done | feat/M1.4-network-types |
 | M1.5 | `rusthour-viz`: render network, pan/zoom, native + browser | done | feat/M1.5-map-viewer |
@@ -161,7 +161,7 @@ reproducible from the OSM extract.
 | M2.6 | `rusthour-api`: step, run/pause, time-scale, vehicle snapshot stream; `Placement` (road offset → world position), `state_hash` moves out of `Status` (ADR-0004) | done | feat/M2.6b-facade |
 | M2.7 | `rusthour-viz`: animated vehicles, play/pause, single step, speed slider (0.1×–100×+, log scale) showing the achieved speed, reset with the same seed, sim clock, active and waiting vehicle counts | done | feat/M2.7-animated-vehicles |
 | M2.8 | Benchmark (criterion): vehicles × steps/s, tracked in CI (non-gating) | done | feat/M2.8-bench |
-| M2.9 | Congestion-aware routing: current travel times, staggered rerouting (perfect information; pulled from M5.5) | done | feat/M2.9-congestion-routing |
+| M2.9 | Congestion-aware routing: current travel times, staggered rerouting (perfect information; pulled from M6.4) | done | feat/M2.9-congestion-routing |
 | M2.10 | Stuck-vehicle safety net: remove vehicles stuck > 300 s and count them (minimal part of M3.5) | done | feat/M2.10-stuck-removal |
 | M2.11 | M2 user trial (docs/trials/M2.md): two rounds native/CLI, browser on iPad; gridlock fixed (#49, M2.9, M2.10, #54) | done | docs/M2-user-trial |
 
@@ -198,7 +198,7 @@ seed ⇒ identical state hash.
 | --- | --- | --- | --- |
 | M4.1 | Driver profiles: aggressive, normal, cautious, erratic (IDM + MOBIL parameters, noise) | todo | |
 | M4.2 | Vehicle classes: car, van, truck, bus | todo | |
-| M4.3 | Fleet/driver mix configurable per scenario | todo | |
+| M4.3 | Fleet/driver mix configurable per run (CLI and viewer); it moves into the scenario file with M5.5 | todo | |
 | M4.4 | `rusthour-viz`: live parameter panel, color by driver/vehicle type, inspect a vehicle | todo | |
 | M4.5 | Routing: tighter admissible A* bound from ALT landmarks (about 8, farthest-first) on free-flow travel time plus static turn cost, precomputed at load; precompute `Turn::of` per (arm, exit) in `Priority::new`; target `step_multilane/5000` ≤ 0.7 ms (M3 architect review) | todo | |
 | M4.6 | Move `holds_at_red` and `holds_at_stop_sign` into the `Controller` trait (default `false`), so a new controller touches no shared match blocks; with the next new controller (M3 architect review) | todo | |
@@ -206,41 +206,46 @@ seed ⇒ identical state hash.
 | M4.8 | Viewer fixes from the M3 UX review, candidates for a 0.4.x patch: draw the route line through `Placement::center_line` like the lanes (N2); the follow hint compares the speed reached, not the speed set (N3) | todo | |
 | M4.9 | Viewer and CLI polish from the M3 UX review: `rusthour-viz --road <id>` and `?road=<id>` select and centre a road (N1); build label falls back to the git commit, shows on the map-error screen, README says where it is (N4); controls wrap into two rows below about 600 pt (N5); CLI usage line without `--map` doesn't suggest `--steps` is required (N6); bolder outline for the selected road (N7) | todo | |
 
-### M5 — Demand & scenarios → `v0.6.0`
+### M5 — Network editing & A/B studies → `v0.6.0`
+
+Pulled ahead of demand and statistics (decided after the M3 release). It brings
+the scenario file, metrics, multi-seed runs and `compare` it needs; M6 and M7
+extend them.
 
 | ID | Item | Status | Owner |
 | --- | --- | --- | --- |
-| M5.1 | Scenario file format (TOML): map, demand, fleet mix, duration, seed(s) | todo | |
-| M5.2 | Agents with activity chains (home, work, shop, school, leisure) | todo | |
-| M5.3 | Time-of-day × weekday departure profiles | todo | |
-| M5.4 | Boundary/highway through-traffic and network exits | todo | |
-| M5.5 | Imperfect route knowledge: share of drivers with navigation, information delay, local-only observation | todo | |
-| M5.6 | `rusthour-viz`: clock & day display, jump to time, scenario picker | todo | |
-| M5.7 | Coordinated signal plans (offsets, several plans per node by time of day) in scenarios; today every signal runs one plan at offset 0 (M3 architect review) | todo | |
-
-### M6 — Statistics & batch CLI → `v0.7.0`
-
-| ID | Item | Status | Owner |
-| --- | --- | --- | --- |
-| M6.1 | Metrics collection in `stats` (travel time, delay, throughput, queues, edge flows) with minimal hot-loop overhead | todo | |
-| M6.2 | `rusthour-cli run`: headless, multi-seed, parallel (rayon) | todo | |
-| M6.3 | Output: CSV and Parquet, plus summary JSON | todo | |
-| M6.4 | `rusthour-cli compare A B`: means, confidence intervals, effect sizes | todo | |
-| M6.5 | `rusthour-viz`: live stats overlay (heatmap of delay/flow) | todo | |
-
-### M7 — Network editing & A/B studies → `v0.8.0`
-
-| ID | Item | Status | Owner |
-| --- | --- | --- | --- |
-| M7.0 | ADR: stable ids for edits — patches must keep pointing at the same road/intersection after re-import or other edits, which list-position ids (`NodeId`, `RoadId`, road pairs) don't guarantee; likely derived from the OSM source ids carried since M1.2, mapped to dense indices at load time; an id that no longer resolves after a re-import must fail loudly, never match a nearby item | todo | |
-| M7.1 | Network edit model (change controller, lanes, speed limits, close roads) as serializable patches, addressed by the stable ids from M7.0 | todo | |
-| M7.2 | Roundabout controller with gap acceptance (driver-dependent) | todo | |
-| M7.3 | Convert crossroads → roundabout edit, incl. geometry | todo | |
-| M7.4 | `rusthour-viz`: click-to-edit intersections, save edits as patch | todo | |
-| M7.5 | Scenario + patch → CLI comparison end-to-end | todo | |
+| M5.0 | ADR: stable ids for edits — patches must keep pointing at the same road/intersection after re-import or other edits, which list-position ids (`NodeId`, `RoadId`, road pairs) don't guarantee; likely derived from the OSM source ids carried since M1.2, mapped to dense indices at load time; an id that no longer resolves after a re-import must fail loudly, never match a nearby item | todo | |
+| M5.1 | Network edit model (change controller, lanes, speed limits, close roads) as serializable patches, addressed by the stable ids from M5.0 | todo | |
+| M5.2 | Roundabout controller with gap acceptance (driver-dependent) | todo | |
+| M5.3 | Convert crossroads → roundabout edit, incl. geometry | todo | |
+| M5.4 | `rusthour-viz`: click-to-edit intersections, save edits as patch | todo | |
+| M5.5 | Scenario file format (TOML): map, vehicle count, duration, seed(s) and network patches; demand and fleet-mix sections come with M6 and M4.3 | todo | |
+| M5.6 | Metrics collection in `stats` (travel time, delay, throughput, queues, edge flows) with minimal hot-loop overhead | todo | |
+| M5.7 | `rusthour-cli run`: headless, multi-seed (parallel runs follow in M7.1) | todo | |
+| M5.8 | `rusthour-cli compare A B`: means, confidence intervals, effect sizes | todo | |
+| M5.9 | Scenario + patch → CLI comparison end-to-end | todo | |
 
 **Acceptance:** a user can replace an intersection with a roundabout in the
 viewer, save it, and get a statistical before/after report from the CLI.
+
+### M6 — Demand & scenarios → `v0.7.0`
+
+| ID | Item | Status | Owner |
+| --- | --- | --- | --- |
+| M6.1 | Agents with activity chains (home, work, shop, school, leisure); demand configured in the scenario file (M5.5) | todo | |
+| M6.2 | Time-of-day × weekday departure profiles | todo | |
+| M6.3 | Boundary/highway through-traffic and network exits | todo | |
+| M6.4 | Imperfect route knowledge: share of drivers with navigation, information delay, local-only observation | todo | |
+| M6.5 | `rusthour-viz`: clock & day display, jump to time, scenario picker | todo | |
+| M6.6 | Coordinated signal plans (offsets, several plans per node by time of day) in scenarios; today every signal runs one plan at offset 0 (M3 architect review) | todo | |
+
+### M7 — Statistics & batch CLI → `v0.8.0`
+
+| ID | Item | Status | Owner |
+| --- | --- | --- | --- |
+| M7.1 | `rusthour-cli run`: parallel multi-seed runs (rayon) | todo | |
+| M7.2 | Output: CSV and Parquet, plus summary JSON | todo | |
+| M7.3 | `rusthour-viz`: live stats overlay (heatmap of delay/flow) | todo | |
 
 ### M8 — Remote service → `v0.9.0`
 

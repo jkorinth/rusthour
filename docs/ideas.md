@@ -8,7 +8,7 @@ backlog in [ROADMAP.md](../ROADMAP.md) §7 lists the rest.
 
 Vehicles today move along a road in one lane: position is
 `(road, lane, offset_m)` (ADR-0004). Lane changes come with MOBIL (M3) and
-route updates with M5.5. A maneuvering submodel would add the moves real
+route updates with M6.4. A maneuvering submodel would add the moves real
 drivers make when the plain lane model doesn't fit, as a submodule of
 `behavior` implementing its trait, with one variant in the dispatch enum
 (AGENTS.md §6), so it can be switched on per scenario or driver
@@ -30,7 +30,7 @@ tries another route.
 - **Gap check.** Enough space on the opposite lane in both directions, as
   for MOBIL's safety criterion.
 - **Reroute.** A new route from the new position, through the route-update
-  phase (M5.5).
+  phase (M6.4).
 - **Where it's allowed.** OSM says little about road markings, so a
   plausible rule is needed, e.g. not on motorways or dual carriageways, only
   below a speed and above a waiting time, and driver-profile dependent

@@ -514,7 +514,7 @@ phase or hook, which keeps conflicts in `engine.rs` small.
 - `NETWORK_SCHEMA_VERSION` 4 (M3.2), with the assets rebuilt.
   `PROTOCOL_VERSION` 3 (M3.8a).
 - The routing cost changes from the sum of road times to road times plus
-  movement costs. M5.5 (imperfect knowledge) reuses both estimates.
+  movement costs. M6.4 (imperfect knowledge) reuses both estimates.
 - Multi-lane roads gain their real capacity, opposite through traffic no
   longer takes turns, and German priority roads behave as signed.
 - Expected: higher throughput at the viewer density and fewer removals.

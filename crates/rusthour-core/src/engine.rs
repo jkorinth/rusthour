@@ -93,7 +93,7 @@ pub struct Config {
     /// this step (ADR-0004, addendum M2.1b).
     pub dt_ms: u32,
     /// Vehicles (active plus waiting) that random demand keeps on the
-    /// network; 0 means no demand. Until M5.1 scenarios replace it.
+    /// network; 0 means no demand. Until M5.5 scenarios replace it.
     pub target_vehicles: u32,
     /// A vehicle that has not moved (below 0.1 m/s) for this many simulated
     /// seconds is removed and counted in [`Engine::removed_stuck`]; 0 disables

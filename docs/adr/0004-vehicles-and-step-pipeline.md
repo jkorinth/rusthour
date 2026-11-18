@@ -85,7 +85,7 @@ pub struct Vehicles {          // one entry per slot, alive or free
   never by sorting**: in M2 vehicles enter at the tail (spawn at offset 0,
   transfer from the previous road) and leave at the head (transfer onward,
   arrival), so `VecDeque` push-back and pop-front are O(1); integration
-  forbids overtaking within a lane (§2). M3 lane changes and M5 mid-road
+  forbids overtaking within a lane (§2). M3 lane changes and M6 mid-road
   spawns insert at `partition_point` on position, an O(lane) rare event.
 
 ### 2. Step pipeline (`engine`, M2.1)
@@ -97,7 +97,7 @@ transfers and the arrivals.
 | # | Phase | Owner | Interface |
 | --- | --- | --- | --- |
 | 1 | Spawn: new trips; insert pending trips if the entry gap allows | `demand`, `routing` | `RandomOd::spawn`, `Router::route` |
-| 2 | Route updates | `routing` | none in M2 (M5.5) |
+| 2 | Route updates | `routing` | none in M2 (M6.4) |
 | 3 | Intersection decisions for lane heads near their road end | `control` | `Controller::decide` |
 | 4 | Leaders and accelerations, lane by lane | `vehicle::idm` | `idm::acceleration` |
 | 5 | Integration, head to tail per lane | `engine` | — |
@@ -148,7 +148,7 @@ pub struct Leader { pub gap_m: f64, pub speed_mps: f64 }
   roads excluded, which the api shows on load. OD pairs come from
   `routable()`, so every trip has a route and the M1.11 one-way traps are
   avoided. Roads crossing the area edge fall out, so **M2 traffic is a
-  closed system** with no through traffic (M5.4). A* ties break by road id.
+  closed system** with no through traffic (M6.3). A* ties break by road id.
   Budget: ≤ 0.25 ms of routing per step at 5,000 vehicles (about 2.5 new
   trips per step with 200 s trips), measured separately in M2.8; if it is
   exceeded, a per-step route cap makes trips wait.
@@ -217,7 +217,7 @@ pub struct Leader { pub gap_m: f64, pub speed_mps: f64 }
   - **One `ChaCha8Rng` stream per subsystem**, same seed, different
     `set_stream`: `demand` = 1, `behavior` = 2 (M4 noise). A change in one
     subsystem doesn't shift another's draws, which keeps golden-hash churn
-    local and gives A/B comparisons common random numbers (M6, M7). Integer
+    local and gives A/B comparisons common random numbers (M5, M7). Integer
     sampling (`next_u32`/`next_u64`), floats from bits (`(u >> 11) as f64 *
     2⁻⁵³`).
   - Floats: only `+ - * /`, `sqrt`, `abs`, `min`/`max`, comparisons and
@@ -234,16 +234,16 @@ pub struct Leader { pub gap_m: f64, pub speed_mps: f64 }
   stream (seed, stream, word position), pending trips and each node's
   controller state. Hashing is O(state), so it leaves the per-frame
   `Status` (§3).
-- **Extension points:** each controller (M3.2 stop, M3.3 signals, M7.2
+- **Extension points:** each controller (M3.2 stop, M3.3 signals, M5.2
   roundabout) is a submodule implementing `Controller`; the engine
   dispatches statically through `NodeControl`, whose variant list and
   `match` in `control.rs` are the only shared lines. This keeps `Engine:
   Clone` and avoids `Box<dyn>`. Demand models follow the same pattern when
-  M5.2 adds the second one. AGENTS.md §6 and the `control` docs say so.
+  M6.1 adds the second one. AGENTS.md §6 and the `control` docs say so.
 - **Clock:** stays `tick × dt_ms` from zero. A start time of day arrives
-  with the scenario format in M5.1, its first consumer (M5.3, M5.6).
+  with the scenario format in M5.5, its first consumer (M6.2, M6.5).
 - **Configuration:** `Config` gains `target_vehicles: u32` (default 0, so
-  existing callers see no traffic) until M5.1 scenarios replace it.
+  existing callers see no traffic) until M5.5 scenarios replace it.
 
 ### 3. API surface (M2.6, M2.7)
 
@@ -367,7 +367,7 @@ Critical path: M2.3 → M2.2 → M2.1b → M2.6b → M2.7 → M2 trial.
   the low-id road has a queue; first-come plus a rotating pointer is fair.
 - **World x/y in the snapshot:** simpler for the viewer, but larger on the
   wire and no along-road extrapolation or clamping; the api computes it.
-- **Time of day now:** no consumer before M5.
+- **Time of day now:** no consumer before M6.
 
 ## Consequences
 
@@ -462,7 +462,7 @@ trips on bensheim-5km crossed the same ring of short one-lane roads in the
 centre, which filled and froze. M2.9 routes on current traffic. This is
 **user-optimal routing with perfect, current information**: every driver
 sees every road's present state. Imperfect knowledge (a share of drivers
-with navigation, information delay, local-only observation) is M5.5.
+with navigation, information delay, local-only observation) is M6.4.
 
 - **Travel-time estimate (`routing`):** `Router` keeps a per-road travel
   time, hashed with the state. Every 5 simulated seconds `Router::observe`
