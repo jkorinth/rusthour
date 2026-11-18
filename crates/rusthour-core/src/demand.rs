@@ -1,4 +1,4 @@
-//! Travel demand: agents, activity chains, time-of-day and weekday profiles (M5).
+//! Travel demand: agents, activity chains, time-of-day and weekday profiles (M6).
 //!
 //! M2 has one model, [`RandomOd`]: a closed system that keeps a target
 //! population of vehicles on random origin–destination pairs (ADR-0004).

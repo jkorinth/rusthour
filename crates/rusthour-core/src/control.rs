@@ -1,5 +1,5 @@
 //! Intersection controllers: priority, stop, signals, roundabouts (M2, M3,
-//! M7). Each lives in its own submodule implementing [`Controller`] and is
+//! M5). Each lives in its own submodule implementing [`Controller`] and is
 //! dispatched statically through [`NodeControl`], whose variant list and
 //! `match` are the only lines controllers share (ADR-0004).
 

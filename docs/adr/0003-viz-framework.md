@@ -287,7 +287,7 @@ Western Europe, ship one font with wide Latin/Cyrillic/Greek coverage.
 ## Consequences
 
 - One UI toolkit, first-party and current, for the widget-heavy roadmap items
-  (M2.7, M4.4, M5.6, M6.5, M7.4).
+  (M2.7, M4.4, M5.4, M6.5, M7.3).
 - M1.5 writes no shaders. A custom wgpu pipeline is added only if the
   frame-time threshold is missed, and the `World`/`Camera` seam keeps that
   change local.

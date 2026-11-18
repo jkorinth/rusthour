@@ -166,7 +166,7 @@ impl std::ops::BitOr for Turns {
 /// An importer splits ways at intersections and may merge or move nodes, so
 /// the way id alone is ambiguous and the road's [`Node`]s need not carry these
 /// OSM node ids. Together the three ids identify the road again after a
-/// re-import (M7.0), unless the way itself changed there.
+/// re-import (M5.0), unless the way itself changed there.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct OsmWayPart {
     /// OSM way id.

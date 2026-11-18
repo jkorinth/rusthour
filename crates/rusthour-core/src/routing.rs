@@ -1,4 +1,4 @@
-//! Route finding over the network: A*, later contraction hierarchies (M2, M5).
+//! Route finding over the network: A*, later contraction hierarchies (M2, M6).
 //!
 //! The road graph has roads as vertices and `connections` (movements) as
 //! edges, so turn restrictions are honored by construction. The cost of a

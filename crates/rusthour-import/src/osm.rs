@@ -431,7 +431,7 @@ fn speed_limit_mps(highway: &str, tags: &[(String, String)], forward: bool) -> f
 /// then turn restrictions remove movements. The output depends only on the
 /// input (including its element order), so imports are reproducible.
 // shortcut: boundary nodes look like real dead ends; boundary through-traffic
-// (M5.4) needs them marked, i.e. a flag or list in schema v3.
+// (M6.3) needs them marked, i.e. a flag or list in schema v3.
 #[must_use]
 pub fn import(data: &OsmData, bbox: Bbox) -> Network {
     import_with_report(data, bbox).0
@@ -514,7 +514,7 @@ pub fn import_with_report(data: &OsmData, bbox: Bbox) -> (Network, Report) {
                 if !forward {
                     (from, to) = (to, from);
                 }
-                // Refs identify roads (M7.0); a second way part between the
+                // Refs identify roads (M5.0); a second way part between the
                 // same two nodes is dropped.
                 if !refs.insert((way.id, from, to)) {
                     continue;
