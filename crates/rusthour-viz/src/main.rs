@@ -27,8 +27,8 @@ use traffic::Traffic;
 use world::World;
 
 /// Which build this is, e.g. "v0.4.0 · dev · 1a2b3c4", for bug reports:
-/// the Pages workflows set `RUSTHOUR_BUILD=release` for releases, and GitHub
-/// Actions sets `GITHUB_SHA`.
+/// the Pages workflows set `RUSTHOUR_BUILD=release` for releases, GitHub
+/// Actions sets `GITHUB_SHA`, and `build.rs` the commit of a local checkout.
 fn build_label(version: &str, kind: Option<&str>, sha: Option<&str>) -> String {
     let kind = kind.filter(|&k| k == "release").unwrap_or("dev");
     let sha = sha.map_or("unknown", |s| s.get(..7).unwrap_or(s));
@@ -40,7 +40,7 @@ fn this_build() -> String {
     build_label(
         env!("CARGO_PKG_VERSION"),
         option_env!("RUSTHOUR_BUILD"),
-        option_env!("GITHUB_SHA"),
+        option_env!("GITHUB_SHA").or(option_env!("RUSTHOUR_GIT_COMMIT")),
     )
 }
 
@@ -385,6 +385,8 @@ fn show_failed(ui: &mut egui::Ui, message: &str) -> Option<FailedAction> {
         if ui.button("Show demo map").clicked() {
             action = Some(FailedAction::Demo);
         }
+        ui.add_space(12.0);
+        ui.weak(this_build());
     });
     action
 }
@@ -802,6 +804,12 @@ mod tests {
             build_label("0.4.0", Some(""), Some("abc")),
             "v0.4.0 · dev · abc"
         );
+    }
+
+    #[test]
+    fn a_local_build_names_its_commit() {
+        // Without GITHUB_SHA, build.rs takes the commit from git.
+        assert!(!this_build().ends_with("unknown"), "{}", this_build());
     }
 
     #[test]
