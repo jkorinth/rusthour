@@ -389,6 +389,8 @@ fn put_on(e: &mut Engine, lane: u8, pos_m: f64, route: &[u32], params: IdmParams
         pos_m,
         speed_mps: 0.0,
         params,
+        mobil: crate::behavior::mobil::MobilParams::default(),
+        profile: crate::behavior::profile::Profile::Normal,
         route,
         depart_tick: 0,
     });
@@ -621,4 +623,33 @@ fn a_replan_near_the_line_keeps_to_the_lanes_movements() {
         assert_eq!(e.update_routes(), 1);
         assert_eq!(e.vehicles.route[s], route, "at {pos_m} m");
     }
+}
+
+#[test]
+fn demand_spawns_every_profile_and_only_erratic_drivers_get_noise() {
+    let config = Config {
+        target_vehicles: 20,
+        ..Config::default()
+    };
+    let mut e = Engine::with_network(config, 3, two_routes());
+    let (mut seen, mut noisy) = ([false; 4], false);
+    for _ in 0..20 * MINUTE {
+        e.step(1);
+        let vs = &e.vehicles;
+        for s in (0..vs.slot_count()).filter(|&s| vs.is_live(s)) {
+            let (p, n) = (vs.profile[s], vs.noise_mps2[s]);
+            seen[Profile::ALL.iter().position(|&q| q == p).unwrap()] = true;
+            assert!(n.abs() <= 0.5, "noise {n}");
+            if p == Profile::Erratic {
+                noisy |= n.to_bits() != 0;
+            } else {
+                assert!(
+                    n.to_bits() == 0
+                        && vs.params[s] == p.base().idm
+                        && vs.mobil[s] == p.base().mobil
+                );
+            }
+        }
+    }
+    assert!(seen == [true; 4] && noisy, "seen {seen:?}, noisy {noisy}");
 }

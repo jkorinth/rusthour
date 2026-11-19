@@ -681,6 +681,8 @@ mod tests {
             pos_m: 90.0,
             speed_mps: 0.0,
             params: crate::vehicle::idm::IdmParams::default(),
+            mobil: crate::behavior::mobil::MobilParams::default(),
+            profile: crate::behavior::profile::Profile::Normal,
             route: &[0, 4, 5, 6],
             depart_tick: 0,
         });

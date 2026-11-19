@@ -7,6 +7,8 @@ use rand_chacha::ChaCha8Rng;
 use rand_chacha::rand_core::SeedableRng;
 
 use crate::StateHasher;
+use crate::behavior::mobil::MobilParams;
+use crate::behavior::profile::{Driver, Profile};
 use crate::control::priority::Priority;
 use crate::control::signal::{Light, Plan, Signal};
 use crate::control::{Approach, Controller, NodeControl};
@@ -56,18 +58,10 @@ const MAX_FALLBACK_REPLANS_PER_STEP: u32 = 4;
 /// the wrong one rather than stand until the stuck net removes it.
 const NO_ROUTE: u16 = u16::MAX;
 
-/// The M2 car, the same for every vehicle until M4 driver profiles.
+/// The M2 car, now the normal driver.
+#[cfg(test)]
 fn car() -> IdmParams {
-    let (a, b) = (1.5, 2.0);
-    IdmParams {
-        desired_speed_factor: 1.0,
-        time_headway_s: 1.5,
-        max_accel_mps2: a,
-        comfort_decel_mps2: b,
-        min_gap_m: 2.0,
-        length_m: 4.5,
-        sqrt_ab: f64::sqrt(a * b),
-    }
+    Profile::Normal.base().idm
 }
 
 /// A vehicle past its road end, waiting to enter the next road (phase 6).
@@ -166,8 +160,9 @@ pub struct Engine {
     entrants: Vec<Entrant>,
     router: Router,
     demand: RandomOd,
-    /// Trips that have not entered yet, a FIFO per origin road.
-    pending: Vec<VecDeque<Trip>>,
+    /// Trips that have not entered yet, with their driver's profile, a FIFO
+    /// per origin road.
+    pending: Vec<VecDeque<(Trip, Profile)>>,
     /// Total length of `pending`.
     waiting: u32,
     /// Origin road where the next step starts inserting, so the route cap
@@ -282,6 +277,7 @@ impl Engine {
             self.update_routes();
             self.change_lanes();
             self.decide();
+            self.redraw_noise();
             self.accelerations();
             self.integrate();
             self.transfer();
@@ -290,15 +286,20 @@ impl Engine {
         }
     }
 
-    /// Inserts a vehicle at offset 0 of lane 0 of `route[0]`, now, if the
-    /// gap to that lane's tail allows it (ADR-0004 §2, spawn); returns
-    /// `None` otherwise. Demand (M2.4) uses the same rule.
+    /// Inserts a normal driver with IDM `params` at offset 0 of lane 0 of
+    /// `route[0]`, now, if the gap to that lane's tail allows it (ADR-0004 §2,
+    /// spawn); returns `None` otherwise. Demand (M2.4) uses the same rule.
     ///
     /// # Panics
     /// If `route` is empty or names a road not in the network.
     pub fn spawn(&mut self, route: &[u32], params: IdmParams) -> Option<VehicleId> {
         let v = self.entry_speed(route[0], &params)?;
-        Some(self.vehicles.spawn(entering(route, params, v, self.tick)))
+        let driver = Driver {
+            idm: params,
+            mobil: MobilParams::default(),
+        };
+        let new = entering(route, driver, Profile::Normal, v, self.tick);
+        Some(self.vehicles.spawn(new))
     }
 
     /// Trips generated but not yet on the network.
@@ -321,7 +322,8 @@ impl Engine {
         (gap >= params.min_gap_m + v * params.time_headway_s).then_some(v)
     }
 
-    /// Phase 1: new trips join their origin's FIFO; then, origin by origin
+    /// Phase 1: new trips draw a driver profile (ADR-0006) and join their
+    /// origin's FIFO; then, origin by origin
     /// from the cursor, each FIFO head is routed and inserted if the entry
     /// gap allows, up to `MAX_ROUTES_PER_STEP` per step.
     fn spawn_trips(&mut self) {
@@ -334,24 +336,24 @@ impl Engine {
         self.new_trips.clear();
         let rng = &mut self.rngs[Stream::Demand as usize - 1];
         (self.demand).spawn(&ctx, self.router.routable(), rng, &mut self.new_trips);
+        let behavior = &mut self.rngs[Stream::Behavior as usize - 1];
         for &t in &self.new_trips {
-            self.pending[t.origin as usize].push_back(t);
+            self.pending[t.origin as usize].push_back((t, Profile::draw(behavior)));
             self.waiting += 1;
         }
         let n = self.pending.len();
         let mut routed = 0;
         for i in 0..n {
             let origin = (self.spawn_cursor + i) % n;
-            let Some(&trip) = self.pending[origin].front() else {
+            let Some(&(trip, profile)) = self.pending[origin].front() else {
                 continue;
             };
             if routed == MAX_ROUTES_PER_STEP {
                 self.spawn_cursor = origin;
                 break;
             }
-            let params = car();
             let road = u32::try_from(origin).expect("road id fits u32");
-            let Some(v) = self.entry_speed(road, &params) else {
+            let Some(v) = self.entry_speed(road, &profile.base().idm) else {
                 continue;
             };
             routed += 1;
@@ -360,7 +362,8 @@ impl Engine {
             let found = self.router.route(&self.network, trip, &mut self.route);
             debug_assert!(found, "demand only draws routable roads");
             if found {
-                let new = entering(&self.route, params, v, self.tick);
+                let driver = profile.driver(&mut self.rngs[Stream::Behavior as usize - 1]);
+                let new = entering(&self.route, driver, profile, v, self.tick);
                 self.vehicles.spawn(new);
             }
         }
@@ -537,6 +540,23 @@ impl Engine {
         }
     }
 
+    /// Phase 3b: each vehicle whose second it is (`(tick + slot) % (1000 /
+    /// dt_ms) == 0`, as MOBIL) redraws its acceleration noise, in slot
+    /// order; only erratic drivers draw (ADR-0006 §4).
+    fn redraw_noise(&mut self) {
+        let period = (1000 / u64::from(self.config.dt_ms)).max(1);
+        let first = (period - self.tick % period) % period;
+        let (vs, rng) = (
+            &mut self.vehicles,
+            &mut self.rngs[Stream::Behavior as usize - 1],
+        );
+        let step = usize::try_from(period).expect("period fits usize");
+        for s in (first..vs.slot_count() as u64).step_by(step) {
+            let s = usize::try_from(s).expect("slot fits usize");
+            vs.noise_mps2[s] = vs.profile[s].noise_mps2(rng);
+        }
+    }
+
     /// Phase 4: IDM accelerations from start-of-step state, lane by lane.
     /// Outside towns a vehicle doesn't pass a slower leader in the lane to
     /// its left on the right (ADR-0005 §6).
@@ -594,7 +614,7 @@ impl Engine {
                     leader
                 };
                 let v0 = p.desired_speed_factor * road.speed_limit_mps;
-                let mut a = idm::acceleration(p, v0, v, leader);
+                let mut a = idm::acceleration(p, v0, v, leader) + vs.noise_mps2[s];
                 if let Some(left) = left {
                     a = a.min(right_pass_cap(vs, left, &mut passed, s, v0));
                 }
@@ -843,9 +863,10 @@ impl Engine {
         }
         for q in &self.pending {
             h.write_u64(q.len() as u64);
-            for t in q {
+            for (t, p) in q {
                 h.write_u64(u64::from(t.origin));
                 h.write_u64(u64::from(t.destination));
+                h.write_u64(*p as u64);
             }
         }
         h.write_u64(self.spawn_cursor as u64);
@@ -969,13 +990,15 @@ fn horizon(p: &IdmParams, v: f64) -> f64 {
 }
 
 /// A vehicle entering `route[0]` at offset 0, lane 0, with speed `v`.
-fn entering(route: &[u32], params: IdmParams, v: f64, tick: u64) -> NewVehicle<'_> {
+fn entering(route: &[u32], d: Driver, profile: Profile, v: f64, tick: u64) -> NewVehicle<'_> {
     NewVehicle {
         road: route[0],
         lane: 0,
         pos_m: 0.0,
         speed_mps: v,
-        params,
+        params: d.idm,
+        mobil: d.mobil,
+        profile,
         route,
         depart_tick: tick,
     }

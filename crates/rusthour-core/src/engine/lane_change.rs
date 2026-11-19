@@ -350,6 +350,8 @@ mod tests {
             pos_m,
             speed_mps,
             params,
+            mobil: crate::behavior::mobil::MobilParams::default(),
+            profile: crate::behavior::profile::Profile::Normal,
             route: &[0],
             depart_tick: 0,
         });

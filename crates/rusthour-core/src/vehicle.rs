@@ -10,6 +10,7 @@ pub mod idm;
 
 use crate::StateHasher;
 use crate::behavior::mobil::MobilParams;
+use crate::behavior::profile::Profile;
 use idm::IdmParams;
 use std::collections::VecDeque;
 
@@ -38,6 +39,10 @@ pub struct NewVehicle<'a> {
     pub speed_mps: f64,
     /// IDM parameters.
     pub params: IdmParams,
+    /// MOBIL parameters.
+    pub mobil: MobilParams,
+    /// Driver profile the parameters came from.
+    pub profile: Profile,
     /// Road ids, origin..=destination; `road` must be the first.
     pub route: &'a [u32],
     /// Tick the vehicle departs.
@@ -77,8 +82,12 @@ pub struct Vehicles {
     /// Steps standing at the line in a lane that doesn't serve the next
     /// movement, red excepted, since entering the road (ADR-0005 §7).
     pub wrong_lane_ticks: Vec<u16>,
-    /// MOBIL parameters, the defaults at spawn (ADR-0005 §6).
+    /// MOBIL parameters, set at spawn by the profile (ADR-0005 §6, ADR-0006).
     pub mobil: Vec<MobilParams>,
+    /// Driver profile (ADR-0006).
+    pub profile: Vec<Profile>,
+    /// Acceleration offset (m/s²) added in phase 4; 0 unless erratic.
+    pub noise_mps2: Vec<f64>,
     /// Lane before the last lane change; on entering a road, that lane.
     pub lc_from: Vec<u8>,
     /// Steps since the last lane change, saturating; `u16::MAX` = none yet.
@@ -129,6 +138,8 @@ impl Vehicles {
             held_ticks: Vec::new(),
             wrong_lane_ticks: Vec::new(),
             mobil: Vec::new(),
+            profile: Vec::new(),
+            noise_mps2: Vec::new(),
             lc_from: Vec::new(),
             lc_ticks: Vec::new(),
             free: Vec::new(),
@@ -235,12 +246,16 @@ impl Vehicles {
             self.held_ticks.push(0);
             self.wrong_lane_ticks.push(0);
             self.mobil.push(MobilParams::default());
+            self.profile.push(Profile::default());
+            self.noise_mps2.push(0.0);
             self.lc_from.push(0);
             self.lc_ticks.push(u16::MAX);
             slot
         };
         let s = slot as usize;
         self.params[s] = v.params;
+        self.mobil[s] = v.mobil;
+        self.profile[s] = v.profile;
         self.speed_mps[s] = v.speed_mps;
         self.longest_route = self.longest_route.max(v.route.len().next_power_of_two());
         self.route[s].reserve(self.longest_route);
@@ -318,6 +333,8 @@ impl Vehicles {
         self.held_ticks[s] = 0;
         self.wrong_lane_ticks[s] = 0;
         self.mobil[s] = MobilParams::default();
+        self.profile[s] = Profile::default();
+        self.noise_mps2[s] = 0.0;
         self.lc_ticks[s] = u16::MAX;
         self.free.push(id.slot);
         true
@@ -404,6 +421,8 @@ impl Vehicles {
             ] {
                 h.write_f64(x);
             }
+            h.write_u64(self.profile[s] as u64);
+            h.write_f64(self.noise_mps2[s]);
             h.write_u64(u64::from(self.lc_from[s]));
             h.write_u64(u64::from(self.lc_ticks[s]));
         }
@@ -467,6 +486,8 @@ mod tests {
             pos_m: 0.0,
             speed_mps: speed,
             params: params(),
+            mobil: MobilParams::default(),
+            profile: Profile::Normal,
             route,
             depart_tick: 7,
         }
