@@ -197,7 +197,7 @@ seed ⇒ identical state hash.
 | ID | Item | Status | Owner |
 | --- | --- | --- | --- |
 | M4.1 | Driver profiles: aggressive, normal, cautious, erratic (IDM + MOBIL parameters, noise) | done | feat/M4.1-driver-profiles |
-| M4.2 | Vehicle classes: car, van, truck, bus | claimed | feat/M4.2-vehicle-classes |
+| M4.2 | Vehicle classes: car, van, truck, bus | done | feat/M4.2-vehicle-classes |
 | M4.3 | Fleet/driver mix configurable per run (CLI and viewer); it moves into the scenario file with M5.5 | todo | |
 | M4.4 | `rusthour-viz`: live parameter panel, color by driver/vehicle type, inspect a vehicle | todo | |
 | M4.5 | Routing: tighter admissible A* bound from ALT landmarks (about 8, farthest-first) on free-flow travel time plus static turn cost, precomputed at load; precompute `Turn::of` per (arm, exit) in `Priority::new`; target `step_multilane/5000` ≤ 0.7 ms (M3 architect review) | todo | |
