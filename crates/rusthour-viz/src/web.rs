@@ -77,7 +77,7 @@ async fn fetch_map(progress: &Mutex<Progress>) -> Loaded {
     let search = web_sys::window()
         .and_then(|w| w.location().search().ok())
         .unwrap_or_default();
-    let entry = match manifest::choose(&manifest, manifest::requested_area(&search)) {
+    let entry = match manifest::choose(&manifest, manifest::query_param(&search, "map")) {
         Ok(entry) => entry,
         Err(why) => return demo(&why),
     };
@@ -104,6 +104,12 @@ async fn fetch_map(progress: &Mutex<Progress>) -> Loaded {
             entry.area
         )),
     }
+}
+
+/// The page's `?road=<id>`, to select once the map is shown.
+pub fn requested_road() -> Option<String> {
+    let search = web_sys::window()?.location().search().ok()?;
+    manifest::query_param(&search, "road").map(str::to_owned)
 }
 
 /// Reloads the page with `?map=<area>`: the URL stays shareable, and Back

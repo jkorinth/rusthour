@@ -50,6 +50,8 @@ const SCROLL_ZOOM_PER_POINT: f32 = 0.004_558; // ln(1.2) / 40
 /// Room left around the map by "fit": keeps it clear of the overlays at the
 /// top and bottom corners.
 const FIT_PADDING: Vec2 = Vec2::new(8.0, 40.0);
+/// A focused road is shown with this much around it (m).
+const FOCUS_MARGIN_M: f32 = 100.0;
 
 /// Keys bound in the map view, for the `?` help: (keys, action).
 pub const SHORTCUTS: &[(&str, &str)] = &[
@@ -82,6 +84,8 @@ pub struct World {
     bounds: Rect,
     /// `None` until the first frame, and after "fit": then fit to the viewport.
     camera: Option<Camera>,
+    /// World area to show instead of the whole map when the camera is next set.
+    focus: Option<Rect>,
     /// Street-name label candidates, found once per map.
     pub labels: Vec<Candidate>,
     /// Laid-out label text, per candidate, made when first needed; valid for
@@ -124,6 +128,7 @@ impl World {
             mesh,
             bounds,
             camera: None,
+            focus: None,
             galleys: vec![None; labels.len()],
             galleys_ppp: 0.0,
             labels,
@@ -132,6 +137,18 @@ impl World {
 
     /// Resets the view to show the whole map.
     pub fn fit(&mut self) {
+        self.camera = None;
+        self.focus = None;
+    }
+
+    /// Shows `road` and about [`FOCUS_MARGIN_M`] around it on the next frame.
+    pub fn focus_road(&mut self, road: RoadId) {
+        let points: Vec<_> = self.lines[road.0 as usize]
+            .iter()
+            .map(|&p| to_mesh(p))
+            .map(|m| pos2(m.x, -m.y))
+            .collect();
+        self.focus = Some(Rect::from_points(&points).expand(FOCUS_MARGIN_M));
         self.camera = None;
     }
 
@@ -152,15 +169,15 @@ impl World {
             return; // e.g. a minimized window: a zero scale would poison the camera
         }
         let padded = viewport.shrink2(FIT_PADDING);
-        let fit = Camera::fit(
-            self.bounds,
-            if padded.is_positive() {
-                padded
-            } else {
-                viewport
-            },
-        );
-        let camera = self.camera.get_or_insert(fit);
+        let padded = if padded.is_positive() {
+            padded
+        } else {
+            viewport
+        };
+        let fit = Camera::fit(self.bounds, padded);
+        let camera = self
+            .camera
+            .get_or_insert_with(|| self.focus.map_or(fit, |f| Camera::fit(f, padded)));
         // Zoom out to "whole map fits", in to a lane MAX_LANE_PT wide.
         let max_scale = MAX_LANE_PT / LANE_WIDTH_M;
 

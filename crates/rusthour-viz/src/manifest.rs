@@ -43,13 +43,13 @@ pub fn parse_manifest(json: &str) -> Result<Vec<ManifestEntry>, String> {
     }
 }
 
-/// The `map` parameter of a page's query string (`?map=bensheim-2km`).
-// shortcut: no percent-decoding; area names are plain ASCII (data/areas.toml).
-pub fn requested_area(search: &str) -> Option<&str> {
+/// Parameter `key` of a page's query string, e.g. `map` in `?map=bensheim-2km`.
+// shortcut: no percent-decoding; area names and road ids are plain ASCII.
+pub fn query_param<'a>(search: &'a str, key: &str) -> Option<&'a str> {
     search
         .trim_start_matches('?')
         .split('&')
-        .find_map(|kv| kv.strip_prefix("map="))
+        .find_map(|kv| kv.strip_prefix(key)?.strip_prefix('='))
         .filter(|a| !a.is_empty())
 }
 
@@ -113,12 +113,17 @@ mod tests {
         assert_eq!(choose(&m[..1], None).unwrap().area, "bensheim-1km");
 
         assert_eq!(
-            requested_area("?map=bensheim-1km&x=1"),
+            query_param("?map=bensheim-1km&x=1", "map"),
             Some("bensheim-1km")
         );
-        assert_eq!(requested_area("?x=1&map=a"), Some("a"));
-        assert_eq!(requested_area(""), None);
-        assert_eq!(requested_area("?map="), None);
+        assert_eq!(query_param("?x=1&map=a", "map"), Some("a"));
+        assert_eq!(query_param("", "map"), None);
+        assert_eq!(query_param("?map=", "map"), None);
+        assert_eq!(
+            query_param("?map=bensheim-5km&road=820", "road"),
+            Some("820")
+        );
+        assert_eq!(query_param("?roads=1&road", "road"), None);
     }
 
     proptest::proptest! {
@@ -131,7 +136,7 @@ mod tests {
             let pairs: Vec<String> = params.iter().map(|(k, v)| format!("{k}={v}")).collect();
             let search = format!("?{}", pairs.join("&"));
             let switched = with_map(&search, &area);
-            proptest::prop_assert_eq!(requested_area(&switched), Some(area.as_str()));
+            proptest::prop_assert_eq!(query_param(&switched, "map"), Some(area.as_str()));
             for (k, v) in params.iter().filter(|(k, _)| k != "map") {
                 let kv = format!("{k}={v}");
                 proptest::prop_assert!(switched[1..].split('&').any(|p| p == kv), "{} lost {}", switched, kv);
