@@ -46,7 +46,11 @@ use rusthour_core::{Config, Engine, Stream, run_and_hash};
 /// stream (aggressive, normal, cautious, erratic), erratic drivers get
 /// jittered parameters and an acceleration noise, and the hash includes each
 /// slot's profile and noise and the waiting trips' profiles.
-const GOLDEN_HASH: u64 = 12_566_603_030_392_459_459;
+/// Changed in M4.2: demand also draws a vehicle class per trip (car, van,
+/// truck, bus), which sets the length and caps or scales the driver's
+/// parameters, and the hash includes each slot's class and speed cap and the
+/// waiting trips' classes.
+const GOLDEN_HASH: u64 = 1_619_931_015_877_810_556;
 
 /// A four-road ring with a short road and a merging side road that routing
 /// excludes. Random demand keeps 10 vehicles on the ring, and hand-placed
@@ -99,6 +103,7 @@ fn traffic(seed: u64) -> u64 {
             comfort_decel_mps2: b,
             min_gap_m: 2.0,
             length_m: 4.5,
+            max_speed_mps: f64::INFINITY,
             sqrt_ab: f64::sqrt(a * b),
         };
         let route: Vec<u32> = if i % 3 == 0 {

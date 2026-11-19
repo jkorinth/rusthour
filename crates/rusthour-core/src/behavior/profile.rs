@@ -41,7 +41,7 @@ pub struct Driver {
 /// run setting.
 pub const DEFAULT_MIX: [u32; 4] = [15, 60, 20, 5];
 
-/// Every vehicle's length until vehicle classes (M4.2) set it.
+/// The car's length; vehicle classes (ADR-0007) set others after the profile.
 const CAR_LENGTH_M: f64 = 4.5;
 
 impl Profile {
@@ -55,18 +55,7 @@ impl Profile {
 
     /// Draws a profile by [`DEFAULT_MIX`] (one `next_u32`).
     pub fn draw(rng: &mut ChaCha8Rng) -> Self {
-        // 0..100 without float rounding; the cumulative shares pick the profile.
-        #[allow(clippy::cast_possible_truncation)] // below 100
-        let k = ((u64::from(rng.next_u32()) * 100) >> 32) as u32;
-        let mut upto = 0;
-        let mut pick = Self::ALL
-            .into_iter()
-            .zip(DEFAULT_MIX)
-            .filter(|&(_, share)| {
-                upto += share;
-                k < upto
-            });
-        pick.next().map_or(Self::Normal, |(p, _)| p)
+        Self::ALL[draw_index(rng, &DEFAULT_MIX)]
     }
 
     /// The profile's parameters without jitter.
@@ -96,6 +85,20 @@ impl Profile {
     }
 }
 
+/// Draws an index by `mix`, percentages that sum to 100 (one `next_u32`).
+pub(crate) fn draw_index(rng: &mut ChaCha8Rng, mix: &[u32]) -> usize {
+    // 0..100 without float rounding; the cumulative shares pick the index.
+    #[allow(clippy::cast_possible_truncation)] // below 100
+    let k = ((u64::from(rng.next_u32()) * 100) >> 32) as u32;
+    let mut upto = 0;
+    mix.iter()
+        .position(|&share| {
+            upto += share;
+            k < upto
+        })
+        .unwrap_or(0)
+}
+
 /// A uniform float in `[0, 1)` from the top 53 bits of one draw (ADR-0004).
 #[allow(clippy::cast_precision_loss)] // 53 bits are exact in f64
 fn unit(rng: &mut ChaCha8Rng) -> f64 {
@@ -111,6 +114,7 @@ fn idm(desired_speed_factor: f64, t: f64, a: f64, b: f64, s0: f64) -> IdmParams 
         comfort_decel_mps2: b,
         min_gap_m: s0,
         length_m: CAR_LENGTH_M,
+        max_speed_mps: f64::INFINITY,
         sqrt_ab: (a * b).sqrt(),
     }
 }

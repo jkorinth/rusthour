@@ -17,8 +17,18 @@ pub struct IdmParams {
     pub min_gap_m: f64,
     /// Vehicle length (m).
     pub length_m: f64,
+    /// Cap on `v0` and on the speed (m/s); infinite for cars (ADR-0007).
+    pub max_speed_mps: f64,
     /// `√(a·b)`, computed once at spawn.
     pub sqrt_ab: f64,
+}
+
+impl IdmParams {
+    /// Desired speed `v0` on a road with speed limit `limit_mps`.
+    #[must_use]
+    pub fn v0(&self, limit_mps: f64) -> f64 {
+        (self.desired_speed_factor * limit_mps).min(self.max_speed_mps)
+    }
 }
 
 /// The vehicle or standing obstacle ahead.
@@ -71,6 +81,7 @@ mod tests {
             comfort_decel_mps2: b,
             min_gap_m: s0,
             length_m: 4.5,
+            max_speed_mps: f64::INFINITY,
             sqrt_ab: (a * b).sqrt(),
         }
     }
