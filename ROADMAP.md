@@ -205,6 +205,7 @@ seed ⇒ identical state hash.
 | M4.7 | Calibrate turn costs (`routing::turn_s`) and right-of-way patience (`PATIENCE_MS`) against measured junction delays (M3 architect review) | todo | |
 | M4.8 | Viewer fixes from the M3 UX review, candidates for a 0.4.x patch: draw the route line through `Placement::center_line` like the lanes (N2); the follow hint compares the speed reached, not the speed set (N3) | done | fix/M4.8-route-line-follow-hint |
 | M4.9 | Viewer and CLI polish from the M3 UX review: `rusthour-viz --road <id>` and `?road=<id>` select and centre a road (N1); build label falls back to the git commit, shows on the map-error screen, README says where it is (N4); controls wrap into two rows below about 600 pt (N5); CLI usage line without `--map` doesn't suggest `--steps` is required (N6); bolder outline for the selected road (N7) | done | feat/M4.9-viewer-cli-polish |
+| M4.10 | Flaky `no_allocations_in_steady_state`: libtest's "running for over 60 seconds" warning allocated on its own thread and dhat counted it; the test now runs without the libtest harness | done | fix/M4.10-alloc-test-flake |
 
 ### M5 — Network editing & A/B studies → `v0.6.0`
 
