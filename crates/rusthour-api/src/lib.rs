@@ -8,6 +8,7 @@
 compile_error!("the `server` feature is native-only");
 
 mod inspect;
+mod mix;
 mod network;
 mod pacer;
 mod placement;
@@ -19,6 +20,7 @@ use serde::{Deserialize, Serialize};
 pub use inspect::{
     DriverInfo, Gone, MovementInfo, RoadInfo, StopCause, TurnType, VehicleInfo, WaitReason,
 };
+pub use mix::{DriverMix, FleetMix, MixError};
 pub use network::{
     Connection, EndControl, MAX_LANES, NETWORK_SCHEMA_VERSION, Network, NetworkError, Node, NodeId,
     OsmWayPart, Point, Road, RoadClass, RoadId, Turns,
@@ -107,15 +109,13 @@ impl InProcess {
     ///
     /// # Panics
     ///
-    /// If `config.dt_ms` is outside 1..=1000;
+    /// If `config.dt_ms` is outside 1..=1000 or a mix is all zero;
     /// [`with_network`](Self::with_network) returns an error instead.
     #[must_use]
     pub fn new(config: Config, seed: u64) -> Self {
-        assert!(
-            DT_MS.contains(&config.dt_ms),
-            "dt_ms must be 1 to 1000, got {}",
-            config.dt_ms
-        );
+        if let Err(e) = check(&config) {
+            panic!("{e}");
+        }
         Self {
             engine: rusthour_core::Engine::new(config, seed),
             network: Network::default(),
@@ -127,20 +127,30 @@ impl InProcess {
     /// # Errors
     ///
     /// Returns a [`NetworkError`] if the network is inconsistent, e.g. a road
-    /// references a missing node or has zero length, or if `config.dt_ms` is
-    /// outside 1..=1000.
+    /// references a missing node or has zero length, if `config.dt_ms` is
+    /// outside 1..=1000, or if `config.profile_mix` or `config.class_mix` is
+    /// all zero.
     pub fn with_network(config: Config, seed: u64, network: Network) -> Result<Self, NetworkError> {
-        if !DT_MS.contains(&config.dt_ms) {
-            return Err(NetworkError::BadStepLength {
-                dt_ms: config.dt_ms,
-            });
-        }
+        check(&config)?;
         let core = network.to_core()?;
         Ok(Self {
             engine: rusthour_core::Engine::with_network(config, seed, core),
             network,
         })
     }
+}
+
+/// The checks on `config` both constructors make.
+fn check(config: &Config) -> Result<(), NetworkError> {
+    if !DT_MS.contains(&config.dt_ms) {
+        return Err(NetworkError::BadStepLength {
+            dt_ms: config.dt_ms,
+        });
+    }
+    if [config.profile_mix, config.class_mix].contains(&[0; 4]) {
+        return Err(NetworkError::EmptyMix);
+    }
+    Ok(())
 }
 
 impl Simulation for InProcess {
