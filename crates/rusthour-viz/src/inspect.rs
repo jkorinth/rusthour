@@ -208,14 +208,17 @@ impl Inspector {
         let outline = Stroke::new(2.0, ink);
         match self.selected {
             Some(Selection::Road(r)) => {
+                // Closed around the road 3 points out, as for vehicles, on a
+                // dark halo so it stands out on the grey road (M3 UX review N7).
                 let line = &view.lines[r.0 as usize];
                 let half = f32::from(view.network.roads[r.0 as usize].lanes) * LANE_WIDTH_M / 2.0
-                    + 2.0 / view.camera.scale;
-                for side in [half, -half] {
-                    let edge = shifted(line, f64::from(side));
-                    let points = edge.into_iter().map(|p| view.to_screen(p)).collect();
-                    painter.add(Shape::line(points, outline));
-                }
+                    + 3.0 / view.camera.scale;
+                let mut ring = shifted(line, f64::from(half));
+                ring.extend(shifted(line, -f64::from(half)).into_iter().rev());
+                let ring: Vec<_> = ring.into_iter().map(|p| view.to_screen(p)).collect();
+                let dark = Stroke::new(5.0, visuals.extreme_bg_color);
+                painter.add(Shape::closed_line(ring.clone(), dark));
+                painter.add(Shape::closed_line(ring, outline));
             }
             Some(Selection::Vehicle(id)) => {
                 if let Some(i) = view.vehicles.id.iter().position(|&v| v == id) {
