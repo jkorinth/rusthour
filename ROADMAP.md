@@ -196,7 +196,7 @@ seed ⇒ identical state hash.
 
 | ID | Item | Status | Owner |
 | --- | --- | --- | --- |
-| M4.1 | Driver profiles: aggressive, normal, cautious, erratic (IDM + MOBIL parameters, noise) | claimed | feat/M4.1-driver-profiles |
+| M4.1 | Driver profiles: aggressive, normal, cautious, erratic (IDM + MOBIL parameters, noise) | done | feat/M4.1-driver-profiles |
 | M4.2 | Vehicle classes: car, van, truck, bus | todo | |
 | M4.3 | Fleet/driver mix configurable per run (CLI and viewer); it moves into the scenario file with M5.5 | todo | |
 | M4.4 | `rusthour-viz`: live parameter panel, color by driver/vehicle type, inspect a vehicle | todo | |
