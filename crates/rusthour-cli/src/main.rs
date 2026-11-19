@@ -3,7 +3,7 @@
 use std::path::{Path, PathBuf};
 
 use clap::{CommandFactory as _, Parser, Subcommand, error::ErrorKind};
-use rusthour_api::{Config, InProcess, Network, Simulation};
+use rusthour_api::{Config, DriverMix, FleetMix, InProcess, Network, Simulation};
 
 /// Rust Hour traffic simulator, headless mode.
 #[derive(Debug, Parser)]
@@ -40,6 +40,14 @@ enum Command {
         /// `stuck_roads_total` (how many roads had any).
         #[arg(long)]
         report_stuck: bool,
+        /// Share of each driver profile; names left out get 0 and only the
+        /// ratios matter [default: aggressive=15,normal=60,cautious=20,erratic=5]
+        #[arg(long, value_name = "NAME=SHARE,...")]
+        drivers: Option<DriverMix>,
+        /// Share of each vehicle class, as for --drivers
+        /// [default: car=85,van=8,truck=5,bus=2]
+        #[arg(long, value_name = "NAME=SHARE,...")]
+        fleet: Option<FleetMix>,
     },
 }
 
@@ -52,6 +60,8 @@ fn main() {
             vehicles,
             map,
             report_stuck,
+            drivers,
+            fleet,
         } => {
             // Not clap's `requires`: its usage line lists every option given,
             // which made `--steps` look required.
@@ -66,9 +76,14 @@ fn main() {
                     )
                     .exit();
             }
+            // Parsing validated both mixes, so they normalise.
+            let drivers = drivers.unwrap_or_default().normalised().expect("validated");
+            let fleet = fleet.unwrap_or_default().normalised().expect("validated");
             let config = Config {
                 dt_ms,
                 target_vehicles: vehicles,
+                profile_mix: drivers.weights().expect("validated"),
+                class_mix: fleet.weights().expect("validated"),
                 ..Config::default()
             };
             let mut sim = match map.map(|path| load(&path)) {
@@ -90,6 +105,8 @@ fn main() {
                 out["stuck_roads"] = top.into();
                 out["stuck_roads_total"] = total.into();
             }
+            out["drivers"] = serde_json::to_value(drivers).expect("plain data");
+            out["fleet"] = serde_json::to_value(fleet).expect("plain data");
             out["state_hash"] = sim.state_hash().into();
             match serde_json::to_string_pretty(&out) {
                 Ok(json) => println!("{json}"),

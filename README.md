@@ -64,6 +64,15 @@ unnamed), `osm_way` and whether it is a `roundabout`, and
 shows the same road id and OSM way; `rusthour-viz --road <id>` opens the
 viewer on that road. `rusthour run --help` lists all options.
 
+`--drivers` and `--fleet` set the mix of driver profiles and vehicle
+classes, as `name=share` pairs: e.g.
+`--drivers aggressive=15,normal=60,cautious=20,erratic=5` and
+`--fleet car=85,van=8,truck=5,bus=2` (the defaults). Shares are numbers
+≥ 0, a name left out gets 0, and only the ratios matter, so `car=3,truck=1`
+is 75% cars and 25% trucks. The output echoes both mixes as `drivers` and
+`fleet`, normalised to sum to 1. The same seed gives the same trips with any
+mix; only who drives them changes.
+
 ## Viewer
 
 Natively, `cargo run -p rusthour-viz --release -- --map <file.rhnet>` opens a
