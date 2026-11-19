@@ -14,6 +14,7 @@ fn car() -> IdmParams {
         comfort_decel_mps2: b,
         min_gap_m: 2.0,
         length_m: 4.5,
+        max_speed_mps: f64::INFINITY,
         sqrt_ab: f64::sqrt(a * b),
     }
 }

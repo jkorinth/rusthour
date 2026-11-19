@@ -683,6 +683,7 @@ mod tests {
             params: crate::vehicle::idm::IdmParams::default(),
             mobil: crate::behavior::mobil::MobilParams::default(),
             profile: crate::behavior::profile::Profile::Normal,
+            class: crate::vehicle::class::Class::Car,
             route: &[0, 4, 5, 6],
             depart_tick: 0,
         });

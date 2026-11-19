@@ -6,11 +6,13 @@
 //! head first (descending position), sorted by construction: vehicles enter
 //! at the tail and leave from anywhere, so nothing is ever sorted.
 
+pub mod class;
 pub mod idm;
 
 use crate::StateHasher;
 use crate::behavior::mobil::MobilParams;
 use crate::behavior::profile::Profile;
+use class::Class;
 use idm::IdmParams;
 use std::collections::VecDeque;
 
@@ -43,6 +45,8 @@ pub struct NewVehicle<'a> {
     pub mobil: MobilParams,
     /// Driver profile the parameters came from.
     pub profile: Profile,
+    /// Vehicle class applied on top of it (ADR-0007).
+    pub class: Class,
     /// Road ids, origin..=destination; `road` must be the first.
     pub route: &'a [u32],
     /// Tick the vehicle departs.
@@ -86,6 +90,8 @@ pub struct Vehicles {
     pub mobil: Vec<MobilParams>,
     /// Driver profile (ADR-0006).
     pub profile: Vec<Profile>,
+    /// Vehicle class (ADR-0007).
+    pub class: Vec<Class>,
     /// Acceleration offset (m/s²) added in phase 4; 0 unless erratic.
     pub noise_mps2: Vec<f64>,
     /// Lane before the last lane change; on entering a road, that lane.
@@ -139,6 +145,7 @@ impl Vehicles {
             wrong_lane_ticks: Vec::new(),
             mobil: Vec::new(),
             profile: Vec::new(),
+            class: Vec::new(),
             noise_mps2: Vec::new(),
             lc_from: Vec::new(),
             lc_ticks: Vec::new(),
@@ -247,6 +254,7 @@ impl Vehicles {
             self.wrong_lane_ticks.push(0);
             self.mobil.push(MobilParams::default());
             self.profile.push(Profile::default());
+            self.class.push(Class::default());
             self.noise_mps2.push(0.0);
             self.lc_from.push(0);
             self.lc_ticks.push(u16::MAX);
@@ -256,6 +264,7 @@ impl Vehicles {
         self.params[s] = v.params;
         self.mobil[s] = v.mobil;
         self.profile[s] = v.profile;
+        self.class[s] = v.class;
         self.speed_mps[s] = v.speed_mps;
         self.longest_route = self.longest_route.max(v.route.len().next_power_of_two());
         self.route[s].reserve(self.longest_route);
@@ -334,6 +343,7 @@ impl Vehicles {
         self.wrong_lane_ticks[s] = 0;
         self.mobil[s] = MobilParams::default();
         self.profile[s] = Profile::default();
+        self.class[s] = Class::default();
         self.noise_mps2[s] = 0.0;
         self.lc_ticks[s] = u16::MAX;
         self.free.push(id.slot);
@@ -399,6 +409,7 @@ impl Vehicles {
                 p.comfort_decel_mps2,
                 p.min_gap_m,
                 p.length_m,
+                p.max_speed_mps,
                 p.sqrt_ab,
             ] {
                 h.write_f64(x);
@@ -422,6 +433,7 @@ impl Vehicles {
                 h.write_f64(x);
             }
             h.write_u64(self.profile[s] as u64);
+            h.write_u64(self.class[s] as u64);
             h.write_f64(self.noise_mps2[s]);
             h.write_u64(u64::from(self.lc_from[s]));
             h.write_u64(u64::from(self.lc_ticks[s]));
@@ -475,6 +487,7 @@ mod tests {
             comfort_decel_mps2: 2.0,
             min_gap_m: 2.0,
             length_m: 4.5,
+            max_speed_mps: f64::INFINITY,
             sqrt_ab: 3.0_f64.sqrt(),
         }
     }
@@ -488,6 +501,7 @@ mod tests {
             params: params(),
             mobil: MobilParams::default(),
             profile: Profile::Normal,
+            class: Class::Car,
             route,
             depart_tick: 7,
         }

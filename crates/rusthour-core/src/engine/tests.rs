@@ -391,6 +391,7 @@ fn put_on(e: &mut Engine, lane: u8, pos_m: f64, route: &[u32], params: IdmParams
         params,
         mobil: crate::behavior::mobil::MobilParams::default(),
         profile: crate::behavior::profile::Profile::Normal,
+        class: crate::vehicle::class::Class::Car,
         route,
         depart_tick: 0,
     });
@@ -643,13 +644,113 @@ fn demand_spawns_every_profile_and_only_erratic_drivers_get_noise() {
             if p == Profile::Erratic {
                 noisy |= n.to_bits() != 0;
             } else {
-                assert!(
-                    n.to_bits() == 0
-                        && vs.params[s] == p.base().idm
-                        && vs.mobil[s] == p.base().mobil
-                );
+                let d = vs.class[s].apply(p.base());
+                assert!(n.to_bits() == 0 && vs.params[s] == d.idm && vs.mobil[s] == d.mobil);
             }
         }
     }
     assert!(seen == [true; 4] && noisy, "seen {seen:?}, noisy {noisy}");
+}
+
+/// One straight one-lane road of `length_m` at `speed` (m/s).
+fn straight(length_m: f64, speed: f64) -> Network {
+    Network {
+        nodes: vec![[0.0, 0.0], [length_m, 0.0]],
+        roads: vec![road(0, 1, length_m, speed, [[1.0, 0.0]; 2])],
+        connections: vec![],
+    }
+}
+
+/// A normal driver in a vehicle of `class`, at `pos_m` on lane 0 of road 0.
+fn put_class(e: &mut Engine, pos_m: f64, speed_mps: f64, route: &[u32], class: Class) -> usize {
+    put_driver(e, pos_m, speed_mps, route, Profile::Normal, class)
+}
+
+fn put_driver(
+    e: &mut Engine,
+    pos_m: f64,
+    speed_mps: f64,
+    route: &[u32],
+    profile: Profile,
+    class: Class,
+) -> usize {
+    let d = class.apply(profile.driver(e.rng(Stream::Behavior)));
+    let id = e.vehicles.spawn(crate::vehicle::NewVehicle {
+        road: route[0],
+        lane: 0,
+        pos_m,
+        speed_mps,
+        params: d.idm,
+        mobil: d.mobil,
+        profile,
+        class,
+        route,
+        depart_tick: 0,
+    });
+    id.slot as usize
+}
+
+/// ADR-0007 §6: six trucks queue 45 m (6 × 7.5 m of extra length) or
+/// more further back than six cars behind the same standing vehicle.
+#[test]
+fn a_truck_takes_more_room_in_a_queue() {
+    let queue = |class: Class| {
+        let mut e = Engine::with_network(Config::default(), 1, straight(400.0, 13.9));
+        let blocker = put_class(&mut e, 390.0, 0.0, &[0], Class::Car);
+        e.vehicles.params[blocker].desired_speed_factor = 1e-4;
+        let mut n = 0;
+        while n < 6 {
+            let p = class.apply(Profile::Normal.base()).idm;
+            if let Some(id) = e.spawn(&[0], p) {
+                e.vehicles.class[id.slot as usize] = class;
+                n += 1;
+            }
+            e.step(1);
+        }
+        e.step(2 * MINUTE);
+        let vs = &e.vehicles;
+        let tail = *vs.lane(0).back().unwrap() as usize;
+        assert!(vs.speed_mps[tail] < 0.1, "the queue stands");
+        vs.pos_m[blocker] - (vs.pos_m[tail] - vs.params[tail].length_m)
+    };
+    let (cars, trucks) = (queue(Class::Car), queue(Class::Truck));
+    assert!(trucks >= cars + 45.0, "cars {cars} m, trucks {trucks} m");
+}
+
+/// "Don't block the box" asks for room for the head's own length.
+#[test]
+fn the_room_check_uses_the_vehicles_own_length() {
+    let net = Network {
+        nodes: vec![[0.0, 0.0], [100.0, 0.0], [200.0, 0.0]],
+        roads: vec![
+            road(0, 1, 100.0, 13.9, [[1.0, 0.0]; 2]),
+            road(1, 2, 100.0, 13.9, [[1.0, 0.0]; 2]),
+        ],
+        connections: vec![(0, 1)],
+    };
+    for (class, room) in [(Class::Car, true), (Class::Truck, false)] {
+        let mut e = Engine::with_network(Config::default(), 1, net.clone());
+        // A car on road 1 whose rear is 5.5 m from its start: room for 4.5 m.
+        put_class(&mut e, 10.0, 0.0, &[1], Class::Car);
+        let head = put_class(&mut e, 99.0, 0.0, &[0, 1], class);
+        assert_eq!(!no_room(&e.vehicles, head, 0), room, "{class:?}");
+    }
+}
+
+proptest::proptest! {
+    /// An erratic truck driver on a 130 km/h road never exceeds 80 km/h,
+    /// though the noise alone would carry it about 14% past its `v0`.
+    #[test]
+    fn a_truck_never_exceeds_its_speed_cap(seed: u64) {
+        let mut e = Engine::with_network(Config::default(), seed, straight(4000.0, 36.1));
+        let s = put_driver(&mut e, 0.0, 20.0, &[0], Profile::Erratic, Class::Truck);
+        let cap = Class::Truck.spec().max_speed_mps;
+        let mut top: f64 = 0.0;
+        while e.vehicles.is_live(s) {
+            e.step(1);
+            top = top.max(e.vehicles.speed_mps[s]);
+            proptest::prop_assert!(e.vehicles.speed_mps[s] <= cap + 1e-9);
+        }
+        proptest::prop_assert!(top > 0.9 * cap, "reached {} of {}", top, cap);
+    }
 }

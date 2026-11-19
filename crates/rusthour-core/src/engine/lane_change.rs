@@ -171,7 +171,7 @@ pub(super) fn merge_cap(
 /// IDM acceleration of `slot` behind `leader`, as phase 4 clamps it.
 fn accel(net: &Network, vs: &Vehicles, slot: usize, leader: Option<Leader>) -> f64 {
     let p = &vs.params[slot];
-    let v0 = p.desired_speed_factor * net.roads[vs.road(slot) as usize].speed_limit_mps;
+    let v0 = p.v0(net.roads[vs.road(slot) as usize].speed_limit_mps);
     idm::acceleration(p, v0, vs.speed_mps[slot], leader).max(-MAX_DECEL_MPS2)
 }
 
@@ -316,6 +316,7 @@ mod tests {
     use super::super::car;
     use crate::network::{EndControl, Network, Road};
     use crate::vehicle::NewVehicle;
+    use crate::vehicle::class::Class;
     use crate::vehicle::idm::IdmParams;
     use crate::{Config, Engine};
 
@@ -352,6 +353,7 @@ mod tests {
             params,
             mobil: crate::behavior::mobil::MobilParams::default(),
             profile: crate::behavior::profile::Profile::Normal,
+            class: crate::vehicle::class::Class::Car,
             route: &[0],
             depart_tick: 0,
         });
@@ -416,9 +418,17 @@ mod tests {
     /// in lane 0; `follower` is put in lane 1 behind it. Returns its lane
     /// after one step.
     fn lane_after_one_step(follower: impl FnOnce(&mut Engine) -> usize) -> u8 {
+        lane_after_one_step_of(car(), follower)
+    }
+
+    /// [`lane_after_one_step`] with vehicle 0 driving with `params`.
+    fn lane_after_one_step_of(
+        params: IdmParams,
+        follower: impl FnOnce(&mut Engine) -> usize,
+    ) -> u8 {
         let mut e = Engine::with_network(Config::default(), 1, straight(500.0, 13.9));
         // Spawned first (and moved behind the blocker) to be due at tick 0.
-        let c = put(&mut e, 1, 100.0, 10.0, car());
+        let c = put(&mut e, 1, 100.0, 10.0, params);
         assert_eq!(c, 0);
         let blocker = put(&mut e, 0, 119.5, 0.0, car());
         never_changes(&mut e, blocker);
@@ -451,6 +461,28 @@ mod tests {
         assert_eq!(lane_after_one_step(fast), 0, "unsafe for the follower");
         let far = |e: &mut Engine| put(e, 1, 20.0, 10.0, car());
         assert_eq!(lane_after_one_step(far), 1, "safe for the follower");
+    }
+
+    /// ADR-0007 §5: the gap to the new follower is measured from the
+    /// changing vehicle's own rear, so a gap a car takes is too short for a
+    /// vehicle as long as a truck.
+    #[test]
+    fn a_longer_vehicle_needs_a_longer_gap_to_change_lanes() {
+        // A standing follower 6 m behind a car's rear.
+        let calm = |e: &mut Engine| {
+            let p = IdmParams {
+                min_gap_m: 0.5,
+                time_headway_s: 0.5,
+                ..car()
+            };
+            put(e, 1, 100.0 - 4.5 - 6.0, 0.0, p)
+        };
+        assert_eq!(lane_after_one_step_of(car(), calm), 1, "a car fits");
+        let long = IdmParams {
+            length_m: Class::Truck.spec().length_m,
+            ..car()
+        };
+        assert_eq!(lane_after_one_step_of(long, calm), 0, "a truck doesn't");
     }
 
     /// Whether a car in lane 0 at 27 m/s gets past one in lane 1 at 20 m/s
