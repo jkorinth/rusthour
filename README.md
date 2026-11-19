@@ -124,6 +124,10 @@ expected one, and its signal. "Follow" or `C` keeps the camera on the
 selected vehicle (best below 30×); a pan stops following, and `Esc` closes
 the shortcut list, else clears the selection.
 
+For bug reports: the version, build kind and commit (e.g. "v0.4.0 · dev ·
+1a2b3c4") are at the bottom of the shortcut list (`?`), and on the
+loading and "map could not be loaded" screens.
+
 The viewer embeds egui's default fonts. Their licenses (SIL OFL 1.1, Ubuntu
 Font Licence 1.0, MIT, Bitstream Vera) are in
 [`crates/rusthour-viz/licenses/`](crates/rusthour-viz/licenses/) and must
