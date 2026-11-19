@@ -42,7 +42,11 @@ use rusthour_core::{Config, Engine, Stream, run_and_hash};
 /// wrong-lane counter and the fallback re-plan count.
 /// Changed in M3.12: a car lets in a car beside it that must merge into its
 /// lane, and a re-plan near the line keeps to the movements of the lane.
-const GOLDEN_HASH: u64 = 12_736_426_139_658_519_217;
+/// Changed in M4.1: demand draws a driver profile per trip from the Behavior
+/// stream (aggressive, normal, cautious, erratic), erratic drivers get
+/// jittered parameters and an acceleration noise, and the hash includes each
+/// slot's profile and noise and the waiting trips' profiles.
+const GOLDEN_HASH: u64 = 12_566_603_030_392_459_459;
 
 /// A four-road ring with a short road and a merging side road that routing
 /// excludes. Random demand keeps 10 vehicles on the ring, and hand-placed
