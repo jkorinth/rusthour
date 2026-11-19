@@ -37,8 +37,7 @@ pub struct Driver {
     pub mobil: MobilParams,
 }
 
-/// Default mix in percent, in [`Profile::ALL`] order, until M4.3 makes it a
-/// run setting.
+/// Default mix in percent, in [`Profile::ALL`] order ([`crate::Config`]).
 pub const DEFAULT_MIX: [u32; 4] = [15, 60, 20, 5];
 
 /// The car's length; vehicle classes (ADR-0007) set others after the profile.
@@ -53,9 +52,9 @@ impl Profile {
         Self::Erratic,
     ];
 
-    /// Draws a profile by [`DEFAULT_MIX`] (one `next_u32`).
-    pub fn draw(rng: &mut ChaCha8Rng) -> Self {
-        Self::ALL[draw_index(rng, &DEFAULT_MIX)]
+    /// Draws a profile by the weights `mix` (one `next_u32`).
+    pub fn draw(rng: &mut ChaCha8Rng, mix: &[u32; 4]) -> Self {
+        Self::ALL[draw_index(rng, mix)]
     }
 
     /// The profile's parameters without jitter.
@@ -85,15 +84,19 @@ impl Profile {
     }
 }
 
-/// Draws an index by `mix`, percentages that sum to 100 (one `next_u32`).
+/// Draws an index by the weights `mix` (one `next_u32`). Only their ratios
+/// matter: `k < upto` below is `u < upto / total · 2³²` exactly, so
+/// percentages and parts per million of the same mix draw alike. All-zero
+/// weights give index 0; the api rejects them.
 pub(crate) fn draw_index(rng: &mut ChaCha8Rng, mix: &[u32]) -> usize {
-    // 0..100 without float rounding; the cumulative shares pick the index.
-    #[allow(clippy::cast_possible_truncation)] // below 100
-    let k = ((u64::from(rng.next_u32()) * 100) >> 32) as u32;
+    let total: u128 = mix.iter().map(|&w| u128::from(w)).sum();
+    // 0..total without float rounding or overflow; the cumulative weights
+    // pick the index.
+    let k = (u128::from(rng.next_u32()) * total) >> 32;
     let mut upto = 0;
     mix.iter()
         .position(|&share| {
-            upto += share;
+            upto += u128::from(share);
             k < upto
         })
         .unwrap_or(0)
@@ -170,11 +173,25 @@ mod tests {
         let mut r = rng(7);
         let mut n = [0u32; 4];
         for _ in 0..100_000 {
-            let p = Profile::draw(&mut r);
+            let p = Profile::draw(&mut r, &DEFAULT_MIX);
             n[Profile::ALL.iter().position(|&q| q == p).unwrap()] += 1;
         }
         for (got, want) in n.iter().zip(DEFAULT_MIX) {
             assert!(got.abs_diff(want * 1000) < 600, "{n:?}"); // ±0.6 points
+        }
+    }
+
+    #[test]
+    fn draws_depend_only_on_the_ratios_of_the_weights() {
+        let (mut a, mut b) = (rng(3), rng(3));
+        let scaled = DEFAULT_MIX.map(|w| w * 10_000);
+        for _ in 0..10_000 {
+            assert_eq!(
+                Profile::draw(&mut a, &DEFAULT_MIX),
+                Profile::draw(&mut b, &scaled)
+            );
+            assert_eq!(Profile::draw(&mut b, &[0, 0, 7, 0]), Profile::Cautious);
+            a.next_u32();
         }
     }
 
