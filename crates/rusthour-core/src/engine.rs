@@ -94,6 +94,13 @@ pub struct Config {
     /// seconds is removed and counted in [`Engine::removed_stuck`]; 0 disables
     /// it (ADR-0004, addendum M2.10).
     pub stuck_timeout_s: u32,
+    /// Relative weights of the driver profiles, in [`Profile::ALL`] order;
+    /// only their ratios matter (ADR-0006 §3). Not hashed: the profiles drawn
+    /// are.
+    pub profile_mix: [u32; 4],
+    /// Relative weights of the vehicle classes, in [`Class::ALL`] order
+    /// (ADR-0007 §4). Not hashed: the classes drawn are.
+    pub class_mix: [u32; 4],
 }
 
 impl Default for Config {
@@ -102,6 +109,8 @@ impl Default for Config {
             dt_ms: 100,
             target_vehicles: 0,
             stuck_timeout_s: 300,
+            profile_mix: crate::behavior::profile::DEFAULT_MIX,
+            class_mix: crate::vehicle::class::DEFAULT_MIX,
         }
     }
 }
@@ -340,8 +349,8 @@ impl Engine {
         (self.demand).spawn(&ctx, self.router.routable(), rng, &mut self.new_trips);
         let behavior = &mut self.rngs[Stream::Behavior as usize - 1];
         for &t in &self.new_trips {
-            let profile = Profile::draw(behavior);
-            let class = Class::draw(behavior);
+            let profile = Profile::draw(behavior, &self.config.profile_mix);
+            let class = Class::draw(behavior, &self.config.class_mix);
             self.pending[t.origin as usize].push_back((t, profile, class));
             self.waiting += 1;
         }

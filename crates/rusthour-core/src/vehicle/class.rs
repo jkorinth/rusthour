@@ -72,17 +72,16 @@ const _: () = {
     }
 };
 
-/// Default mix in percent, in [`Class::ALL`] order, until M4.3 makes it a
-/// run setting.
+/// Default mix in percent, in [`Class::ALL`] order ([`crate::Config`]).
 pub const DEFAULT_MIX: [u32; 4] = [85, 8, 5, 2];
 
 impl Class {
     /// All classes, in [`DEFAULT_MIX`] order.
     pub const ALL: [Self; 4] = [Self::Car, Self::Van, Self::Truck, Self::Bus];
 
-    /// Draws a class by [`DEFAULT_MIX`] (one `next_u32`).
-    pub fn draw(rng: &mut ChaCha8Rng) -> Self {
-        Self::ALL[draw_index(rng, &DEFAULT_MIX)]
+    /// Draws a class by the weights `mix` (one `next_u32`).
+    pub fn draw(rng: &mut ChaCha8Rng, mix: &[u32; 4]) -> Self {
+        Self::ALL[draw_index(rng, mix)]
     }
 
     /// The class's dimensions and limits.
@@ -125,7 +124,7 @@ mod tests {
         r.set_stream(2);
         let mut n = [0u32; 4];
         for _ in 0..100_000 {
-            let c = Class::draw(&mut r);
+            let c = Class::draw(&mut r, &DEFAULT_MIX);
             n[Class::ALL.iter().position(|&k| k == c).unwrap()] += 1;
         }
         for (got, want) in n.iter().zip(DEFAULT_MIX) {
