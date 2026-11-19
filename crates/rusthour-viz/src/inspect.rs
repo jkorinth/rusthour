@@ -11,7 +11,7 @@ use rusthour_api::{
 use crate::camera::{Camera, LANE_WIDTH_M};
 use crate::marks::signal_text;
 use crate::traffic::Traffic;
-use crate::world::{MIN_VEHICLE_PT, VEHICLE_WIDTH_M, shifted, to_mesh, vehicle_pose};
+use crate::world::{MIN_VEHICLE_PT, VEHICLE_WIDTH_M, shifted, shifted_by, to_mesh, vehicle_pose};
 
 /// Pick radius for a mouse click, in screen points.
 pub const MOUSE_RADIUS_PT: f32 = 8.0;
@@ -411,22 +411,58 @@ fn draw_route(painter: &egui::Painter, view: &View, i: usize, info: &VehicleInfo
     };
     let (front, _, _) = view.vehicle(i);
     let offset = view.vehicles.offset_m[i] + view.vehicles.speed_mps[i] * view.ahead_s;
+    let lane = f32::from(view.vehicles.lane[i]) + view.vehicles.lane_shift[i];
     let mut path = vec![front];
-    let current = &view.lines[road.0 as usize];
-    let mut along = 0.0;
-    for w in current.windows(2) {
-        along += (w[1].x - w[0].x).hypot(w[1].y - w[0].y);
-        if along > f64::from(offset) {
-            path.push(view.to_screen(w[1]));
-        }
-    }
-    for r in &info.route_ahead[k + 1..] {
-        path.extend(view.lines[r.0 as usize].iter().map(|&p| view.to_screen(p)));
-    }
+    path.extend(
+        route_line(
+            view.placement,
+            view.network,
+            &info.route_ahead[k..],
+            lane,
+            f64::from(offset),
+        )
+        .into_iter()
+        .map(|p| view.to_screen(p)),
+    );
     let end = *path.last().expect("starts at the vehicle");
     painter.extend(Shape::dashed_line(&path, stroke, 6.0, 4.0));
     painter.circle_filled(end, 5.0, stroke.color);
     painter.circle_stroke(end, 9.0, stroke);
+}
+
+/// The route along `roads` (world), past `start_m` on the first, in lane
+/// `lane` as [`Placement`] puts it, or each road's leftmost lane if it has
+/// fewer. Through lanes line up across turn pockets, so the line doesn't
+/// jog sideways at road joins as the middle of all lanes does.
+fn route_line(
+    placement: &Placement,
+    network: &Network,
+    roads: &[RoadId],
+    lane: f32,
+    start_m: f64,
+) -> Vec<Point> {
+    let mut out = Vec::new();
+    for (n, &r) in roads.iter().enumerate() {
+        let lanes = f64::from(network.roads[r.0 as usize].lanes);
+        // From the middle of the lanes to the middle of `lane`.
+        let shift =
+            ((lanes - 1.0) / 2.0 - f64::from(lane).min(lanes - 1.0)) * f64::from(LANE_WIDTH_M);
+        let (points, right): (Vec<_>, Vec<_>) = placement
+            .center_line(r, LANE_WIDTH_M)
+            .into_iter()
+            .map(|(p, c)| (p, c + shift))
+            .unzip();
+        let mut along = 0.0;
+        let mut prev = points[0];
+        for (p, q) in points.iter().zip(shifted_by(&points, &right)) {
+            along += (p.x - prev.x).hypot(p.y - prev.y);
+            prev = *p;
+            if n > 0 || along > start_m {
+                out.push(q);
+            }
+        }
+    }
+    out
 }
 
 fn road_name(network: &Network, road: RoadId) -> String {
@@ -617,7 +653,7 @@ pub fn road_lines(info: &RoadInfo, network: &Network) -> Vec<String> {
 mod tests {
     use super::*;
     use crate::world::World;
-    use rusthour_api::{DriverInfo, DriverProfile, MovementInfo, Node, NodeId, Road};
+    use rusthour_api::{DriverInfo, DriverProfile, MovementInfo, Node, NodeId, Road, Turns};
 
     /// One road of `lanes` lanes, 100 m east from the origin, named "Hauptstraße".
     fn east(lanes: u8) -> Network {
@@ -985,4 +1021,75 @@ mod tests {
         let center = world.camera_center().expect("set");
         assert!((center - pos2(30.0, 0.0)).length() > 10.0, "{center:?}");
     }
+
+    /// A street of twin pairs between `xs` (`y` = 0), each pair with its
+    /// east-bound `(lanes, turn_lanes)`; west-bound roads have one lane.
+    fn street(xs: &[f64], east_bound: &[(u8, Vec<Turns>)]) -> Network {
+        let one = east(1);
+        let template = &one.roads[0];
+        let p = |x| Point { x, y: 0.0 };
+        let mut roads = Vec::new();
+        for (k, (w, (lanes, turns))) in xs.windows(2).zip(east_bound).enumerate() {
+            let node = |j| NodeId(u32::try_from(j).unwrap());
+            roads.push(Road {
+                from_node: node(k),
+                to_node: node(k + 1),
+                geometry: vec![p(w[0]), p(w[1])],
+                lanes: *lanes,
+                turn_lanes: turns.clone(),
+                ..template.clone()
+            });
+            roads.push(Road {
+                from_node: node(k + 1),
+                to_node: node(k),
+                geometry: vec![p(w[1]), p(w[0])],
+                ..template.clone()
+            });
+        }
+        Network {
+            nodes: xs
+                .iter()
+                .map(|&x| Node {
+                    position: p(x),
+                    osm_node: None,
+                })
+                .collect(),
+            roads,
+            connections: vec![],
+        }
+    }
+
+    #[test]
+    fn the_route_line_keeps_its_lane_across_a_turn_pocket() {
+        // One lane, then a second lane as a left-turn pocket: the middle of the
+        // lanes moves half a lane left at x = 40, lane 0 doesn't.
+        let net = street(
+            &[0.0, 40.0, 100.0],
+            &[(1, vec![]), (2, vec![Turns::THROUGH, Turns::LEFT])],
+        );
+        let placement = Placement::new(&net);
+        let line = route_line(&placement, &net, &[RoadId(0), RoadId(2)], 0.0, 0.0);
+        let at_join: Vec<_> = line
+            .iter()
+            .filter(|p| (p.x - 40.0).abs() < 1e-9)
+            .map(|p| p.y)
+            .collect();
+        assert_eq!(at_join.len(), 2, "both roads end or start there: {line:?}");
+        assert!((at_join[0] - at_join[1]).abs() < 1e-9, "{at_join:?}");
+        // Lane 1 asked on a one-lane road takes its only lane.
+        assert_eq!(
+            route_line(&placement, &net, &[RoadId(0)], 1.0, 0.0),
+            route_line(&placement, &net, &[RoadId(0)], 0.0, 0.0)
+        );
+    }
+
+    #[test]
+    fn the_route_line_starts_past_the_vehicle() {
+        let net = street(&[0.0, 40.0, 100.0], &[(1, vec![]), (1, vec![])]);
+        let placement = Placement::new(&net);
+        let line = route_line(&placement, &net, &[RoadId(0), RoadId(2)], 0.0, 20.0);
+        let xs: Vec<_> = line.iter().map(|p| p.x.round()).collect();
+        assert_eq!(xs, [40.0, 40.0, 100.0]);
+    }
+
 }
