@@ -617,7 +617,7 @@ pub fn road_lines(info: &RoadInfo, network: &Network) -> Vec<String> {
 mod tests {
     use super::*;
     use crate::world::World;
-    use rusthour_api::{DriverInfo, MovementInfo, Node, NodeId, Road};
+    use rusthour_api::{DriverInfo, DriverProfile, MovementInfo, Node, NodeId, Road};
 
     /// One road of `lanes` lanes, 100 m east from the origin, named "Hauptstraße".
     fn east(lanes: u8) -> Network {
@@ -761,6 +761,7 @@ mod tests {
             trip_time_s: 75.0,
             route_ahead: vec![RoadId(0)],
             driver: DriverInfo {
+                profile: DriverProfile::Normal,
                 desired_speed_factor: 1.0,
                 time_headway_s: 1.5,
                 max_accel_mps2: 1.4,

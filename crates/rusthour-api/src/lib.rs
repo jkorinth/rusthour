@@ -27,7 +27,7 @@ pub use pacer::{DEFAULT_BUDGET_S, MAX_FRAME_S, Pacer, scale_from_slider, slider_
 pub use placement::Placement;
 pub use rusthour_core::Config;
 pub use signal::{SignalSnapshot, SignalState};
-pub use snapshot::{VehicleId, VehicleSnapshot};
+pub use snapshot::{DriverProfile, VehicleId, VehicleSnapshot};
 
 /// Version of the wire protocol. Bump on any incompatible change to the
 /// serialized types in this crate.
@@ -179,6 +179,7 @@ impl Simulation for InProcess {
                     out.speed_mps.push(vs.speed_mps[s] as f32);
                     out.length_m.push(vs.params[s].length_m as f32);
                 }
+                out.profile.push(DriverProfile::from_core(vs.profile[s]));
             }
         }
     }
@@ -282,10 +283,13 @@ mod tests {
         assert!(status.vehicles > 0, "demand should have spawned vehicles");
         assert_eq!(snap.len(), status.vehicles as usize);
         assert_eq!(snap.tick, status.tick);
+        assert_eq!(snap.profile.len(), snap.len());
         for i in 0..snap.len() {
             assert!(snap.road[i].0 < 3 && snap.lane[i] == 0);
             assert!((0.0..=200.0).contains(&snap.offset_m[i]));
             assert!(snap.speed_mps[i] >= 0.0 && snap.length_m[i] > 0.0);
+            let info = sim.inspect_vehicle(snap.id[i]).unwrap();
+            assert_eq!(info.driver.profile, snap.profile[i]);
         }
     }
 

@@ -7,7 +7,7 @@ use rusthour_core::Engine;
 use rusthour_core::network::movement::Turn;
 use serde::{Deserialize, Serialize};
 
-use crate::{Network, RoadId, VehicleId};
+use crate::{DriverProfile, Network, RoadId, VehicleId};
 
 /// What became of a vehicle that is no longer on the network.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
@@ -31,9 +31,12 @@ pub enum Gone {
     Unknown,
 }
 
-/// The IDM driver of a vehicle; MOBIL joins with M3.6, profiles with M4.1.
+/// The driver of a vehicle: its profile and IDM parameters.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct DriverInfo {
+    /// Driver profile the parameters came from.
+    #[serde(default)]
+    pub profile: DriverProfile,
     /// Desired speed as a factor of the road's speed limit.
     pub desired_speed_factor: f32,
     /// Desired time headway (s).
@@ -251,6 +254,7 @@ pub(crate) fn vehicle(e: &Engine, id: VehicleId) -> Result<VehicleInfo, Gone> {
             .map(|&r| RoadId(r))
             .collect(),
         driver: DriverInfo {
+            profile: DriverProfile::from_core(vs.profile[s]),
             desired_speed_factor: p.desired_speed_factor as f32,
             time_headway_s: p.time_headway_s as f32,
             max_accel_mps2: p.max_accel_mps2 as f32,

@@ -26,6 +26,32 @@ impl VehicleId {
     }
 }
 
+/// A driver's style (ADR-0006).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub enum DriverProfile {
+    /// Short headway, brisk, egoistic lane changes.
+    Aggressive,
+    /// The typical driver.
+    #[default]
+    Normal,
+    /// Long headway, gentle, polite.
+    Cautious,
+    /// Inconsistent parameters and a fluctuating acceleration.
+    Erratic,
+}
+
+impl DriverProfile {
+    pub(crate) fn from_core(p: rusthour_core::behavior::profile::Profile) -> Self {
+        use rusthour_core::behavior::profile::Profile;
+        match p {
+            Profile::Aggressive => Self::Aggressive,
+            Profile::Normal => Self::Normal,
+            Profile::Cautious => Self::Cautious,
+            Profile::Erratic => Self::Erratic,
+        }
+    }
+}
+
 /// All vehicles at one tick, as parallel columns in lane order. Entry `i` is
 /// `id[i]`, `road[i]`, and so on. Reused between frames to avoid allocation.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
@@ -49,6 +75,9 @@ pub struct VehicleSnapshot {
     pub speed_mps: Vec<f32>,
     /// Vehicle length in meters.
     pub length_m: Vec<f32>,
+    /// Driver profile.
+    #[serde(default)]
+    pub profile: Vec<DriverProfile>,
 }
 
 impl VehicleSnapshot {
@@ -61,6 +90,7 @@ impl VehicleSnapshot {
         self.offset_m.clear();
         self.speed_mps.clear();
         self.length_m.clear();
+        self.profile.clear();
     }
 
     /// Number of vehicles.
@@ -93,6 +123,7 @@ mod tests {
         s.offset_m.push(1.5);
         s.speed_mps.push(2.5);
         s.length_m.push(4.5);
+        s.profile.push(DriverProfile::Cautious);
         let json = serde_json::to_string(&s).unwrap();
         assert_eq!(serde_json::from_str::<VehicleSnapshot>(&json).unwrap(), s);
         let cap = s.offset_m.capacity();
