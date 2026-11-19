@@ -219,3 +219,43 @@ the PR and in an addendum below.
 - Straßenverkehrs-Ordnung (StVO) §3(3) and §7(3c).
 - Council Directive 92/6/EEC on speed limitation devices; Council
   Directive 96/53/EC on maximum dimensions and weights.
+
+## Addendum (M4.2): as built and measured
+
+- Built as §1–§9 describe. The lane-capacity bound of §6 is a compile-time
+  check: every class's `SPEC` must be at least 4.5 m long.
+- **Measured** on bensheim-5km, two simulated hours, `main` after M4.1
+  before:
+
+  | Vehicles, seed | Arrivals/h before → after | Removed per arrival before → after |
+  | --- | --- | --- |
+  | 4,000, 42 | 6,328 → 5,685 | 0.78% → 0.55% |
+  | 5,000, 42 | 5,952 → 5,379 | 1.81% → 1.52% |
+  | 5,000, 1 | 5,889 → 5,277 | 1.91% → 1.61% |
+  | 5,000, 2 | 6,044 → 5,479 | 1.63% → 1.42% |
+
+  The M3.8 gate (≤ 5% and ≥ 4,545 arrivals/h at 5,000) holds. Removals
+  fall rather than rise; they stay on one-lane residential streets
+  (Mühlenweg, Hermannstraße, Elisabethenstraße, Neckarstraße at seed 42),
+  as before M4.2.
+- **Arrivals fall by about 10%** at both counts: the mean time on the
+  network (Little's law) grows from 50.4 to 55.8 minutes at 5,000. Taken
+  apart at 5,000, seed 42:
+
+  | Variant | Arrivals/h | Removed per arrival |
+  | --- | --- | --- |
+  | Before | 5,952 | 1.81% |
+  | Trucks and buses 4.5 m, with their limits | 5,635 | 1.81% |
+  | Trucks and buses 12 m, driving like cars | 5,540 | 1.32% |
+  | Both (as built) | 5,379 | 1.52% |
+
+  Length and limits each cost about 5–7%. The network runs near capacity
+  at these counts, so the space a long vehicle takes in a queue and the
+  time a slow one takes to clear a junction both show up directly. For
+  comparison, the Highway Capacity Manual counts a heavy vehicle as two
+  passenger cars at signals (`E_T = 2.0`), which for 7% heavy vehicles
+  lowers saturation flow by 6.5%, before any effect on speed.
+- **Step cost** on the bench grid (criterion, shared two-core machine):
+  `step/5000` 782 → 780 µs (no change detected); `step_multilane/5000`
+  1.36 → 1.32 ms (−4%, changed traffic). The governor's `min` is not
+  measurable.
