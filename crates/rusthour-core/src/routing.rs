@@ -6,8 +6,10 @@
 //! destination included: `length / speed limit` on an empty road,
 //! `length / mean speed` of its vehicles otherwise ([`Router::observe`],
 //! M2.9); plus, per movement, a static turn penalty and the observed delay
-//! at the stop line (ADR-0005 §2). Both are non-negative and the heuristic
-//! ignores them, so A* stays exact.
+//! at the stop line (ADR-0005 §2).
+//! The A* bound comes from landmarks (ALT, M4.5): the exact costs to and
+//! from a few roads, recomputed whenever the costs change ([`Router::observe`]),
+//! so the bound is admissible and consistent (ADR-0005, addendum M4.5).
 //! M2 traffic stays inside the largest strongly connected component (SCC), so
 //! every origin–destination pair taken from [`Router::routable`] has a route
 //! (ADR-0004).
@@ -35,6 +37,10 @@ const SMOOTHING: f64 = 0.2;
 const YIELD_PRIOR_S: f64 = 4.0;
 /// Delay prior of a movement at a stop sign (s).
 const STOP_PRIOR_S: f64 = 6.0;
+
+/// Number of landmarks for the A* bound. Each costs two Dijkstra runs per
+/// `observe`; 4 ran faster than 8 on both benchmarks (ADR-0005, addendum M4.5).
+const LANDMARKS: usize = 4;
 
 /// Static cost of a turn (s).
 // shortcut: guessed values from ADR-0005, and the M3 trial passed on them; calibrate with M4.7.
@@ -74,11 +80,23 @@ pub struct Router {
     routable: Vec<u32>,
     /// Per road: travel time at the speed limit (s).
     free_s: Vec<f64>,
-    /// Per road: smoothed current travel time (s), never below `free_s`, so
-    /// the free-flow heuristic stays admissible.
+    /// Per road: smoothed current travel time (s), never below `free_s`.
     travel_s: Vec<f64>,
-    /// Seconds per meter of straight-line distance that no route can beat.
-    h_per_m: f64,
+    /// Reversed CSR: the movements into road `r` are
+    /// `pred_move[pred_first[r]..pred_first[r + 1]]` (indices into `succ`), from the
+    /// roads `pred[..]` at the same positions.
+    pred_first: Vec<u32>,
+    pred: Vec<u32>,
+    pred_move: Vec<u32>,
+    /// Landmark roads, chosen at load.
+    landmarks: Vec<u32>,
+    /// Per road: current cost from each landmark to it and from it to each
+    /// landmark (s), `INFINITY` if unreachable; unused landmarks are all 0.
+    from_lm: Vec<[f64; LANDMARKS]>,
+    to_lm: Vec<[f64; LANDMARKS]>,
+    /// `from_lm` and `to_lm` of the current search's destination.
+    goal_from: [f64; LANDMARKS],
+    goal_to: [f64; LANDMARKS],
     cost: Vec<f64>,
     prev: Vec<u32>,
     /// `epoch` at which `cost`/`prev` of a road were last written.
@@ -163,29 +181,34 @@ impl Router {
             }
         }
         let in_scc = largest_scc(&first, &succ);
-        let routable = (0..n)
+        let routable: Vec<u32> = (0..n)
             .filter(|&r| in_scc[r])
             .map(|r| u32::try_from(r).expect("road count fits u32"))
             .collect();
 
-        // Scale the straight-line bound down if a road is shorter than the
-        // distance between its nodes, so the heuristic stays admissible.
-        let mut scale = 1.0_f64;
-        let mut vmax = 0.0_f64;
-        for r in &net.roads {
-            let d = dist(net.nodes[r.from as usize], net.nodes[r.to as usize]);
-            if d > 0.0 {
-                scale = scale.min(r.length_m / d);
-            }
-            vmax = vmax.max(r.speed_limit_mps);
-        }
-        let h_per_m = if vmax > 0.0 { scale / vmax } else { 0.0 };
         let free_s: Vec<f64> = (net.roads.iter())
             .map(|r| r.length_m / r.speed_limit_mps)
             .collect();
-
         let m = succ.len();
-        Self {
+        let mut pred_first = vec![0u32; n + 1];
+        for &to in &succ {
+            pred_first[to as usize + 1] += 1;
+        }
+        for i in 0..n {
+            pred_first[i + 1] += pred_first[i];
+        }
+        let mut fill = pred_first.clone();
+        let (mut pred, mut pred_move) = (vec![0u32; m], vec![0u32; m]);
+        for from in 0..n {
+            for i in first[from]..first[from + 1] {
+                let k = &mut fill[succ[i as usize] as usize];
+                pred[*k as usize] = u32::try_from(from).expect("road count fits u32");
+                pred_move[*k as usize] = i;
+                *k += 1;
+            }
+        }
+
+        let mut router = Self {
             move_s: turn.iter().zip(&prior).map(|(t, p)| t + p).collect(),
             kind,
             turn_s: turn,
@@ -199,12 +222,115 @@ impl Router {
             routable,
             travel_s: free_s.clone(),
             free_s,
-            h_per_m,
+            pred_first,
+            pred,
+            pred_move,
+            landmarks: Vec::with_capacity(LANDMARKS),
+            from_lm: vec![[0.0; LANDMARKS]; n],
+            to_lm: vec![[0.0; LANDMARKS]; n],
+            goal_from: [0.0; LANDMARKS],
+            goal_to: [0.0; LANDMARKS],
             cost: vec![0.0; n],
             prev: vec![0; n],
             stamp: vec![0; n],
             epoch: 0,
             heap: BinaryHeap::new(),
+        };
+        router.pick_landmarks();
+        router
+    }
+
+    /// Chooses up to [`LANDMARKS`] routable roads farthest-first on the
+    /// costs at load: each next one maximizes the smallest round trip to
+    /// those chosen so far (ties to the lowest id), the first one the round
+    /// trip to the lowest routable road. Leaves their tables filled.
+    fn pick_landmarks(&mut self) {
+        let Some(&start) = self.routable.first() else {
+            return;
+        };
+        self.fill_column(0, start); // a probe, overwritten below
+        let round = |r: &Self, i: usize| r.from_lm[i][0] + r.to_lm[i][0];
+        let mut near: Vec<f64> = (0..self.free_s.len()).map(|i| round(self, i)).collect();
+        for k in 0..LANDMARKS.min(self.routable.len()) {
+            let lm = (self.routable.iter().copied())
+                .max_by(|&a, &b| {
+                    near[a as usize]
+                        .total_cmp(&near[b as usize])
+                        .then(b.cmp(&a))
+                })
+                .expect("routable is not empty");
+            self.landmarks.push(lm);
+            self.fill_column(k, lm);
+            for (i, d) in near.iter_mut().enumerate() {
+                let r = self.from_lm[i][k] + self.to_lm[i][k];
+                *d = if k == 0 { r } else { d.min(r) };
+            }
+        }
+    }
+
+    /// Recomputes the landmark tables on the current costs.
+    fn refresh_landmarks(&mut self) {
+        for k in 0..self.landmarks.len() {
+            self.fill_column(k, self.landmarks[k]);
+        }
+    }
+
+    /// Fills column `k` of `from_lm` and `to_lm` with the current costs from
+    /// and to road `lm`: Dijkstra forward, then on the reversed graph.
+    fn fill_column(&mut self, k: usize, lm: u32) {
+        let Self {
+            first,
+            succ,
+            pred_first,
+            pred,
+            pred_move,
+            move_s,
+            travel_s,
+            heap,
+            from_lm,
+            to_lm,
+            ..
+        } = self;
+        for forward in [true, false] {
+            let dist = if forward { &mut *from_lm } else { &mut *to_lm };
+            for row in dist.iter_mut() {
+                row[k] = f64::INFINITY;
+            }
+            dist[lm as usize][k] = 0.0;
+            heap.clear();
+            heap.push(Entry {
+                f: 0.0,
+                g: 0.0,
+                road: lm,
+            });
+            while let Some(Entry { g, road, .. }) = heap.pop() {
+                let r = road as usize;
+                if g > dist[r][k] {
+                    continue;
+                }
+                let (lo, hi) = if forward {
+                    (first[r], first[r + 1])
+                } else {
+                    (pred_first[r], pred_first[r + 1])
+                };
+                for i in lo as usize..hi as usize {
+                    // Entering `succ[i]` from `road`, or `road` from `pred[i]`.
+                    let (nb, c) = if forward {
+                        (succ[i], move_s[i] + travel_s[succ[i] as usize])
+                    } else {
+                        (pred[i], move_s[pred_move[i] as usize] + travel_s[r])
+                    };
+                    let g2 = g + c;
+                    if g2 < dist[nb as usize][k] {
+                        dist[nb as usize][k] = g2;
+                        heap.push(Entry {
+                            f: g2,
+                            g: g2,
+                            road: nb,
+                        });
+                    }
+                }
+            }
         }
     }
 
@@ -259,12 +385,13 @@ impl Router {
     /// Finds the cheapest route from `trip.origin` to `trip.destination` and
     /// writes the road ids, origin to destination inclusive, into `out`
     /// (cleared first). Returns `false`, leaving `out` empty, if there is none.
-    pub fn route(&mut self, net: &Network, trip: Trip, out: &mut Vec<u32>) -> bool {
+    pub fn route(&mut self, _net: &Network, trip: Trip, out: &mut Vec<u32>) -> bool {
         self.epoch += 1;
         self.heap.clear();
+        self.set_goal(trip.destination);
         let g0 = self.travel_s[trip.origin as usize];
-        self.push(net, trip.destination, trip.origin, g0, UNSEEN);
-        self.search(net, trip.origin, trip.destination, out)
+        self.push(trip.origin, g0, UNSEEN);
+        self.search(trip.origin, trip.destination, out)
     }
 
     /// Like [`Self::route`], but leaves `origin` only by a movement onto a
@@ -273,7 +400,7 @@ impl Router {
     /// `origin` again, e.g. once round the block.
     pub fn route_from_any(
         &mut self,
-        net: &Network,
+        _net: &Network,
         origin: u32,
         first: impl Fn(u32) -> bool,
         dest: u32,
@@ -281,30 +408,51 @@ impl Router {
     ) -> bool {
         self.epoch += 1;
         self.heap.clear();
+        self.set_goal(dest);
         let g0 = self.travel_s[origin as usize];
         let (a, b) = (self.first[origin as usize], self.first[origin as usize + 1]);
         for i in a as usize..b as usize {
             let nb = self.succ[i];
             let g = g0 + self.move_s[i] + self.travel_s[nb as usize];
             if first(nb) && (self.stamp[nb as usize] != self.epoch || g < self.cost[nb as usize]) {
-                self.push(net, dest, nb, g, SOURCE);
+                self.push(nb, g, SOURCE);
             }
         }
-        self.search(net, origin, dest, out)
+        self.search(origin, dest, out)
+    }
+
+    fn set_goal(&mut self, dest: u32) {
+        self.goal_from = self.from_lm[dest as usize];
+        self.goal_to = self.to_lm[dest as usize];
+    }
+
+    /// Lower bound on the cost after `road` to the goal: the best landmark
+    /// triangle bound, at least 0. Comparisons skip the `NaN` of
+    /// `INFINITY − INFINITY` (neither road reaches or is reached by that
+    /// landmark); `+INFINITY` means the goal is out of reach.
+    fn bound_s(&self, road: u32) -> f64 {
+        let (from, to) = (&self.from_lm[road as usize], &self.to_lm[road as usize]);
+        let mut h = 0.0;
+        for k in 0..LANDMARKS {
+            for b in [self.goal_from[k] - from[k], to[k] - self.goal_to[k]] {
+                if b > h {
+                    h = b;
+                }
+            }
+        }
+        h
     }
 
     /// Records `road` reached at cost `g` from `prev` and queues it.
-    fn push(&mut self, net: &Network, dest: u32, road: u32, g: f64, prev: u32) {
-        let goal = net.nodes[net.roads[dest as usize].to as usize];
-        let r = &net.roads[road as usize];
-        let f = g + dist(net.nodes[r.to as usize], goal) * self.h_per_m;
+    fn push(&mut self, road: u32, g: f64, prev: u32) {
+        let f = g + self.bound_s(road);
         self.set(road, g, prev);
         self.heap.push(Entry { f, g, road });
     }
 
     /// Runs A* from the queued roads to `dest` and writes the route into
     /// `out`; a road whose `prev` is `SOURCE` follows `origin`.
-    fn search(&mut self, net: &Network, origin: u32, dest: u32, out: &mut Vec<u32>) -> bool {
+    fn search(&mut self, origin: u32, dest: u32, out: &mut Vec<u32>) -> bool {
         out.clear();
         while let Some(Entry { g, road, .. }) = self.heap.pop() {
             if g > self.cost[road as usize] {
@@ -328,7 +476,7 @@ impl Router {
                 let nb = self.succ[i as usize];
                 let g2 = g + self.move_s[i as usize] + self.travel_s[nb as usize];
                 if self.stamp[nb as usize] != self.epoch || g2 < self.cost[nb as usize] {
-                    self.push(net, dest, nb, g2, road);
+                    self.push(nb, g2, road);
                 }
             }
         }
@@ -385,6 +533,7 @@ impl Router {
             (self.held_sum[m], self.held_n[m]) = (0, 0);
         }
         self.observe_roads(net, vs);
+        self.refresh_landmarks();
     }
 
     fn observe_roads(&mut self, net: &Network, vs: &Vehicles) {
@@ -425,12 +574,6 @@ impl Router {
         self.cost[i] = cost;
         self.prev[i] = prev;
     }
-}
-
-fn dist(a: [f64; 2], b: [f64; 2]) -> f64 {
-    // Plain products, not `powi`: ADR-0004 allows only basic ops and `sqrt`.
-    let (dx, dy) = (a[0] - b[0], a[1] - b[1]);
-    (dx * dx + dy * dy).sqrt()
 }
 
 /// Iterative Tarjan (no recursion: small wasm stack). Returns, per vertex,
@@ -543,6 +686,11 @@ mod tests {
             end_control: EndControl::None,
             turn_lanes: vec![],
         }
+    }
+
+    fn dist(a: [f64; 2], b: [f64; 2]) -> f64 {
+        let (dx, dy) = (a[0] - b[0], a[1] - b[1]);
+        (dx * dx + dy * dy).sqrt()
     }
 
     fn trip(origin: u32, destination: u32) -> Trip {
@@ -773,56 +921,152 @@ mod tests {
         router.move_s[m] + router.travel_s[b as usize]
     }
 
-    /// Cheapest route cost by Bellman–Ford, the reference for A*.
-    fn reference_cost(router: &Router, net: &Network, from: u32, to: u32) -> Option<f64> {
+    /// Cheapest remaining cost from every road to `to` by Bellman–Ford,
+    /// the reference for A*: the movements and roads after the road itself.
+    fn remaining_s(router: &Router, net: &Network, to: u32) -> Vec<f64> {
         let mut d = vec![f64::INFINITY; net.roads.len()];
-        d[from as usize] = router.travel_s[from as usize];
+        d[to as usize] = 0.0;
         for _ in 0..net.roads.len() {
             for &(a, b) in &net.connections {
-                d[b as usize] = d[b as usize].min(d[a as usize] + edge_s(router, a, b));
+                d[a as usize] = d[a as usize].min(edge_s(router, a, b) + d[b as usize]);
             }
         }
-        d[to as usize].is_finite().then(|| d[to as usize])
+        d
+    }
+
+    /// Congests the router: travel times up to 20× free flow, and passages
+    /// held up to 200 s.
+    fn congest(
+        router: &mut Router,
+        net: &Network,
+        slow: &[f64],
+        waits: &[(prop::sample::Index, u32)],
+    ) {
+        if net.connections.is_empty() {
+            return;
+        }
+        for &(i, ticks) in waits {
+            let (a, b) = net.connections[i.index(net.connections.len())];
+            router.passed(a, b, ticks);
+        }
+        router.observe(net, &Vehicles::new(net), 0.1);
+        for (t, k) in router.travel_s.iter_mut().zip(slow.iter().cycle()) {
+            *t *= k;
+        }
+        router.refresh_landmarks();
+    }
+
+    /// Checks every origin–destination pair: A* finds a connected route of
+    /// the reference cost, and the landmark bound never exceeds the true
+    /// remaining cost of any road, and meets it towards a landmark.
+    fn check_all_pairs(router: &mut Router, net: &Network) -> Result<(), TestCaseError> {
+        let mut out = Vec::new();
+        let n = net.roads.len() as u32;
+        for d in 0..n {
+            let rem = remaining_s(router, net, d);
+            router.set_goal(d);
+            for v in 0..n {
+                let (bound, rem) = (router.bound_s(v), rem[v as usize]);
+                prop_assert!(bound <= rem + 1e-9, "bound {bound} > {rem} from {v} to {d}");
+                if router.landmarks.contains(&d) && rem.is_finite() {
+                    prop_assert!(
+                        (bound - rem).abs() < 1e-9,
+                        "bound {bound} < {rem} from {v} to landmark {d}"
+                    );
+                }
+            }
+            for o in 0..n {
+                let found = router.route(net, trip(o, d), &mut out);
+                prop_assert_eq!(found, rem[o as usize].is_finite());
+                if found {
+                    prop_assert_eq!((out[0], *out.last().unwrap()), (o, d));
+                    prop_assert!(
+                        out.windows(2)
+                            .all(|w| net.connections.contains(&(w[0], w[1])))
+                    );
+                    let cost: f64 = out.windows(2).map(|w| edge_s(router, w[0], w[1])).sum();
+                    prop_assert!((cost - rem[o as usize]).abs() < 1e-6);
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// A `k × k` grid of nodes 100 m apart, a road each way between
+    /// neighbours, at `speeds` (cycled), and the movements `keep` (cycled)
+    /// allows, U-turns included.
+    fn grid(k: u32, speeds: &[f64], keep: &[bool]) -> Network {
+        let mut net = Network {
+            nodes: (0..k * k)
+                .map(|i| [f64::from(i % k) * 100.0, f64::from(i / k) * 100.0])
+                .collect(),
+            ..Network::default()
+        };
+        for i in 0..k * k {
+            for j in [i + 1, i + k] {
+                if j < k * k && (j == i + k || j % k != 0) {
+                    for (f, t) in [(i, j), (j, i)] {
+                        let (a, b) = (net.nodes[f as usize], net.nodes[t as usize]);
+                        let dir = [(b[0] - a[0]) / 100.0, (b[1] - a[1]) / 100.0];
+                        net.roads.push(Road {
+                            speed_limit_mps: speeds[net.roads.len() % speeds.len()],
+                            start_dir: dir,
+                            end_dir: dir,
+                            ..road(f, t, 100.0)
+                        });
+                    }
+                }
+            }
+        }
+        let mut c = 0;
+        for (a, ra) in net.roads.iter().enumerate() {
+            for (b, rb) in net.roads.iter().enumerate() {
+                if ra.to == rb.from {
+                    if keep[c % keep.len()] {
+                        net.connections.push((a as u32, b as u32));
+                    }
+                    c += 1;
+                }
+            }
+        }
+        net
     }
 
     proptest! {
-        /// A* with turn costs and observed delays finds the Bellman–Ford
-        /// optimum, and all movement costs are non-negative.
+        /// On random networks, congested and with observed delays, A* finds
+        /// the Bellman–Ford optimum, all movement costs are non-negative,
+        /// and the landmark bound is admissible.
         #[test]
         fn routes_are_valid_connected_and_cheapest(
             net in arb_net(),
             waits in prop::collection::vec((any::<prop::sample::Index>(), 0..2000u32), 0..20),
+            slow in prop::collection::vec(1.0..20.0_f64, 1..8),
         ) {
             let mut router = Router::new(&net);
-            if !net.connections.is_empty() {
-                for (i, ticks) in waits {
-                    let (a, b) = net.connections[i.index(net.connections.len())];
-                    router.passed(a, b, ticks);
-                }
-                router.observe(&net, &Vehicles::new(&net), 0.1);
-            }
+            congest(&mut router, &net, &slow, &waits);
             prop_assert!(router.move_s.iter().all(|&c| c >= 0.0));
+            check_all_pairs(&mut router, &net)?;
             let mut out = Vec::new();
-            let n = net.roads.len() as u32;
-            for o in 0..n {
-                for d in 0..n {
-                    let found = router.route(&net, trip(o, d), &mut out);
-                    let best = reference_cost(&router, &net, o, d);
-                    prop_assert_eq!(found, best.is_some());
-                    if let Some(best) = best {
-                        prop_assert_eq!((out[0], *out.last().unwrap()), (o, d));
-                        prop_assert!(out.windows(2).all(|w| net.connections.contains(&(w[0], w[1]))));
-                        let cost = router.travel_s[o as usize]
-                            + out.windows(2).map(|w| edge_s(&router, w[0], w[1])).sum::<f64>();
-                        prop_assert!((cost - best).abs() < 1e-6);
-                    }
-                }
-            }
             for &o in &router.routable().to_vec() {
                 for &d in router.routable() {
                     prop_assert!(router.clone().route(&net, trip(o, d), &mut out));
                 }
             }
+        }
+
+        /// The same on random grids with missing movements.
+        #[test]
+        fn landmark_routes_on_congested_grids_are_cheapest(
+            k in 2..5u32,
+            speeds in prop::collection::vec(5.0..30.0_f64, 1..6),
+            keep in prop::collection::vec(prop::bool::weighted(0.85), 1..64),
+            waits in prop::collection::vec((any::<prop::sample::Index>(), 0..2000u32), 0..30),
+            slow in prop::collection::vec(1.0..20.0_f64, 1..8),
+        ) {
+            let net = grid(k, &speeds, &keep);
+            let mut router = Router::new(&net);
+            congest(&mut router, &net, &slow, &waits);
+            check_all_pairs(&mut router, &net)?;
         }
     }
 }
