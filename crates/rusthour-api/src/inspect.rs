@@ -7,7 +7,7 @@ use rusthour_core::Engine;
 use rusthour_core::network::movement::Turn;
 use serde::{Deserialize, Serialize};
 
-use crate::{DriverProfile, Network, RoadId, VehicleId};
+use crate::{DriverProfile, Network, RoadId, VehicleClass, VehicleId};
 
 /// What became of a vehicle that is no longer on the network.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
@@ -109,6 +109,9 @@ pub struct VehicleInfo {
     pub trip_time_s: f32,
     /// Roads still to drive, the current road first.
     pub route_ahead: Vec<RoadId>,
+    /// What it is.
+    #[serde(default)]
+    pub class: VehicleClass,
     /// Its driver.
     pub driver: DriverInfo,
     /// What it waits for.
@@ -253,6 +256,7 @@ pub(crate) fn vehicle(e: &Engine, id: VehicleId) -> Result<VehicleInfo, Gone> {
             .iter()
             .map(|&r| RoadId(r))
             .collect(),
+        class: VehicleClass::from_core(vs.class[s]),
         driver: DriverInfo {
             profile: DriverProfile::from_core(vs.profile[s]),
             desired_speed_factor: p.desired_speed_factor as f32,
