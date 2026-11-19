@@ -46,11 +46,15 @@ fn a_missing_map_is_a_clear_error() {
 #[test]
 fn vehicles_without_a_map_is_an_error() {
     let out = Command::new(env!("CARGO_BIN_EXE_rusthour"))
-        .args(["run", "--vehicles", "5"])
+        .args(["run", "--steps", "20", "--vehicles", "5"])
         .output()
         .unwrap();
-    assert!(!out.status.success());
-    assert!(String::from_utf8_lossy(&out.stderr).contains("--map"));
+    assert_eq!(out.status.code(), Some(2));
+    let err = String::from_utf8_lossy(&out.stderr);
+    assert!(err.contains("--map"), "{err}");
+    // The usage line must not make --steps look required (M3 UX review N6).
+    let usage = err.lines().find(|l| l.starts_with("Usage:")).unwrap_or("");
+    assert!(!usage.contains("--steps"), "{err}");
 }
 
 /// A map of four 15 m roads in a ring, which gridlocks under load.

@@ -2,12 +2,12 @@
 
 use std::path::{Path, PathBuf};
 
-use clap::{Parser, Subcommand};
+use clap::{CommandFactory as _, Parser, Subcommand, error::ErrorKind};
 use rusthour_api::{Config, InProcess, Network, Simulation};
 
 /// Rust Hour traffic simulator, headless mode.
 #[derive(Debug, Parser)]
-#[command(version, about)]
+#[command(name = "rusthour", version, about)]
 struct Cli {
     #[command(subcommand)]
     command: Command,
@@ -31,7 +31,7 @@ enum Command {
               value_parser = clap::value_parser!(u32).range(1..=1000))]
         dt_ms: u32,
         /// Vehicles to keep on the network (needs --map).
-        #[arg(long, default_value_t = 0, requires = "map")]
+        #[arg(long, default_value_t = 0)]
         vehicles: u32,
         /// Road network to run on, a `.rhnet` file; default is an empty map.
         #[arg(long)]
@@ -53,6 +53,19 @@ fn main() {
             map,
             report_stuck,
         } => {
+            // Not clap's `requires`: its usage line lists every option given,
+            // which made `--steps` look required.
+            if vehicles > 0 && map.is_none() {
+                let mut cmd = Cli::command();
+                cmd.build();
+                cmd.find_subcommand_mut("run")
+                    .expect("defined above")
+                    .error(
+                        ErrorKind::MissingRequiredArgument,
+                        "--vehicles needs a road network: add --map <file.rhnet>",
+                    )
+                    .exit();
+            }
             let config = Config {
                 dt_ms,
                 target_vehicles: vehicles,
