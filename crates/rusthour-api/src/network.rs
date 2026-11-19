@@ -363,6 +363,8 @@ pub enum NetworkError {
         /// The rejected `dt_ms`.
         dt_ms: u32,
     },
+    /// The config's driver or fleet mix has no weight above 0.
+    EmptyMix,
 }
 
 impl fmt::Display for NetworkError {
@@ -455,6 +457,7 @@ impl fmt::Display for NetworkError {
             Self::BadStepLength { dt_ms } => {
                 write!(f, "the step length must be 1 to 1000 ms, got {dt_ms}")
             }
+            Self::EmptyMix => write!(f, "the driver or fleet mix has no share above 0"),
         }
     }
 }
