@@ -20,7 +20,7 @@ pub const TOUCH_RADIUS_PT: f32 = 22.0;
 /// The panel text refreshes this often (s): about 5 Hz.
 const REFRESH_S: f64 = 0.2;
 /// Above this time scale, following shows a hint: the view jumps.
-pub const FOLLOW_HINT_ABOVE: f64 = 30.0;
+const FOLLOW_HINT_ABOVE: f64 = 30.0;
 /// A pan by more than this per frame stops following, in screen points.
 const FOLLOW_BREAK_PT: f32 = 2.0;
 /// Below this speed a following vehicle reads as standing in a queue (m/s).
@@ -111,6 +111,12 @@ impl Inspector {
     pub fn toggle_follow(&mut self) {
         let live = matches!(self.selected, Some(Selection::Vehicle(_))) && self.gone.is_none();
         self.following = live && !self.following;
+    }
+
+    /// Whether to say "follow works best below 30×": the view jumps at the
+    /// time scale reached, as for signals ([`crate::marks::signal_time_scale`]).
+    pub fn follow_hint(&self, time_scale: f64) -> bool {
+        self.following && time_scale > FOLLOW_HINT_ABOVE
     }
 
     /// `C` toggles follow; Esc closes the help or clears the selection.
@@ -1092,4 +1098,17 @@ mod tests {
         assert_eq!(xs, [40.0, 40.0, 100.0]);
     }
 
+    #[test]
+    fn the_follow_hint_goes_by_the_speed_reached() {
+        use crate::marks::signal_time_scale;
+        let following = Inspector {
+            following: true,
+            ..Inspector::default()
+        };
+        // 1000× set, 7.3× reached: the view doesn't jump.
+        assert!(!following.follow_hint(signal_time_scale(1000.0, 7.3, false)));
+        assert!(following.follow_hint(signal_time_scale(1000.0, 60.0, false)));
+        assert!(!following.follow_hint(signal_time_scale(1000.0, 60.0, true)));
+        assert!(!Inspector::default().follow_hint(60.0));
+    }
 }
