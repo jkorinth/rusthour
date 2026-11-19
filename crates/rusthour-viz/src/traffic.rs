@@ -2,8 +2,8 @@
 //! [`Pacer`], one snapshot per frame, reset with the same seed (ADR-0004 §3).
 
 use rusthour_api::{
-    Config, InProcess, Network, NetworkError, Pacer, RoadId, SignalSnapshot, Simulation, Status,
-    VehicleSnapshot, scale_from_slider,
+    Config, DriverMix, FleetMix, InProcess, Network, NetworkError, Pacer, RoadId, SignalSnapshot,
+    Simulation, Status, VehicleSnapshot, scale_from_slider,
 };
 use web_time::Instant;
 
@@ -36,13 +36,22 @@ pub struct Traffic {
     pub last_steps: u64,
     /// Counts restarts: vehicle slots mean something else afterwards.
     pub epoch: u32,
+    /// The driver mix as edited, in percent; the next restart applies it.
+    pub drivers: DriverMix,
+    /// The fleet mix as edited, in percent; the next restart applies it.
+    pub fleet: FleetMix,
 }
 
 impl Traffic {
     /// Starts a simulation on `network` with a population suited to its size.
     pub fn new(network: Network) -> Result<Self, NetworkError> {
+        let drivers = DriverMix::from_shares(DriverMix::default().shares().map(percent));
+        let fleet = FleetMix::from_shares(FleetMix::default().shares().map(percent));
         let config = Config {
             target_vehicles: default_vehicles(&network),
+            // As `mix_pending` compares them; the same ratios as the default.
+            profile_mix: drivers.weights().expect("the default is valid"),
+            class_mix: fleet.weights().expect("the default is valid"),
             ..Config::default()
         };
         Ok(Self {
@@ -55,6 +64,8 @@ impl Traffic {
             step_cost_s: 0.0,
             last_steps: 0,
             epoch: 0,
+            drivers,
+            fleet,
         })
     }
 
@@ -78,9 +89,24 @@ impl Traffic {
         self.config.target_vehicles
     }
 
-    /// Restarts from tick 0 with the same seed, network and population; keeps
-    /// the speed and whether it is paused.
+    /// Whether the edited mix differs from the running one; an all-zero
+    /// mix never applies, so it doesn't count.
+    pub fn mix_pending(&self) -> bool {
+        let differs = |w: Result<[u32; 4], _>, now| w.is_ok_and(|w| w != now);
+        differs(self.drivers.weights(), self.config.profile_mix)
+            || differs(self.fleet.weights(), self.config.class_mix)
+    }
+
+    /// Restarts from tick 0 with the same seed, network and population, and
+    /// the edited mix where it is valid; keeps the speed and whether it is
+    /// paused.
     pub fn reset(&mut self) {
+        if let Ok(w) = self.drivers.weights() {
+            self.config.profile_mix = w;
+        }
+        if let Ok(w) = self.fleet.weights() {
+            self.config.class_mix = w;
+        }
         let network = self.sim.network().clone();
         self.sim = InProcess::with_network(self.config, SEED, network)
             .expect("validated when the map was loaded");
@@ -169,6 +195,11 @@ pub fn hot_road_alpha(removed: u32, max: u32) -> u8 {
     )]
     let alpha = (FLOOR + (255.0 - FLOOR) * share.min(1.0)).round() as u8;
     alpha
+}
+
+/// A share as a whole percentage, e.g. 0.15 as 15.
+fn percent(share: f64) -> f64 {
+    (share * 100.0).round()
 }
 
 /// One vehicle per [`ROAD_M_PER_VEHICLE`] of road, at least one.
@@ -281,6 +312,27 @@ mod tests {
         assert_eq!(t.status().tick, 0);
         run(&mut t, 300);
         assert_eq!(t.snapshot, first);
+    }
+
+    #[test]
+    fn an_edited_mix_applies_on_reset_unless_it_is_all_zero() {
+        use rusthour_api::{FleetMix, VehicleClass};
+        let mut t = traffic();
+        assert!(!t.mix_pending(), "nothing edited yet");
+        let trucks = FleetMix::from_shares([0.0, 0.0, 1.0, 0.0]);
+        t.fleet = trucks;
+        assert!(t.mix_pending());
+        run(&mut t, 300);
+        assert!(t.snapshot.class.iter().any(|&c| c != VehicleClass::Truck));
+        t.reset();
+        assert!(!t.mix_pending());
+        run(&mut t, 300);
+        assert!(!t.snapshot.is_empty());
+        assert!(t.snapshot.class.iter().all(|&c| c == VehicleClass::Truck));
+        t.fleet = FleetMix::from_shares([0.0; 4]);
+        t.reset();
+        run(&mut t, 300);
+        assert!(t.snapshot.class.iter().all(|&c| c == VehicleClass::Truck));
     }
 
     #[test]

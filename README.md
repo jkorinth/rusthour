@@ -114,6 +114,11 @@ again. Below are the simulated time, the vehicles driving and waiting to
 enter the network, and how many arrived and were removed as stuck (orange
 once there are any).
 
+"Drivers and vehicles", below the controls, opens the mix of driver
+profiles and vehicle classes, as for `--drivers` and `--fleet`: a share per
+name, with the percentage it makes. "Reset" (or a new vehicle count) starts
+over with the edited mix.
+
 On the map:
 
 - **Signals:** a bar across the end of each signalled approach: red a solid

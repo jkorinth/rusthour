@@ -492,7 +492,9 @@ fn show_sim_controls(ui: &mut egui::Ui, v: &mut Viewer) {
         }
         if ui
             .button("Reset")
-            .on_hover_text("Start over with the same seed: the same traffic again")
+            .on_hover_text(
+                "Start over with the same seed: the same traffic again, with any edited mix",
+            )
             .clicked()
         {
             t.reset();
@@ -546,6 +548,55 @@ fn show_sim_controls(ui: &mut egui::Ui, v: &mut Viewer) {
     if v.inspect.follow_hint(shown) {
         ui.small("follow works best below 30×");
     }
+    show_mix(ui, t);
+}
+
+/// The driver and fleet mix, folded away; "Reset" applies an edit.
+fn show_mix(ui: &mut egui::Ui, t: &mut Traffic) {
+    egui::CollapsingHeader::new("Drivers and vehicles")
+        .show(ui, |ui| {
+            let mut ok = true;
+            ui.horizontal_top(|ui| {
+                let mut drivers = t.drivers.shares();
+                ok &= mix_column(ui, "drivers", &rusthour_api::DriverMix::NAMES, &mut drivers);
+                t.drivers = rusthour_api::DriverMix::from_shares(drivers);
+                ui.add_space(12.0);
+                let mut fleet = t.fleet.shares();
+                ok &= mix_column(ui, "fleet", &rusthour_api::FleetMix::NAMES, &mut fleet);
+                t.fleet = rusthour_api::FleetMix::from_shares(fleet);
+            });
+            if !ok {
+                ui.colored_label(
+                    ui.visuals().warn_fg_color,
+                    "each column needs a share above 0",
+                );
+            } else if t.mix_pending() {
+                ui.label("“Reset” starts over with this mix");
+            }
+        })
+        .header_response
+        .on_hover_text("Shares of driver profiles and vehicle classes; only the ratios matter");
+}
+
+/// One mix as a grid of share fields, each with its normalised percentage;
+/// false if every share is 0.
+fn mix_column(ui: &mut egui::Ui, id: &str, names: &[&str; 4], shares: &mut [f64; 4]) -> bool {
+    let sum: f64 = shares.iter().sum();
+    egui::Grid::new(id).num_columns(3).show(ui, |ui| {
+        for (name, share) in names.iter().zip(shares.iter_mut()) {
+            ui.label(*name);
+            ui.add(
+                egui::DragValue::new(share)
+                    .range(0.0..=100.0)
+                    .speed(0.5)
+                    .max_decimals(1),
+            );
+            let pct = if sum > 0.0 { *share / sum * 100.0 } else { 0.0 };
+            ui.weak(format!("{pct:.0}%"));
+            ui.end_row();
+        }
+    });
+    sum > 0.0
 }
 
 /// The map with its vehicles and the roads that had stuck removals.
