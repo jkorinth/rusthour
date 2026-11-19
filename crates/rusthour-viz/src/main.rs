@@ -444,11 +444,14 @@ fn sim_keys(ctx: &egui::Context, t: &mut Traffic) {
 
 /// Room for the longest speed readout, "1000× (running at 999×)", in points.
 const SPEED_READOUT_PT: f32 = 170.0;
+/// Below this screen width (points) the controls take two rows of buttons.
+const TWO_ROWS_BELOW_PT: f32 = 600.0;
 
 /// Play/pause, step, speed, reset, population and the readouts.
 fn show_sim_controls(ui: &mut egui::Ui, v: &mut Viewer) {
     let t = &mut v.traffic;
     let paused = t.pacer.is_paused();
+    let narrow = ui.ctx().content_rect().width() < TWO_ROWS_BELOW_PT;
     ui.horizontal_wrapped(|ui| {
         let (icon, tip) = if paused {
             ("▶ Play", "Run the simulation (Space)")
@@ -476,15 +479,17 @@ fn show_sim_controls(ui: &mut egui::Ui, v: &mut Viewer) {
         if speed.changed() {
             t.pacer.set_scale(traffic::scale_at(exp));
         }
-        // A fixed width, so the buttons after it don't move as the readout changes.
-        ui.scope(|ui| {
-            ui.set_min_width(SPEED_READOUT_PT);
-            ui.label(traffic::speed_label(
-                t.pacer.scale(),
-                t.pacer.achieved_scale(),
-                paused,
-            ));
-        });
+        let readout = traffic::speed_label(t.pacer.scale(), t.pacer.achieved_scale(), paused);
+        if narrow {
+            ui.label(readout);
+            ui.end_row();
+        } else {
+            // A fixed width, so the buttons after it don't move as the readout changes.
+            ui.scope(|ui| {
+                ui.set_min_width(SPEED_READOUT_PT);
+                ui.label(readout);
+            });
+        }
         if ui
             .button("Reset")
             .on_hover_text("Start over with the same seed: the same traffic again")
@@ -517,9 +522,15 @@ fn show_sim_controls(ui: &mut egui::Ui, v: &mut Viewer) {
             "· {} driving · {} waiting to enter",
             status.vehicles, status.waiting
         ));
+        // egui moves a group to the next row only after it overflows: break by hand.
+        if narrow {
+            ui.end_row();
+        }
         // One group, so a wrapped line never ends in a dangling separator.
         ui.horizontal(|ui| {
-            ui.label(format!("· {} arrived ·", status.arrived));
+            // A new row starts without a separator.
+            let lead = if narrow { "" } else { "· " };
+            ui.label(format!("{lead}{} arrived ·", status.arrived));
             let (text, tinted) = traffic::stuck_counter(&status);
             if tinted {
                 ui.colored_label(ui.visuals().warn_fg_color, text)
@@ -566,6 +577,8 @@ fn show_ready(
         .anchor(Align2::LEFT_TOP, [8.0, 8.0])
         .show(&ctx, |ui| {
             egui::Frame::popup(ui.style()).show(ui, |ui| {
+                // Wrap within the screen, less the margins and the frame.
+                ui.set_max_width((ctx.content_rect().width() - 32.0).max(100.0));
                 ui.horizontal(|ui| {
                     if !v.maps.is_empty() {
                         let current = &v.stats.0;
@@ -881,6 +894,39 @@ mod tests {
             let note = v.note.expect("explained");
             assert!(note.contains(&format!("“{bad}”")), "{note}");
         }
+    }
+
+    /// The controls' screen rect after a few frames `width` points wide.
+    fn controls_rect(width: f32) -> egui::Rect {
+        let State::Ready(mut v) = State::from_loaded(Loaded::Map(rhnet_bytes())) else {
+            panic!("not ready");
+        };
+        let (mut help, mut debug) = (false, Debug::default());
+        let ctx = egui::Context::default();
+        for _ in 0..3 {
+            let input = egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(
+                    egui::Pos2::ZERO,
+                    egui::vec2(width, 800.0),
+                )),
+                ..Default::default()
+            };
+            let mut out = ctx.run_ui(input, |ui| {
+                show_ready(ui, &mut v, &mut help, &mut debug);
+            });
+            out.textures_delta.clear();
+        }
+        ctx.memory(|m| m.area_rect(egui::Id::unique("view_controls")))
+            .expect("shown")
+    }
+
+    #[test]
+    fn the_controls_wrap_on_a_narrow_screen() {
+        let narrow = controls_rect(420.0);
+        assert!(narrow.right() <= 420.0, "{narrow:?}");
+        // Wide, they stay in one row of buttons, so fewer rows in all.
+        let wide = controls_rect(1200.0);
+        assert!(wide.height() < narrow.height(), "{wide:?} vs {narrow:?}");
     }
 
     #[test]
