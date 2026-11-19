@@ -148,3 +148,42 @@ fn regression_m3_12_dt_ms_outside_1_to_1000_is_a_clear_error() {
         assert_eq!(run(&["--steps", "2", "--dt-ms", dt])["tick"], 2);
     }
 }
+
+#[test]
+fn the_driver_and_fleet_mix_are_options_and_in_the_output() {
+    let dir = std::env::temp_dir().join(format!("rusthour-cli-mix-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let map = ring_map(&dir);
+    let base = [
+        "--map",
+        map.to_str().unwrap(),
+        "--vehicles",
+        "8",
+        "--steps",
+        "300",
+    ];
+    let default = run(&base);
+    assert_eq!(default["drivers"]["aggressive"], 0.15);
+    assert_eq!(default["fleet"]["bus"], 0.02);
+    let mixed = run(&[
+        &base[..],
+        &["--drivers", "cautious=1", "--fleet", "car=3,truck=1"],
+    ]
+    .concat());
+    assert_eq!(mixed["drivers"]["cautious"], 1.0);
+    assert_eq!(mixed["drivers"]["normal"], 0.0);
+    assert_eq!(mixed["fleet"]["truck"], 0.25);
+    assert_ne!(mixed["state_hash"], default["state_hash"]);
+    std::fs::remove_dir_all(dir).ok();
+
+    let out = Command::new(env!("CARGO_BIN_EXE_rusthour"))
+        .args(["run", "--fleet", "car=85,lorry=5"])
+        .output()
+        .unwrap();
+    assert_eq!(out.status.code(), Some(2));
+    let err = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        err.contains("--fleet") && err.contains("unknown vehicle class “lorry”"),
+        "{err}"
+    );
+}
