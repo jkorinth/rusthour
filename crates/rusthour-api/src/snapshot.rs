@@ -52,6 +52,49 @@ impl DriverProfile {
     }
 }
 
+/// What a vehicle is (ADR-0007).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub enum VehicleClass {
+    /// Passenger car.
+    #[default]
+    Car,
+    /// Light commercial vehicle up to 3.5 t.
+    Van,
+    /// Truck over 3.5 t, at most 80 km/h.
+    Truck,
+    /// City bus, at most 80 km/h; no stops or lines yet.
+    Bus,
+}
+
+impl VehicleClass {
+    pub(crate) fn from_core(c: rusthour_core::vehicle::class::Class) -> Self {
+        use rusthour_core::vehicle::class::Class;
+        match c {
+            Class::Car => Self::Car,
+            Class::Van => Self::Van,
+            Class::Truck => Self::Truck,
+            Class::Bus => Self::Bus,
+        }
+    }
+
+    fn to_core(self) -> rusthour_core::vehicle::class::Class {
+        use rusthour_core::vehicle::class::Class;
+        match self {
+            Self::Car => Class::Car,
+            Self::Van => Class::Van,
+            Self::Truck => Class::Truck,
+            Self::Bus => Class::Bus,
+        }
+    }
+
+    /// Width to draw, in meters.
+    #[must_use]
+    #[allow(clippy::cast_possible_truncation)] // a few meters
+    pub fn width_m(self) -> f32 {
+        self.to_core().spec().width_m as f32
+    }
+}
+
 /// All vehicles at one tick, as parallel columns in lane order. Entry `i` is
 /// `id[i]`, `road[i]`, and so on. Reused between frames to avoid allocation.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
@@ -73,11 +116,14 @@ pub struct VehicleSnapshot {
     pub offset_m: Vec<f32>,
     /// Speed in meters per second.
     pub speed_mps: Vec<f32>,
-    /// Vehicle length in meters.
+    /// Vehicle length in meters; it depends on the class.
     pub length_m: Vec<f32>,
     /// Driver profile.
     #[serde(default)]
     pub profile: Vec<DriverProfile>,
+    /// Vehicle class.
+    #[serde(default)]
+    pub class: Vec<VehicleClass>,
 }
 
 impl VehicleSnapshot {
@@ -91,6 +137,7 @@ impl VehicleSnapshot {
         self.speed_mps.clear();
         self.length_m.clear();
         self.profile.clear();
+        self.class.clear();
     }
 
     /// Number of vehicles.
@@ -124,6 +171,7 @@ mod tests {
         s.speed_mps.push(2.5);
         s.length_m.push(4.5);
         s.profile.push(DriverProfile::Cautious);
+        s.class.push(VehicleClass::Truck);
         let json = serde_json::to_string(&s).unwrap();
         assert_eq!(serde_json::from_str::<VehicleSnapshot>(&json).unwrap(), s);
         let cap = s.offset_m.capacity();
