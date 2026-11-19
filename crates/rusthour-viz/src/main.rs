@@ -142,6 +142,31 @@ impl Viewer {
             inspect: inspect::Inspector::default(),
         })
     }
+
+    /// Selects and centres the road with id `text` (`--road`, `?road=`), or
+    /// says in the note why not.
+    fn show_road(&mut self, text: &str) {
+        let roads = self.traffic.network().roads.len();
+        match text.parse::<u32>() {
+            Ok(id) if (id as usize) < roads => {
+                let road = rusthour_api::RoadId(id);
+                self.inspect.select(Some(inspect::Selection::Road(road)));
+                self.world.focus_road(road);
+            }
+            _ => {
+                let why = format!(
+                    "There is no road “{text}” on this map; road ids go from 0 to {}.",
+                    roads.saturating_sub(1)
+                );
+                // Keep a note already there, e.g. why the demo map is shown.
+                self.note = Some(
+                    self.note
+                        .take()
+                        .map_or(why.clone(), |n| format!("{n} {why}")),
+                );
+            }
+        }
+    }
 }
 
 /// Starts loading the map, again on "Retry".
@@ -175,15 +200,18 @@ impl Debug {
 struct App {
     state: State,
     load: Load,
+    /// The road to select once a map is shown (`--road`, `?road=`).
+    road: Option<String>,
     show_help: bool,
     debug: Debug,
 }
 
 impl App {
-    fn new(state: State, load: Load) -> Self {
+    fn new(state: State, load: Load, road: Option<String>) -> Self {
         Self {
             state,
             load,
+            road,
             show_help: false,
             debug: Debug::default(),
         }
@@ -226,6 +254,11 @@ impl eframe::App for App {
                 self.state = state;
             }
         }
+        if let State::Ready(v) = &mut self.state
+            && let Some(road) = self.road.take()
+        {
+            v.show_road(&road);
+        }
         match &mut self.state {
             State::Loading(progress) => {
                 let p = progress.lock().expect("not poisoned");
@@ -235,7 +268,11 @@ impl eframe::App for App {
             }
             State::Failed(message) => match show_failed(ui, message) {
                 Some(FailedAction::Retry) => self.state = (self.load)(),
-                Some(FailedAction::Demo) => self.state = State::from_loaded(Loaded::Demo(None)),
+                Some(FailedAction::Demo) => {
+                    // The road id belongs to the map that failed.
+                    self.road = None;
+                    self.state = State::from_loaded(Loaded::Demo(None));
+                }
                 None => {}
             },
             State::Ready(viewer) => {
@@ -634,14 +671,18 @@ fn show_shortcuts(ctx: &egui::Context, show_help: &mut bool, debug: &mut Debug, 
 
 #[cfg(not(target_arch = "wasm32"))]
 fn main() -> eframe::Result {
-    const USAGE: &str = "Usage: rusthour-viz [--map <file.rhnet>]\n\n\
-                         Without --map, shows a demo network.";
+    const USAGE: &str = "Usage: rusthour-viz [--map <file.rhnet>] [--road <id>]\n\n\
+                         Without --map, shows a demo network. --road selects and centres \
+                         a road, e.g. one from `rusthour run --report-stuck`.";
     START.get_or_init(std::time::Instant::now);
     let mut args = std::env::args_os().skip(1);
-    let mut path = None;
+    let (mut path, mut road) = (None, None);
     while let Some(arg) = args.next() {
         match arg.to_str() {
             Some("--map") if path.is_none() => path = args.next().map(std::path::PathBuf::from),
+            Some("--road") if road.is_none() => {
+                road = args.next().map(|a| a.to_string_lossy().into_owned());
+            }
             Some("-h" | "--help") => {
                 println!("{USAGE}");
                 return Ok(());
@@ -670,7 +711,7 @@ fn main() -> eframe::Result {
     eframe::run_native(
         "Rust Hour",
         eframe::NativeOptions::default(),
-        Box::new(|_cc| Ok(Box::new(App::new(state, Box::new(load))))),
+        Box::new(|_cc| Ok(Box::new(App::new(state, Box::new(load), road)))),
     )
 }
 
@@ -687,6 +728,7 @@ fn main() {
     };
     // Before the GPU starts up, so both happen at once.
     let state = load();
+    let road = web::requested_road();
     wasm_bindgen_futures::spawn_local(async move {
         let canvas = eframe::web_sys::window()
             .and_then(|w| w.document())
@@ -699,7 +741,7 @@ fn main() {
                 eframe::WebOptions::default(),
                 // `move`: `load` is `Copy`, so without it the closure would only
                 // borrow it, and the web runner needs `'static`.
-                Box::new(move |_cc| Ok(Box::new(App::new(state, Box::new(load))))),
+                Box::new(move |_cc| Ok(Box::new(App::new(state, Box::new(load), road)))),
             )
             .await;
         match started {
@@ -804,6 +846,41 @@ mod tests {
             build_label("0.4.0", Some(""), Some("abc")),
             "v0.4.0 · dev · abc"
         );
+    }
+
+    #[test]
+    fn a_road_id_is_selected_and_centred_and_an_unknown_one_explained() {
+        let mut v = Viewer::new(demo::map(), None).expect("valid");
+        v.show_road("3");
+        let road = rusthour_api::RoadId(3);
+        assert_eq!(v.inspect.selected, Some(inspect::Selection::Road(road)));
+        let ctx = egui::Context::default();
+        let input = egui::RawInput {
+            screen_rect: Some(egui::Rect::from_min_size(
+                egui::Pos2::ZERO,
+                egui::vec2(800.0, 600.0),
+            )),
+            ..Default::default()
+        };
+        let mut out = ctx.run_ui(input, |ui| v.world.show(ui, &v.traffic, &mut v.inspect));
+        out.textures_delta.clear();
+        let geometry = &v.traffic.network().roads[3].geometry;
+        let (a, b) = (geometry[0], geometry[geometry.len() - 1]);
+        #[expect(clippy::cast_possible_truncation, reason = "test geometry")]
+        let middle = egui::pos2(
+            f64::midpoint(a.x, b.x) as f32,
+            f64::midpoint(a.y, b.y) as f32,
+        );
+        let center = v.world.camera_center().expect("shown");
+        assert!(center.distance(middle) < 10.0, "{center:?} vs {middle:?}");
+
+        for bad in ["99999", "abc", "-1"] {
+            let mut v = Viewer::new(demo::map(), None).expect("valid");
+            v.show_road(bad);
+            assert_eq!(v.inspect.selected, None);
+            let note = v.note.expect("explained");
+            assert!(note.contains(&format!("“{bad}”")), "{note}");
+        }
     }
 
     #[test]

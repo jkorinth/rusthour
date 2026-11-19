@@ -61,13 +61,15 @@ time, vehicles driving and waiting to enter, `arrived`, `removed_stuck`
 the most removals, each with its `road` id, street `name` (`null` if
 unnamed), `osm_way` and whether it is a `roundabout`, and
 `stuck_roads_total`, the number of roads with any. The viewer's road panel
-shows the same road id and OSM way. `rusthour run --help` lists all options.
+shows the same road id and OSM way; `rusthour-viz --road <id>` opens the
+viewer on that road. `rusthour run --help` lists all options.
 
 ## Viewer
 
 Natively, `cargo run -p rusthour-viz --release -- --map <file.rhnet>` opens a
 window showing that map (see "Importing an area yourself" below); without
-`--map` it shows a demo town grid. On Linux it needs a running X11 or Wayland
+`--map` it shows a demo town grid. `--road <id>` selects and centres a road,
+e.g. one from `stuck_roads`. On Linux it needs a running X11 or Wayland
 session; no extra system packages are needed to build it.
 
 In the browser, build with [Trunk](https://trunkrs.dev)
@@ -84,7 +86,8 @@ Safari). It loads the maps listed in `maps/manifest.json` next to the page:
 `bensheim-5km` by default; pick another in the map selector at the top
 left, or link to one with `?map=<area>` (e.g. `?map=bensheim-1km`, also on
 the site's version page). Without that list (as with a plain `trunk serve`), or for
-an unknown area, it shows the demo town grid and says why.
+an unknown area, it shows the demo town grid and says why. `?road=<id>`
+selects and centres a road, e.g. `?map=bensheim-5km&road=820`.
 
 Controls: drag to pan (left button, Shift + left or middle button; one finger on
 touch screens), scroll or pinch to zoom, arrow keys or WASD to pan,
