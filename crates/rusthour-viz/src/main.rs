@@ -492,7 +492,8 @@ fn show_sim_controls(ui: &mut egui::Ui, v: &mut Viewer) {
             }
         });
     });
-    if v.inspect.following && t.pacer.scale() > inspect::FOLLOW_HINT_ABOVE {
+    let shown = marks::signal_time_scale(t.pacer.scale(), t.pacer.achieved_scale(), paused);
+    if v.inspect.follow_hint(shown) {
         ui.small("follow works best below 30×");
     }
 }
