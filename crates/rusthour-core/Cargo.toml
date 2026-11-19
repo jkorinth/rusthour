@@ -20,6 +20,11 @@ proptest.workspace = true
 criterion.workspace = true
 dhat.workspace = true
 
+# Own `main`, no libtest thread to allocate behind dhat's back (M4.10).
+[[test]]
+name = "alloc"
+harness = false
+
 [[bench]]
 name = "engine"
 harness = false

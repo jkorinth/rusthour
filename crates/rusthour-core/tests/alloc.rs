@@ -1,6 +1,12 @@
 //! ADR-0004: no allocations in `Engine::step` after warm-up, at a steady
 //! population. `dhat` (safe to use; `unsafe_code` is forbidden here) counts
 //! the allocations.
+//!
+//! `dhat` counts every thread's allocations, so this binary has no libtest
+//! harness (`harness = false`): libtest watches tests from a second thread and
+//! allocates its "running for over 60 seconds" warning there, which made this
+//! test flaky on slow runners (M4.10). Here `main` is the only thread. It
+//! answers the `--list` calls of cargo-nextest itself.
 
 #![cfg(not(target_arch = "wasm32"))]
 
@@ -12,7 +18,38 @@ mod grid;
 #[global_allocator]
 static ALLOC: dhat::Alloc = dhat::Alloc;
 
-#[test]
+const NAME: &str = "no_allocations_in_steady_state";
+
+fn main() {
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    if args.iter().any(|a| a == "--list") {
+        // cargo-nextest lists the tests in libtest's terse format; none is ignored.
+        if !args.iter().any(|a| a == "--ignored") {
+            println!("{NAME}: test");
+        }
+        return;
+    }
+    // A name filter (`cargo test <filter>`, nextest's `--exact <name>`) that
+    // doesn't match, or a matching `--skip`, skips the test; the values of
+    // libtest's other options are not filters.
+    let mut args = args.iter();
+    while let Some(a) = args.next() {
+        let skip = match a.as_str() {
+            "--skip" => args.next().is_some_and(|f| NAME.contains(f.as_str())),
+            "--test-threads" | "--format" | "--color" | "--logfile" | "-Z" => {
+                args.next();
+                false
+            }
+            f => !f.starts_with('-') && !NAME.contains(f),
+        };
+        if skip {
+            return;
+        }
+    }
+    no_allocations_in_steady_state();
+    println!("test {NAME} ... ok");
+}
+
 fn no_allocations_in_steady_state() {
     let config = Config {
         target_vehicles: 1000,
