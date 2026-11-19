@@ -207,3 +207,21 @@ results are in the PR and in an addendum below.
   `step_multilane/5000` 1.36 → 1.41–1.45 ms over two runs (+3% to +8%).
   Phase 3b visits a tenth of the slots per step; most of the difference is
   the changed traffic, which the bench can't separate from the overhead.
+
+## Addendum (M4.3): the mix as a run setting
+
+- `Config` gains `profile_mix` and, for ADR-0007's classes, `class_mix`:
+  relative `u32` weights in `Profile::ALL` and `Class::ALL` order. The
+  draw maps one `next_u32` to `0..total` by `(u · total) >> 32` (in
+  `u128`), so only the ratios matter: `[15, 60, 20, 5]` and parts per
+  million of the same shares draw alike, and the default reproduces the
+  golden hash. The weights are not hashed; the profiles and classes drawn
+  are.
+- `rusthour-api` validates at the boundary: `DriverMix` and `FleetMix`
+  hold one `f64` share per name (finite, ≥ 0, sum > 0), normalise them,
+  parse `name=share,…`, and give the weights as parts per million;
+  `InProcess` rejects an all-zero weight array (`NetworkError::EmptyMix`).
+  One field per name, so M5.5's scenario file maps `[drivers]` and
+  `[fleet]` tables onto them 1:1.
+- The CLI takes `--drivers` and `--fleet` and echoes both mixes; the viewer
+  edits them in a folded section and applies them on "Reset".
