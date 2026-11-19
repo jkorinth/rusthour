@@ -25,7 +25,7 @@ const ROAD_COLOR: Color32 = Color32::from_gray(0x8a);
 const HOT_ROAD_COLOR: Color32 = Color32::from_rgb(0xe0, 0x20, 0x20);
 /// Width of the hot-road overlay, in screen points.
 const HOT_ROAD_WIDTH_PT: f32 = 4.0;
-/// Drawn vehicle width in meters.
+/// Drawn width of a car, in meters; other classes have their own.
 pub const VEHICLE_WIDTH_M: f32 = 1.8;
 /// Smallest drawn vehicle, in screen points, so traffic stays visible when
 /// zoomed out.
@@ -319,7 +319,6 @@ impl World {
         color: Color32,
     ) -> Mesh {
         let to_screen = camera.mesh_transform(viewport);
-        let width = (VEHICLE_WIDTH_M * camera.scale).max(MIN_VEHICLE_PT.y);
         let mut mesh = Mesh::default();
         mesh.reserve_vertices(4 * vehicles.len());
         mesh.reserve_triangles(2 * vehicles.len());
@@ -330,6 +329,12 @@ impl World {
             if !viewport.expand(length).contains(front) {
                 continue;
             }
+            // Snapshots without classes (older servers) draw cars.
+            let width_m = vehicles
+                .class
+                .get(i)
+                .map_or(VEHICLE_WIDTH_M, |c| c.width_m());
+            let width = (width_m * camera.scale).max(MIN_VEHICLE_PT.y);
             #[expect(clippy::cast_possible_truncation, reason = "far below u32::MAX")]
             let base = mesh.vertices.len() as u32;
             for corner in vehicle_quad(front, dir, length, width) {
