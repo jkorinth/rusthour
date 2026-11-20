@@ -21,7 +21,7 @@ use crate::traffic::{self, Traffic};
 
 /// Road and intersection fill: at least 3:1 against both egui themes' panel
 /// backgrounds (ADR-0003 accessibility minimum).
-const ROAD_COLOR: Color32 = Color32::from_gray(0x8a);
+pub(crate) const ROAD_COLOR: Color32 = Color32::from_gray(0x8a);
 /// Roads with stuck removals are drawn over in this red.
 const HOT_ROAD_COLOR: Color32 = Color32::from_rgb(0xe0, 0x20, 0x20);
 /// Width of the hot-road overlay, in screen points.
