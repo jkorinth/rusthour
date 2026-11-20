@@ -271,10 +271,19 @@ impl Inspector {
     }
 
     /// The panel: top right on wide screens, a bottom sheet on narrow ones.
-    pub fn show_panel(&mut self, ctx: &egui::Context, network: &Network, signals: &SignalSnapshot) {
+    /// `time_scale` is the speed signals show at ([`crate::marks::signal_time_scale`]),
+    /// for the follow hint.
+    pub fn show_panel(
+        &mut self,
+        ctx: &egui::Context,
+        network: &Network,
+        signals: &SignalSnapshot,
+        time_scale: f64,
+    ) {
         let Some(selected) = self.selected else {
             return;
         };
+        let hint = self.follow_hint(time_scale);
         let (title, lines) = match selected {
             Selection::Vehicle(_) => {
                 let title = if self.following {
@@ -345,6 +354,7 @@ impl Inspector {
                     if narrow && let Some(first) = lines.first() {
                         ui.label(first);
                     }
+                    follow_hint_line(ui, hint);
                     return;
                 }
                 let max_height = if narrow {
@@ -364,11 +374,20 @@ impl Inspector {
                             ui.label(line);
                         }
                     });
+                follow_hint_line(ui, hint);
             });
         });
         if close {
             self.select(None);
         }
+    }
+}
+
+/// The follow hint, last in the panel and at the usual size, so it's legible
+/// and nothing above it moves when it comes and goes (M4 trial).
+fn follow_hint_line(ui: &mut egui::Ui, show: bool) {
+    if show {
+        ui.colored_label(ui.visuals().warn_fg_color, "follow works best below 30×");
     }
 }
 
@@ -588,8 +607,10 @@ pub fn vehicle_lines(
     }
     let d = info.driver;
     out.push(format!(
-        "{}, {} driver",
+        "{}, {} m long, {} m wide, {} driver",
         vehicle_class_text(info.class),
+        info.class.length_m(),
+        info.class.width_m(),
         profile_text(d.profile)
     ));
     let cap = d
@@ -675,7 +696,12 @@ pub fn road_lines(info: &RoadInfo, network: &Network) -> Vec<String> {
             info.length_m
         ),
         match info.mean_speed_mps {
-            Some(v) => format!("{} vehicles, mean speed {:.0} km/h", info.vehicles, v * 3.6),
+            Some(v) => format!(
+                "{} vehicle{}, mean speed {:.0} km/h",
+                info.vehicles,
+                if info.vehicles == 1 { "" } else { "s" },
+                v * 3.6
+            ),
             None => "no vehicles".into(),
         },
         format!("{} removed (stuck)", info.removed_stuck),
@@ -953,7 +979,7 @@ mod tests {
         assert_eq!(
             lines[n - 3..],
             [
-                "truck, aggressive driver",
+                "truck, 12 m long, 2.55 m wide, aggressive driver",
                 "car-following: wants 110% of the limit, at most 80 km/h; headway 1.3 s, \
                  accel 0.7 m/s², braking 2.0 m/s², min gap 2.0 m",
                 "lane changes: politeness 0.1, threshold 0.1 m/s², keep-right bias \
@@ -966,6 +992,20 @@ mod tests {
             &SignalSnapshot::default(),
         );
         assert!(car[car.len() - 2].starts_with("car-following: wants 100% of the limit; headway"));
+        let van = VehicleInfo {
+            class: VehicleClass::Van,
+            ..info(WaitReason::FreeRoad, 10.0)
+        };
+        let van = vehicle_lines(&van, &east(1), &SignalSnapshot::default());
+        assert_eq!(
+            car[car.len() - 3],
+            "car, 4.5 m long, 1.8 m wide, normal driver"
+        );
+        assert_ne!(
+            van[van.len() - 3],
+            car[car.len() - 3],
+            "a van's panel differs"
+        );
     }
 
     #[test]
@@ -1017,6 +1057,14 @@ mod tests {
             road_lines(&road, &net)[4],
             "→ Hauptstraße (left): 12 s, expected 4 s"
         );
+        let one = RoadInfo {
+            vehicles: 1,
+            mean_speed_mps: Some(10.0),
+            ..road.clone()
+        };
+        assert_eq!(road_lines(&one, &net)[2], "1 vehicle, mean speed 36 km/h");
+        let two = RoadInfo { vehicles: 2, ..one };
+        assert_eq!(road_lines(&two, &net)[2], "2 vehicles, mean speed 36 km/h");
     }
 
     #[test]

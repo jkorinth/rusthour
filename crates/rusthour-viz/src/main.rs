@@ -443,6 +443,54 @@ fn sim_keys(ctx: &egui::Context, t: &mut Traffic) {
     }
 }
 
+/// "Reset" and the vehicle count, both off while the mix is invalid.
+fn reset_and_population(ui: &mut egui::Ui, v: &mut Viewer) {
+    let t = &mut v.traffic;
+    let valid = t.mix_valid();
+    if ui
+        .add_enabled(valid, egui::Button::new("Reset"))
+        .on_hover_text("Start over with the same seed: the same traffic again, with any edited mix")
+        .on_disabled_hover_text(MIX_INVALID)
+        .clicked()
+    {
+        t.reset();
+    }
+    // One group, so the wrap never splits the number from its unit.
+    let field = ui
+        .horizontal(|ui| {
+            let field = ui
+                .add_enabled(
+                    valid,
+                    egui::DragValue::new(&mut v.vehicles_edit).range(0..=100_000),
+                )
+                .on_hover_text("Vehicles on the map; changing it restarts the simulation")
+                .on_disabled_hover_text(MIX_INVALID);
+            ui.label("vehicles (restarts)");
+            field
+        })
+        .inner;
+    if !valid {
+        v.vehicles_edit = t.target_vehicles();
+    } else if v.vehicles_edit != t.target_vehicles() && !field.dragged() && !field.has_focus() {
+        t.set_target_vehicles(v.vehicles_edit);
+    }
+}
+
+/// The width of a button wide enough for each of `labels`, so a button that
+/// switches between them doesn't move what follows (M3 and M4 trials).
+fn widest_button(ui: &egui::Ui, labels: &[&str]) -> f32 {
+    labels
+        .iter()
+        .map(|&s| {
+            egui::WidgetText::from(s)
+                .into_galley(ui, None, f32::INFINITY, egui::TextStyle::Button)
+                .size()
+                .x
+        })
+        .fold(0.0, f32::max)
+        + 2.0 * ui.spacing().button_padding.x
+}
+
 /// Room for the longest speed readout, "1000× (running at 999×)", in points.
 const SPEED_READOUT_PT: f32 = 170.0;
 /// Below this screen width (points) the controls take two rows of buttons.
@@ -450,16 +498,18 @@ const TWO_ROWS_BELOW_PT: f32 = 600.0;
 
 /// Play/pause, step, speed, reset, population and the readouts.
 fn show_sim_controls(ui: &mut egui::Ui, v: &mut Viewer) {
-    let t = &mut v.traffic;
-    let paused = t.pacer.is_paused();
+    let paused = v.traffic.pacer.is_paused();
     let narrow = ui.ctx().content_rect().width() < TWO_ROWS_BELOW_PT;
     ui.horizontal_wrapped(|ui| {
+        let t = &mut v.traffic;
         let (icon, tip) = if paused {
             ("▶ Play", "Run the simulation (Space)")
         } else {
             ("⏸ Pause", "Pause the simulation (Space)")
         };
-        if ui.button(icon).on_hover_text(tip).clicked() {
+        let width = widest_button(ui, &["▶ Play", "⏸ Pause"]);
+        let play = egui::Button::new(icon).min_size(egui::vec2(width, 0.0));
+        if ui.add(play).on_hover_text(tip).clicked() {
             t.toggle_pause();
         }
         if ui
@@ -491,29 +541,9 @@ fn show_sim_controls(ui: &mut egui::Ui, v: &mut Viewer) {
                 ui.label(readout);
             });
         }
-        if ui
-            .button("Reset")
-            .on_hover_text(
-                "Start over with the same seed: the same traffic again, with any edited mix",
-            )
-            .clicked()
-        {
-            t.reset();
-        }
-        // One group, so the wrap never splits the number from its unit.
-        let field = ui
-            .horizontal(|ui| {
-                let field = ui
-                    .add(egui::DragValue::new(&mut v.vehicles_edit).range(0..=100_000))
-                    .on_hover_text("Vehicles on the map; changing it restarts the simulation");
-                ui.label("vehicles (restarts)");
-                field
-            })
-            .inner;
-        if v.vehicles_edit != t.target_vehicles() && !field.dragged() && !field.has_focus() {
-            t.set_target_vehicles(v.vehicles_edit);
-        }
+        reset_and_population(ui, v);
     });
+    let t = &mut v.traffic;
     let status = t.status();
     ui.horizontal_wrapped(|ui| {
         ui.monospace(traffic::format_clock(status.sim_time_ms))
@@ -545,12 +575,11 @@ fn show_sim_controls(ui: &mut egui::Ui, v: &mut Viewer) {
             }
         });
     });
-    let shown = marks::signal_time_scale(t.pacer.scale(), t.pacer.achieved_scale(), paused);
-    if v.inspect.follow_hint(shown) {
-        ui.small("follow works best below 30×");
-    }
     show_mix(ui, t);
 }
+
+/// Why "Reset" and the vehicle count are off.
+const MIX_INVALID: &str = "each column needs a share above 0; until then “Reset” is off";
 
 /// The driver and fleet mix, folded away; "Reset" applies an edit.
 fn show_mix(ui: &mut egui::Ui, t: &mut Traffic) {
@@ -567,10 +596,7 @@ fn show_mix(ui: &mut egui::Ui, t: &mut Traffic) {
                 t.fleet = rusthour_api::FleetMix::from_shares(fleet);
             });
             if !ok {
-                ui.colored_label(
-                    ui.visuals().warn_fg_color,
-                    "each column needs a share above 0",
-                );
+                ui.colored_label(ui.visuals().warn_fg_color, MIX_INVALID);
             }
             ui.add_space(6.0);
             show_tuning(ui, t);
@@ -721,22 +747,7 @@ fn show_ready(
         .response
         .rect;
 
-    if let Some(note) = &v.note {
-        let mut close = false;
-        egui::Area::new(egui::Id::unique("note"))
-            .anchor(Align2::CENTER_TOP, [0.0, 48.0])
-            .show(&ctx, |ui| {
-                egui::Frame::popup(ui.style()).show(ui, |ui| {
-                    ui.horizontal(|ui| {
-                        ui.label(note);
-                        close = ui.button("OK").clicked();
-                    });
-                });
-            });
-        if close {
-            v.note = None;
-        }
-    }
+    let below = show_note(&ctx, &mut v.note, controls.bottom());
 
     egui::Area::new(egui::Id::unique("attribution"))
         .anchor(Align2::RIGHT_BOTTOM, [-4.0, -4.0])
@@ -756,14 +767,44 @@ fn show_ready(
 
     // After the controls, so a reset in them clears the selection at once.
     v.inspect.update(&v.traffic, ctx.input(|i| i.time));
+    let pacer = &v.traffic.pacer;
+    let shown = marks::signal_time_scale(pacer.scale(), pacer.achieved_scale(), pacer.is_paused());
     v.inspect
-        .show_panel(&ctx, v.traffic.network(), &v.traffic.signals);
+        .show_panel(&ctx, v.traffic.network(), &v.traffic.signals, shown);
 
-    show_shortcuts(&ctx, show_help, debug, controls.bottom());
+    show_shortcuts(&ctx, show_help, debug, below);
     chosen
 }
 
-/// The `?` list of shortcuts, `below` the controls (screen y), clear of the
+/// A note such as an unknown `--road`, with OK, below the controls (`top`,
+/// screen y) so it never covers "Reset" (M4 trial); returns its bottom, or
+/// `top` without a note.
+fn show_note(ctx: &egui::Context, note: &mut Option<String>, top: f32) -> f32 {
+    let Some(text) = note else {
+        return top;
+    };
+    let mut close = false;
+    let bottom = egui::Area::new(egui::Id::unique("note"))
+        .anchor(Align2::LEFT_TOP, [8.0, top + 8.0])
+        .show(ctx, |ui| {
+            egui::Frame::popup(ui.style()).show(ui, |ui| {
+                ui.set_max_width((ctx.content_rect().width() - 32.0).max(100.0));
+                ui.horizontal_wrapped(|ui| {
+                    ui.label(text.as_str());
+                    close = ui.button("OK").clicked();
+                });
+            });
+        })
+        .response
+        .rect
+        .bottom();
+    if close {
+        *note = None;
+    }
+    bottom
+}
+
+/// The `?` list of shortcuts, `below` the controls and any note (screen y), clear of the
 /// selection panel at the top right.
 fn show_shortcuts(ctx: &egui::Context, show_help: &mut bool, debug: &mut Debug, below: f32) {
     egui::Window::new("Keyboard shortcuts")
