@@ -14,6 +14,7 @@ mod pacer;
 mod placement;
 mod signal;
 mod snapshot;
+mod tuning;
 
 use serde::{Deserialize, Serialize};
 
@@ -30,6 +31,7 @@ pub use placement::Placement;
 pub use rusthour_core::Config;
 pub use signal::{SignalSnapshot, SignalState};
 pub use snapshot::{DriverProfile, VehicleClass, VehicleId, VehicleSnapshot};
+pub use tuning::{DriverTuning, TUNING_FIELDS, TuningField};
 
 /// Version of the wire protocol. Bump on any incompatible change to the
 /// serialized types in this crate.
@@ -109,7 +111,8 @@ impl InProcess {
     ///
     /// # Panics
     ///
-    /// If `config.dt_ms` is outside 1..=1000 or a mix is all zero;
+    /// If `config.dt_ms` is outside 1..=1000, a mix is all zero or a tuned
+    /// parameter is out of range;
     /// [`with_network`](Self::with_network) returns an error instead.
     #[must_use]
     pub fn new(config: Config, seed: u64) -> Self {
@@ -128,8 +131,9 @@ impl InProcess {
     ///
     /// Returns a [`NetworkError`] if the network is inconsistent, e.g. a road
     /// references a missing node or has zero length, if `config.dt_ms` is
-    /// outside 1..=1000, or if `config.profile_mix` or `config.class_mix` is
-    /// all zero.
+    /// outside 1..=1000, if `config.profile_mix` or `config.class_mix` is
+    /// all zero, or if a tuned parameter is outside its range
+    /// ([`TUNING_FIELDS`]).
     pub fn with_network(config: Config, seed: u64, network: Network) -> Result<Self, NetworkError> {
         check(&config)?;
         let core = network.to_core()?;
@@ -149,6 +153,18 @@ fn check(config: &Config) -> Result<(), NetworkError> {
     }
     if [config.profile_mix, config.class_mix].contains(&[0; 4]) {
         return Err(NetworkError::EmptyMix);
+    }
+    for (&p, t) in rusthour_core::behavior::profile::Profile::ALL
+        .iter()
+        .zip(&config.tuning)
+    {
+        if let Some((parameter, value)) = tuning::out_of_range(t) {
+            return Err(NetworkError::BadTuning {
+                profile: DriverProfile::from_core(p),
+                parameter,
+                value,
+            });
+        }
     }
     Ok(())
 }
