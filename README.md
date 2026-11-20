@@ -7,14 +7,18 @@ with different vehicle types and driver personalities. Watch it interactively
 in the browser or natively, or run deterministic batch simulations from the
 command line and compare scenarios statistically.
 
-> **Status:** milestone M3, lanes and intersections. Vehicles drive on real
+> **Status:** milestone M4, drivers and vehicles. Vehicles drive on real
 > OpenStreetMap areas with car-following (IDM), traffic signals with
 > fixed-time plans, right of way from the map's signs and road classes,
 > multi-lane roads with lane changes (MOBIL), lane choice ahead of turns, and
-> routes that avoid jams. A safety net removes vehicles stuck in gridlock for
-> 5 minutes and counts them. Watch them in the browser
+> routes that avoid jams. Drivers are aggressive, normal, cautious or
+> erratic, in cars, vans, trucks and buses, in a mix you set per run; the
+> viewer colours them by profile or class and lets you tune each profile. A
+> safety net removes vehicles stuck in gridlock for 5 minutes and counts
+> them. Watch them in the browser
 > ([try it](https://jkorinth.github.io/rusthour/)) or natively, or run them
-> headless from the command line. Driver and vehicle types come with M4.
+> headless from the command line. Network edits and A/B studies come with
+> M5.
 > See [ROADMAP.md](ROADMAP.md) for what's planned and
 > [AGENTS.md](AGENTS.md) for how work is done.
 
@@ -59,7 +63,8 @@ time, vehicles driving and waiting to enter, `arrived`, `removed_stuck`
 `removed_per_arrival` (`null` before the first arrival) and the
 `state_hash`. With `--report-stuck` it adds `stuck_roads`, the ten roads with
 the most removals, each with its `road` id, street `name` (`null` if
-unnamed), `osm_way` and whether it is a `roundabout`, and
+unnamed), `osm_way`, whether it is a `roundabout` and how many vehicles
+were `removed` there, and
 `stuck_roads_total`, the number of roads with any. The viewer's road panel
 shows the same road id and OSM way; `rusthour-viz --road <id>` opens the
 viewer on that road. `rusthour run --help` lists all options.
@@ -119,11 +124,13 @@ profiles and vehicle classes, as for `--drivers` and `--fleet`: a share per
 name, with the percentage it makes. Below it, a table holds each profile's
 parameters: desired speed (as a factor of the limit), headway,
 acceleration, braking, minimum gap and lane-change politeness. "Reset" (or a
-new vehicle count) starts over with the edited mix and parameters.
+new vehicle count) starts over with the edited mix and parameters; while a
+column's shares are all 0, both are off until one is above 0.
 
 "colour" at the top colours the vehicles by speed (against the road's
 limit; the most visible shade is "stopped"), by driver profile or by
-vehicle class, with a legend at the bottom left.
+vehicle class, with a legend at the bottom left. Each has its own colours,
+none of them red, amber or green like the signals.
 
 On the map:
 
@@ -140,7 +147,8 @@ On the map:
 Click or tap a vehicle or road to select it (again on the same spot for the
 next one nearby). A vehicle's panel shows its speed and why it drives as it
 does (e.g. "at the signal: red, green in 7 s", "giving way"), its road and
-lane, destination, trip time, its class and driver profile, and the
+lane, destination, trip time, its class with its length and width, its
+driver profile, and the
 car-following and lane-change parameters it drives with, and its route ahead is
 drawn dashed. A road's panel shows its id and OSM way, class, lanes, limit,
 vehicles and mean speed, removals, the delay of each movement against the
