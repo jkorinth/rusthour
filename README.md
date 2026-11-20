@@ -116,8 +116,14 @@ once there are any).
 
 "Drivers and vehicles", below the controls, opens the mix of driver
 profiles and vehicle classes, as for `--drivers` and `--fleet`: a share per
-name, with the percentage it makes. "Reset" (or a new vehicle count) starts
-over with the edited mix.
+name, with the percentage it makes. Below it, a table holds each profile's
+parameters: desired speed (as a factor of the limit), headway,
+acceleration, braking, minimum gap and lane-change politeness. "Reset" (or a
+new vehicle count) starts over with the edited mix and parameters.
+
+"colour" at the top colours the vehicles by speed (against the road's
+limit; the most visible shade is "stopped"), by driver profile or by
+vehicle class, with a legend at the bottom left.
 
 On the map:
 
@@ -134,7 +140,8 @@ On the map:
 Click or tap a vehicle or road to select it (again on the same spot for the
 next one nearby). A vehicle's panel shows its speed and why it drives as it
 does (e.g. "at the signal: red, green in 7 s", "giving way"), its road and
-lane, destination, trip time and driver parameters, and its route ahead is
+lane, destination, trip time, its class and driver profile, and the
+car-following and lane-change parameters it drives with, and its route ahead is
 drawn dashed. A road's panel shows its id and OSM way, class, lanes, limit,
 vehicles and mean speed, removals, the delay of each movement against the
 expected one, and its signal. "Follow" or `C` keeps the camera on the
