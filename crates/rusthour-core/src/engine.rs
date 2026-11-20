@@ -379,7 +379,7 @@ impl Engine {
             routed += 1;
             self.pending[origin].pop_front();
             self.waiting -= 1;
-            let found = self.router.route(&self.network, trip, &mut self.route);
+            let found = self.router.route(trip, &mut self.route);
             debug_assert!(found, "demand only draws routable roads");
             if found {
                 let rng = &mut self.rngs[Stream::Behavior as usize - 1];
@@ -435,14 +435,13 @@ impl Engine {
             let road = &net.roads[r as usize];
             let found = if road.lanes > 1 && road.length_m - vs.pos_m[s] < route_zone_m(vs, s) {
                 let serves = |to: u32| lanes.from_mask(net, r, to) >> lane & 1 == 1;
-                self.router
-                    .route_from_any(net, r, serves, dest, &mut self.route)
+                self.router.route_from_any(r, serves, dest, &mut self.route)
             } else {
                 let trip = Trip {
                     origin: r,
                     destination: dest,
                 };
-                self.router.route(net, trip, &mut self.route)
+                self.router.route(trip, &mut self.route)
             };
             let route = &mut vs.route[s];
             if found {
@@ -525,10 +524,7 @@ impl Engine {
                             self.fallback_replans += 1;
                             let route = &mut vs.route[u];
                             let dest = route[route.len() - 1];
-                            if self
-                                .router
-                                .route_from_any(net, r, serves, dest, &mut self.route)
-                            {
+                            if self.router.route_from_any(r, serves, dest, &mut self.route) {
                                 *waited = 0;
                                 route.clear();
                                 route.extend_from_slice(&self.route);

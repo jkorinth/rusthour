@@ -396,7 +396,7 @@ impl Router {
     /// Finds the cheapest route from `trip.origin` to `trip.destination` and
     /// writes the road ids, origin to destination inclusive, into `out`
     /// (cleared first). Returns `false`, leaving `out` empty, if there is none.
-    pub fn route(&mut self, _net: &Network, trip: Trip, out: &mut Vec<u32>) -> bool {
+    pub fn route(&mut self, trip: Trip, out: &mut Vec<u32>) -> bool {
         self.epoch += 1;
         self.heap.clear();
         self.set_goal(trip.destination);
@@ -411,7 +411,6 @@ impl Router {
     /// `origin` again, e.g. once round the block.
     pub fn route_from_any(
         &mut self,
-        _net: &Network,
         origin: u32,
         first: impl Fn(u32) -> bool,
         dest: u32,
@@ -751,23 +750,23 @@ mod tests {
         };
         let mut router = Router::new(&net);
         let mut out = Vec::new();
-        assert!(router.route_from_any(&net, 0, |to| to == 1, 3, &mut out));
+        assert!(router.route_from_any(0, |to| to == 1, 3, &mut out));
         assert_eq!(out, [0, 1, 2, 0, 3], "once round the loop");
-        assert!(router.route_from_any(&net, 0, |to| to == 3, 3, &mut out));
+        assert!(router.route_from_any(0, |to| to == 3, 3, &mut out));
         assert_eq!(out, [0, 3]);
-        assert!(!router.route_from_any(&net, 3, |_| true, 0, &mut out));
+        assert!(!router.route_from_any(3, |_| true, 0, &mut out));
     }
 
     #[test]
     fn shortest_route_and_turn_restriction_detour() {
         let mut out = Vec::new();
         let net = detour_net(true);
-        assert!(Router::new(&net).route(&net, trip(0, 4), &mut out));
+        assert!(Router::new(&net).route(trip(0, 4), &mut out));
         assert_eq!(out, [0, 1, 4]);
         let net = detour_net(false);
-        assert!(Router::new(&net).route(&net, trip(0, 4), &mut out));
+        assert!(Router::new(&net).route(trip(0, 4), &mut out));
         assert_eq!(out, [0, 2, 3, 4]);
-        assert!(!Router::new(&net).route(&net, trip(4, 0), &mut out));
+        assert!(!Router::new(&net).route(trip(4, 0), &mut out));
         assert!(out.is_empty());
     }
 
@@ -807,7 +806,7 @@ mod tests {
     fn a_left_turn_across_oncoming_traffic_is_avoided_for_a_near_equal_route() {
         let net = left_or_around();
         let mut out = Vec::new();
-        assert!(Router::new(&net).route(&net, trip(0, 6), &mut out));
+        assert!(Router::new(&net).route(trip(0, 6), &mut out));
         assert_eq!(out, [0, 4, 5, 6]);
     }
 
@@ -851,7 +850,7 @@ mod tests {
             vs.held_ticks[id.slot as usize] = 300 + k * 50;
             router.observe(&net, &vs, 0.1);
         }
-        assert!(router.route(&net, trip(0, 6), &mut out));
+        assert!(router.route(trip(0, 6), &mut out));
         assert_eq!(out, [0, 2, 3, 6], "the blocked movement is avoided");
         // It leaves; quick passages pull the cost back down.
         vs.despawn(id);
@@ -859,7 +858,7 @@ mod tests {
             router.passed(0, 4, 0);
             router.observe(&net, &vs, 0.1);
         }
-        assert!(router.route(&net, trip(0, 6), &mut out));
+        assert!(router.route(trip(0, 6), &mut out));
         assert_eq!(out, [0, 4, 5, 6]);
     }
 
@@ -988,7 +987,7 @@ mod tests {
                 }
             }
             for o in 0..n {
-                let found = router.route(net, trip(o, d), &mut out);
+                let found = router.route(trip(o, d), &mut out);
                 prop_assert_eq!(found, rem[o as usize].is_finite());
                 if found {
                     prop_assert_eq!((out[0], *out.last().unwrap()), (o, d));
@@ -1061,7 +1060,7 @@ mod tests {
             let mut out = Vec::new();
             for &o in &router.routable().to_vec() {
                 for &d in router.routable() {
-                    prop_assert!(router.clone().route(&net, trip(o, d), &mut out));
+                    prop_assert!(router.clone().route(trip(o, d), &mut out));
                 }
             }
         }
