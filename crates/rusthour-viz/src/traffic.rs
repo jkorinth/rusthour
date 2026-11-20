@@ -101,16 +101,22 @@ impl Traffic {
             || self.tuning != self.config.tuning
     }
 
-    /// Restarts from tick 0 with the same seed, network and population, and
-    /// the edited mix and tuning where they are valid; keeps the speed and
-    /// whether it is paused.
+    /// Whether both edited mixes have a share above 0; "Reset" is off
+    /// until they do.
+    pub fn mix_valid(&self) -> bool {
+        self.drivers.weights().is_ok() && self.fleet.weights().is_ok()
+    }
+
+    /// Restarts from tick 0 with the same seed, network and population, the
+    /// edited mix, and the edited tuning where it is in range; keeps the
+    /// speed and whether it is paused. Does nothing while the mix is
+    /// invalid, so a run never uses a mix the panel doesn't show.
     pub fn reset(&mut self) {
-        if let Ok(w) = self.drivers.weights() {
-            self.config.profile_mix = w;
-        }
-        if let Ok(w) = self.fleet.weights() {
-            self.config.class_mix = w;
-        }
+        let (Ok(drivers), Ok(fleet)) = (self.drivers.weights(), self.fleet.weights()) else {
+            return;
+        };
+        self.config.profile_mix = drivers;
+        self.config.class_mix = fleet;
         let in_range =
             |t: &DriverTuning| TUNING_FIELDS.iter().all(|f| f.range.contains(&(f.get)(t)));
         if self.tuning.iter().all(in_range) {
@@ -130,8 +136,12 @@ impl Traffic {
         self.sim.signals_into(&mut self.signals);
     }
 
-    /// Changes the population, which restarts the simulation.
+    /// Changes the population, which restarts the simulation; does nothing
+    /// while the mix is invalid, as [`Self::reset`].
     pub fn set_target_vehicles(&mut self, n: u32) {
+        if !self.mix_valid() {
+            return;
+        }
         self.config.target_vehicles = n;
         self.reset();
     }
@@ -340,6 +350,28 @@ mod tests {
         assert!(t.snapshot.class.iter().all(|&c| c == VehicleClass::Truck));
         t.fleet = FleetMix::from_shares([0.0; 4]);
         t.reset();
+        run(&mut t, 300);
+        assert!(t.snapshot.class.iter().all(|&c| c == VehicleClass::Truck));
+    }
+
+    #[test]
+    fn regression_m4_13_reset_refuses_an_all_zero_driver_mix() {
+        use rusthour_api::{DriverMix, FleetMix, VehicleClass};
+        let mut t = traffic();
+        run(&mut t, 300);
+        let tick = t.status().tick;
+        t.drivers = DriverMix::from_shares([0.0; 4]);
+        t.fleet = FleetMix::from_shares([0.0, 0.0, 1.0, 0.0]);
+        assert!(!t.mix_valid());
+        t.reset();
+        t.set_target_vehicles(t.target_vehicles() + 10);
+        assert_eq!(t.status().tick, tick, "no restart with a mix it can't show");
+        run(&mut t, 300);
+        assert!(t.snapshot.class.iter().any(|&c| c != VehicleClass::Truck));
+        t.drivers = DriverMix::default();
+        assert!(t.mix_valid());
+        t.reset();
+        assert_eq!(t.status().tick, 0);
         run(&mut t, 300);
         assert!(t.snapshot.class.iter().all(|&c| c == VehicleClass::Truck));
     }
