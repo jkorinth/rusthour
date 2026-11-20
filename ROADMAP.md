@@ -207,6 +207,7 @@ seed ⇒ identical state hash.
 | M4.9 | Viewer and CLI polish from the M3 UX review: `rusthour-viz --road <id>` and `?road=<id>` select and centre a road (N1); build label falls back to the git commit, shows on the map-error screen, README says where it is (N4); controls wrap into two rows below about 600 pt (N5); CLI usage line without `--map` doesn't suggest `--steps` is required (N6); bolder outline for the selected road (N7) | done | feat/M4.9-viewer-cli-polish |
 | M4.10 | Flaky `no_allocations_in_steady_state`: libtest's "running for over 60 seconds" warning allocated on its own thread and dhat counted it; the test now runs without the libtest harness | done | fix/M4.10-alloc-test-flake |
 | M4.11 | M4 user trial (docs/trials/M4.md) | done | docs/M4.11-trial |
+| M4.12 | M4 trial fixes (core): truck gridlock and arrival rate | claimed | fix/M4.12-truck-gridlock |
 
 ### M5 — Network editing & A/B studies → `v0.6.0`
 
