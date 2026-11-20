@@ -1,5 +1,50 @@
 # Changelog
 
+## [0.5.0](https://github.com/jkorinth/rusthour/compare/v0.4.0...v0.5.0) (2026-11-20)
+
+
+### ⚠ BREAKING CHANGES
+
+* **core:** `Config` has a new field `tuning` and, as it holds floats, no longer implements `Eq`.
+* **api:** `DriverInfo` has five new fields, so Rust code that builds it with a struct literal must set them.
+* **core:** `Config` (re-exported by `rusthour-api`) has two new fields, so Rust code that builds it with a struct literal and without
+* **api:** `VehicleInfo` has a new field `class`, so Rust code that builds it with a struct literal must set it.
+* **api:** DriverInfo has a new public field, profile, so code that builds a DriverInfo literal must set it.
+
+### Features
+
+* **api:** show each vehicle's class in the snapshot and inspect info ([31439b1](https://github.com/jkorinth/rusthour/commit/31439b1180a88c37fff3d2810cc251dbf315cf60))
+* **api:** show each vehicle's driver profile in the snapshot and inspect info ([3631d12](https://github.com/jkorinth/rusthour/commit/3631d12776fa07a2296773e0aa982408fbfe7393))
+* **api:** show the class, profile and lane-change parameters of a vehicle ([2138fc9](https://github.com/jkorinth/rusthour/commit/2138fc99911f4d115151155006fdac1694d04eca))
+* **api:** validate and parse the driver and fleet mix ([9246be0](https://github.com/jkorinth/rusthour/commit/9246be016aad22c186de88c970dbb0074afb6086))
+* **api:** validate each driver profile's tuning ([63fdc9e](https://github.com/jkorinth/rusthour/commit/63fdc9ecf4ee41800202a69261da244742f0ad07))
+* **cli:** set the driver and fleet mix with --drivers and --fleet ([f6153d8](https://github.com/jkorinth/rusthour/commit/f6153d88d9dd61ac94347a71d26cf06384c92f9a))
+* **core:** add car, van, truck and bus vehicle classes ([269c6c5](https://github.com/jkorinth/rusthour/commit/269c6c5b91b7dd8dc26c9931bea9cdb6d56ed2b2))
+* **core:** calibrate routing delay priors and turn costs to measured junction delays ([26a9372](https://github.com/jkorinth/rusthour/commit/26a9372597c45eddc3522e1acf863948b62130b9))
+* **core:** give drivers aggressive, normal, cautious or erratic profiles ([2982c1a](https://github.com/jkorinth/rusthour/commit/2982c1a81d643a06ad392ecf4e1c50a1b0dc2ebe))
+* **core:** take the driver and vehicle mix from the run config ([415850d](https://github.com/jkorinth/rusthour/commit/415850d3f1de5ef926bd2a60e694022e69112664))
+* **core:** tune each driver profile's parameters per run ([6196f4c](https://github.com/jkorinth/rusthour/commit/6196f4cd712916c27cc75a0f0d28dc68b37beb16))
+* **viz:** colour vehicles by speed, driver profile or vehicle class ([d6a0b6d](https://github.com/jkorinth/rusthour/commit/d6a0b6d81190ffa30dd9534e0a97fc9220e6f9fa))
+* **viz:** draw trucks and buses as wide as they are ([084b665](https://github.com/jkorinth/rusthour/commit/084b665a824570d12178dc78155f161915a3830d))
+* **viz:** edit each driver profile's parameters in the controls ([9da937c](https://github.com/jkorinth/rusthour/commit/9da937c9c42da3c5b337f75d93dc8cbce873e723))
+* **viz:** name the git commit in local builds' label, also on the error screen ([dcfadc4](https://github.com/jkorinth/rusthour/commit/dcfadc420a23c9b37057ac346b88d33e1e53ae9b))
+* **viz:** open the viewer on a road with --road &lt;id&gt; or ?road=&lt;id&gt; ([257cf5b](https://github.com/jkorinth/rusthour/commit/257cf5b4edf8a5046cb94a6cb3b2614f384edddb))
+* **viz:** outline the selected road boldly, closed and on a dark halo ([e546a74](https://github.com/jkorinth/rusthour/commit/e546a745c1b4404e20319b43cccd881e2da3ef5a))
+* **viz:** set the driver and fleet mix in the controls ([c3f1714](https://github.com/jkorinth/rusthour/commit/c3f17147389f88cc78d53dd5a789d5cb99316684))
+* **viz:** wrap the controls into two rows on narrow screens ([3e1a8f6](https://github.com/jkorinth/rusthour/commit/3e1a8f6152bf66c3407a2be20896ec83b26927c4))
+
+
+### Bug Fixes
+
+* **cli:** don't make --steps look required when --map is missing ([49c4584](https://github.com/jkorinth/rusthour/commit/49c45844ac5627b116e45c3d5491fd18de50f0ef))
+* **viz:** keep the route line in the vehicle's lane across road joins ([dcfc935](https://github.com/jkorinth/rusthour/commit/dcfc935de19296a703c3fcdf7373ad5225955e28))
+* **viz:** show the follow hint by the speed reached, not the speed set ([588b98a](https://github.com/jkorinth/rusthour/commit/588b98afbda0e550495792598646d293871c6880))
+
+
+### Performance Improvements
+
+* **core:** bound A* by landmarks on the current costs ([7cbaff1](https://github.com/jkorinth/rusthour/commit/7cbaff1b5eba37fc3294a70c78b4dddd0e30f4cc))
+
 ## [0.4.0](https://github.com/jkorinth/rusthour/compare/v0.3.0...v0.4.0) (2026-11-17)
 
 
