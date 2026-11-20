@@ -37,6 +37,25 @@ pub struct Driver {
     pub mobil: MobilParams,
 }
 
+/// The parameters of a profile a run can tune (ADR-0006, M4.4 addendum):
+/// the IDM ones and MOBIL politeness. Erratic drivers draw theirs around
+/// these: IDM values × U(0.8, 1.2), politeness U(0, 2 × `politeness`).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Tuning {
+    /// Desired speed as a factor of the speed limit.
+    pub desired_speed_factor: f64,
+    /// Time headway `T` (s).
+    pub time_headway_s: f64,
+    /// Maximum acceleration `a` (m/s²).
+    pub max_accel_mps2: f64,
+    /// Comfortable deceleration `b` (m/s²).
+    pub comfort_decel_mps2: f64,
+    /// Minimum gap `s0` (m).
+    pub min_gap_m: f64,
+    /// MOBIL politeness `p`.
+    pub politeness: f64,
+}
+
 /// Default mix in percent, in [`Profile::ALL`] order ([`crate::Config`]).
 pub const DEFAULT_MIX: [u32; 4] = [15, 60, 20, 5];
 
@@ -57,9 +76,25 @@ impl Profile {
         Self::ALL[draw_index(rng, mix)]
     }
 
-    /// The profile's parameters without jitter.
+    /// The ADR-0006 values; erratic politeness is the mean of its draw.
     #[must_use]
-    pub fn base(self) -> Driver {
+    pub fn tuning(self) -> Tuning {
+        let d = self.untuned();
+        let p = &d.idm;
+        Tuning {
+            desired_speed_factor: p.desired_speed_factor,
+            time_headway_s: p.time_headway_s,
+            max_accel_mps2: p.max_accel_mps2,
+            comfort_decel_mps2: p.comfort_decel_mps2,
+            min_gap_m: p.min_gap_m,
+            politeness: match self {
+                Self::Erratic => erratic::MEAN_POLITENESS,
+                _ => d.mobil.politeness,
+            },
+        }
+    }
+
+    fn untuned(self) -> Driver {
         match self {
             Self::Aggressive => aggressive::driver(),
             Self::Normal | Self::Erratic => normal::driver(),
@@ -67,11 +102,37 @@ impl Profile {
         }
     }
 
+    /// The profile's parameters without jitter.
+    #[must_use]
+    pub fn base(self) -> Driver {
+        self.base_with(&self.tuning())
+    }
+
+    /// The parameters of tuning `t` without jitter.
+    #[must_use]
+    pub fn base_with(self, t: &Tuning) -> Driver {
+        let mut d = self.untuned();
+        d.idm = idm(
+            t.desired_speed_factor,
+            t.time_headway_s,
+            t.max_accel_mps2,
+            t.comfort_decel_mps2,
+            t.min_gap_m,
+        );
+        d.mobil.politeness = t.politeness;
+        d
+    }
+
     /// The parameters of a new driver of this profile; only erratic draws.
     pub fn driver(self, rng: &mut ChaCha8Rng) -> Driver {
+        self.driver_with(&self.tuning(), rng)
+    }
+
+    /// The parameters of a new driver with tuning `t`; only erratic draws.
+    pub fn driver_with(self, t: &Tuning, rng: &mut ChaCha8Rng) -> Driver {
         match self {
-            Self::Erratic => erratic::driver(rng),
-            _ => self.base(),
+            Self::Erratic => erratic::driver(t, rng),
+            _ => self.base_with(t),
         }
     }
 
