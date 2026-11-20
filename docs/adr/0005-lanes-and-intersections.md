@@ -1052,3 +1052,89 @@ Wormser Straße on bensheim-5km, zig-zagged.
   lanes move sideways, and the viewer fills the median as road.
 - **Not covered:** right-turn pockets at the kerb still widen the road
   outward, and one-way roads stay centred on their line.
+
+## Addendum (M4.5): landmark bound for A*
+
+These points replace the straight-line heuristic of §2 and differ from
+the M4.5 roadmap row in two places, marked *deviation*. The milestone
+review decides whether they stand.
+
+- **Bound:** ALT. For each landmark `L` the router keeps the cheapest cost
+  from `L` to every road and from every road to `L`, both counted as A\*
+  counts them (the movement and the road entered, not the road left). The
+  bound from road `v` to destination `t` is the largest of
+  `d(L, t) − d(L, v)`, `d(v, L) − d(t, L)` and 0. A road that can't reach
+  `t` can get `+∞`, and `∞ − ∞` is skipped. Ties in the heap still break
+  by road id, so routes stay deterministic.
+- **Admissibility:** the two differences are the triangle inequality on
+  the cheapest costs of one cost function, so they never exceed the
+  cheapest cost from `v` to `t` under that function, and they are
+  consistent: `h(u) ≤ c(u, v) + h(v)` for every movement. Under the
+  router's own costs, A\* with them is exact and settles each road once.
+  The tables only need costs that are never higher than the costs A\* adds
+  up. The roadmap's free-flow plus static turn costs qualify, because
+  `travel_s ≥ free_s` (the floor in `observe_roads`) and `delay_s ≥ 0`
+  (the floor in `observe`). The current costs qualify too, and they are the
+  tightest. They change only in `Router::observe`, so tables recomputed
+  at the end of every `observe` (and at load) use exactly the costs every
+  search adds up until the next one. Floating point: the bound is a
+  difference of two sums, so it can be a few ulps above the true cost.
+  On bensheim-5km no route cost differed by more than 10⁻⁹ (relative) from
+  Dijkstra's over 100,000 searches in the first simulated hour.
+- *Deviation 1, tables on current costs, not free-flow costs at load:*
+  free-flow tables are admissible but too loose under load. On
+  `step_multilane/5000` the free-flow bound at the origin averaged 67 s
+  against a route cost of 1,976 s, and A\* still expanded 863 of 2,208
+  roads per search (886 with the straight-line bound). Recomputing on the
+  current costs cuts that to about 110. Landmarks are still chosen once at
+  load, farthest-first on the costs at load: the first is the routable road
+  with the longest round trip to the lowest routable road, and each next
+  one has the longest round trip to its nearest landmark so far (ties to
+  the lowest id). The tables are derived from hashed state and so are not
+  hashed. The recomputation reuses the A\* heap, so `step` still allocates
+  nothing after warm-up.
+- *Deviation 2, 4 landmarks, not 8:* each landmark costs two Dijkstra
+  runs per `observe` (every 5 s). 4 landmarks were faster than 8 on the
+  grid (`step_multilane/5000`: 6.22 against 6.37 M instructions per step)
+  and on bensheim-5km (51 against 53 s wall time). The tables take
+  `2 × 4 × roads × 8` bytes, f64: 192 KB on bensheim-5km (3,000 roads).
+  f32 would need different rounding for the two terms of each difference,
+  and it isn't worth that.
+- **`Turn::of` lookups in `Priority`: not done.** A table per incoming
+  road, exit and oncoming road, filled in `Priority::new`, made
+  `step/5000` 1.7% slower: the lookup needs three binary searches (two
+  arms, one exit), while `Turn::of` is a few multiplications and took
+  0.7% of the step.
+- **Measured** with callgrind (200 steps after 3,000, instructions per
+  step), criterion on this machine (noisy, two cores) and the A\* expansions
+  per search, `main` at baa50bc before:
+
+  | Benchmark | Instructions per step | Criterion | Expanded per search |
+  | --- | --- | --- | --- |
+  | `step/5000` | 4.90 M → 4.04 M | 827 → 618 µs | 723 → 115 |
+  | `step_multilane/5000` | 7.66 M → 6.22 M | 1.46 → 1.15 ms | 886 → 114 |
+  | `route` (free flow) | | 33.4 → 16.3 µs | 363 → 142 |
+
+  On `step_multilane/5000` the searches take 59 M instructions per 200
+  steps instead of 406 M, and the tables take another 41 M. Routing is now
+  about 8% of the step, down from 27%. **The target of 0.7 ms is not
+  reached.** The step is 19% shorter, while the target needs about 30%.
+  Without any routing the step would still be about 0.92 of what it is
+  now, so the rest has to come from the vehicle update and lane changes
+  (`engine.rs`, `lane_change.rs`, `VecDeque` access), not from routing.
+- **bensheim-5km**, 5,000 vehicles, two simulated hours: loading takes
+  about 3 ms longer (11 → 14 ms for the whole CLI start).
+
+  | Seed | Arrivals/h before → after | Removed per arrival before → after | Wall time before → after |
+  | --- | --- | --- | --- |
+  | 42 | 5,378 → 5,274 | 1.52% → 1.42% | 71.9 → 51.1 s |
+  | 1 | 5,276 → 5,113 | 1.61% → 1.53% | |
+  | 2 | 5,479 → 5,387 | 1.42% → 1.23% | |
+  | 3 | 5,316 → 5,326 | 1.59% → 1.50% | |
+  | 4 | 5,120 → 5,420 | 1.76% → 1.72% | |
+  | Mean | 5,314 → 5,304 | 1.58% → 1.48% | |
+
+  The state hash changes: in the probe above, 4 of the 100,000 searches
+  picked a different route of the same cost, and the run diverges from
+  there. The golden hash of `tests/determinism.rs` is unchanged, because
+  its short run never meets such a tie.

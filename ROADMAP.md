@@ -200,7 +200,7 @@ seed ⇒ identical state hash.
 | M4.2 | Vehicle classes: car, van, truck, bus | done | feat/M4.2-vehicle-classes |
 | M4.3 | Fleet/driver mix configurable per run (CLI and viewer); it moves into the scenario file with M5.5 | done | feat/M4.3-fleet-mix |
 | M4.4 | `rusthour-viz`: live parameter panel, color by driver/vehicle type, inspect a vehicle | done | feat/M4.4-viewer-drivers |
-| M4.5 | Routing: tighter admissible A* bound from ALT landmarks (about 8, farthest-first) on free-flow travel time plus static turn cost, precomputed at load; precompute `Turn::of` per (arm, exit) in `Priority::new`; target `step_multilane/5000` ≤ 0.7 ms (M3 architect review) | claimed | perf/M4.5-alt-routing |
+| M4.5 | Routing: tighter admissible A* bound from ALT landmarks (about 8, farthest-first) on free-flow travel time plus static turn cost, precomputed at load; precompute `Turn::of` per (arm, exit) in `Priority::new`; target `step_multilane/5000` ≤ 0.7 ms (M3 architect review) | done | perf/M4.5-alt-routing |
 | M4.6 | Move `holds_at_red` and `holds_at_stop_sign` into the `Controller` trait (default `false`), so a new controller touches no shared match blocks; with the next new controller (M3 architect review) | todo | |
 | M4.7 | Calibrate turn costs (`routing::turn_s`) and right-of-way patience (`PATIENCE_MS`) against measured junction delays (M3 architect review) | todo | |
 | M4.8 | Viewer fixes from the M3 UX review, candidates for a 0.4.x patch: draw the route line through `Placement::center_line` like the lanes (N2); the follow hint compares the speed reached, not the speed set (N3) | done | fix/M4.8-route-line-follow-hint |
