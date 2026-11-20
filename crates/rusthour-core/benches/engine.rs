@@ -57,7 +57,7 @@ fn routing(c: &mut Criterion) {
                     destination: roads[(i * 7 + n / 2) % n],
                 }
             },
-            |trip| router.route(&net, trip, &mut out),
+            |trip| router.route(trip, &mut out),
             BatchSize::SmallInput,
         );
     });

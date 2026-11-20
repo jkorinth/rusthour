@@ -142,6 +142,6 @@ mod tests {
         let (net, trips) = (net(), trips(1, 0, 0));
         let mut router = Router::new(&net);
         let mut route = Vec::new();
-        assert!(trips.iter().all(|&t| router.route(&net, t, &mut route)));
+        assert!(trips.iter().all(|&t| router.route(t, &mut route)));
     }
 }
