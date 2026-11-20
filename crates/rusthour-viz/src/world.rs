@@ -13,6 +13,7 @@ use eframe::egui::{
 use rusthour_api::{Network, Placement, Point, RoadId, VehicleSnapshot};
 
 use crate::camera::{Camera, LANE_WIDTH_M};
+use crate::colors::{self, ColorBy};
 use crate::inspect::{Inspector, View};
 use crate::labels::{self, Candidate};
 use crate::marks;
@@ -30,11 +31,6 @@ pub const VEHICLE_WIDTH_M: f32 = 1.8;
 /// Smallest drawn vehicle, in screen points, so traffic stays visible when
 /// zoomed out.
 pub const MIN_VEHICLE_PT: Vec2 = Vec2::new(4.0, 3.0);
-/// Vehicle fill in the dark theme: amber, apart from the gray roads in hue.
-const VEHICLE_DARK: Color32 = Color32::from_rgb(0xff, 0xc8, 0x3c);
-/// Vehicle fill in the light theme: a burnt orange that reads on the light
-/// background where zoomed-out vehicles overhang their roads.
-const VEHICLE_LIGHT: Color32 = Color32::from_rgb(0x8f, 0x35, 0x00);
 /// Widest a lane gets at full zoom, in screen points, so a vehicle never
 /// fills the screen (ADR-0005 §9).
 const MAX_LANE_PT: f32 = 100.0;
@@ -100,6 +96,8 @@ pub struct World {
     dividers: Mesh,
     /// Signs at road ends, drawn when zoomed in.
     signs: Vec<marks::Sign>,
+    /// What the vehicle colour shows.
+    pub color_by: ColorBy,
 }
 
 impl World {
@@ -132,6 +130,7 @@ impl World {
             galleys: vec![None; labels.len()],
             galleys_ppp: 0.0,
             labels,
+            color_by: ColorBy::default(),
         }
     }
 
@@ -256,17 +255,15 @@ impl World {
         let painter = ui.painter_at(viewport);
         let camera = *camera;
         let hovered = self.draw_roads(&painter, traffic, (camera, viewport), response.hover_pos());
-        let color = if ui.visuals().dark_mode {
-            VEHICLE_DARK
-        } else {
-            VEHICLE_LIGHT
-        };
+        let (by, dark, network) = (self.color_by, ui.visuals().dark_mode, traffic.network());
+        let color = |i| by.color(dark, vehicles, i, network);
         painter.add(Shape::mesh(
             self.vehicle_mesh(vehicles, ahead_s, camera, viewport, color),
         ));
         inspect.draw(&painter, &view, ui.visuals());
         self.draw_labels(&painter, camera, viewport, ui.visuals());
         marks::draw_scale_bar(&painter, camera.scale, viewport, ui.visuals());
+        colors::draw_legend(&painter, viewport, ui.visuals(), &by.legend(dark));
         if let Some(text) = hovered.and_then(|r| marks::signal_text(&traffic.signals, r)) {
             response.on_hover_text_at_pointer(format!("Signal: {text}"));
         }
@@ -316,7 +313,7 @@ impl World {
         ahead_s: f32,
         camera: Camera,
         viewport: Rect,
-        color: Color32,
+        color: impl Fn(usize) -> Color32,
     ) -> Mesh {
         let to_screen = camera.mesh_transform(viewport);
         let mut mesh = Mesh::default();
@@ -337,6 +334,7 @@ impl World {
             let width = (width_m * camera.scale).max(MIN_VEHICLE_PT.y);
             #[expect(clippy::cast_possible_truncation, reason = "far below u32::MAX")]
             let base = mesh.vertices.len() as u32;
+            let color = color(i);
             for corner in vehicle_quad(front, dir, length, width) {
                 mesh.colored_vertex(corner, color);
             }

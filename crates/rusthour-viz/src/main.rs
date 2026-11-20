@@ -1,6 +1,7 @@
 //! Rust Hour interactive viewer, native and in the browser (ADR-0003).
 
 mod camera;
+mod colors;
 mod demo;
 mod frame_stats;
 mod inspect;
@@ -659,6 +660,16 @@ fn show_ready(
                     if ui.button("Shortcuts (?)").clicked() {
                         *show_help = !*show_help;
                     }
+                    let by = &mut v.world.color_by;
+                    egui::ComboBox::from_id_salt("color_by")
+                        .selected_text(format!("colour: {}", by.label()))
+                        .show_ui(ui, |ui| {
+                            for mode in colors::ColorBy::ALL {
+                                ui.selectable_value(by, mode, mode.label());
+                            }
+                        })
+                        .response
+                        .on_hover_text("Colour vehicles by speed, driver profile or vehicle class");
                 });
                 show_sim_controls(ui, v);
             });
