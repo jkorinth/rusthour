@@ -8,7 +8,7 @@ use rand_chacha::rand_core::SeedableRng;
 
 use crate::StateHasher;
 use crate::behavior::mobil::MobilParams;
-use crate::behavior::profile::{Driver, Profile};
+use crate::behavior::profile::{Driver, Profile, Tuning};
 use crate::control::priority::Priority;
 use crate::control::signal::{Light, Plan, Signal};
 use crate::control::{Approach, Controller, NodeControl};
@@ -79,7 +79,7 @@ struct Entrant {
 }
 
 /// Engine-wide settings fixed at construction.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Config {
     /// Length of one simulation step in milliseconds.
     ///
@@ -101,6 +101,9 @@ pub struct Config {
     /// Relative weights of the vehicle classes, in [`Class::ALL`] order
     /// (ADR-0007 §4). Not hashed: the classes drawn are.
     pub class_mix: [u32; 4],
+    /// Each profile's parameters, in [`Profile::ALL`] order (ADR-0006, M4.4
+    /// addendum). Not hashed: the drivers' parameters are.
+    pub tuning: [Tuning; 4],
 }
 
 impl Default for Config {
@@ -111,6 +114,7 @@ impl Default for Config {
             stuck_timeout_s: 300,
             profile_mix: crate::behavior::profile::DEFAULT_MIX,
             class_mix: crate::vehicle::class::DEFAULT_MIX,
+            tuning: Profile::ALL.map(Profile::tuning),
         }
     }
 }
@@ -366,7 +370,9 @@ impl Engine {
                 break;
             }
             let road = u32::try_from(origin).expect("road id fits u32");
-            let Some(v) = self.entry_speed(road, &class.apply(profile.base()).idm) else {
+            let tuning = self.config.tuning[profile as usize];
+            let Some(v) = self.entry_speed(road, &class.apply(profile.base_with(&tuning)).idm)
+            else {
                 continue;
             };
             routed += 1;
@@ -375,7 +381,8 @@ impl Engine {
             let found = self.router.route(&self.network, trip, &mut self.route);
             debug_assert!(found, "demand only draws routable roads");
             if found {
-                let driver = profile.driver(&mut self.rngs[Stream::Behavior as usize - 1]);
+                let rng = &mut self.rngs[Stream::Behavior as usize - 1];
+                let driver = profile.driver_with(&tuning, rng);
                 let new = entering(
                     &self.route,
                     class.apply(driver),

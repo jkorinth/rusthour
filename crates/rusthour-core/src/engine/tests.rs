@@ -652,6 +652,34 @@ fn demand_spawns_every_profile_and_only_erratic_drivers_get_noise() {
     assert!(seen == [true; 4] && noisy, "seen {seen:?}, noisy {noisy}");
 }
 
+#[test]
+fn spawned_drivers_take_their_profiles_tuning() {
+    let mut config = Config {
+        target_vehicles: 20,
+        profile_mix: [0, 0, 1, 1],
+        class_mix: [1, 0, 0, 0],
+        ..Config::default()
+    };
+    let cautious = &mut config.tuning[2];
+    cautious.time_headway_s = 2.5;
+    cautious.politeness = 0.9;
+    config.tuning[3].politeness = 0.0; // erratic: U(0, 2 × 0) = 0
+    let mut e = Engine::with_network(config, 3, two_routes());
+    e.step(2 * MINUTE);
+    let vs = &e.vehicles;
+    let live: Vec<_> = (0..vs.slot_count()).filter(|&s| vs.is_live(s)).collect();
+    assert!(!live.is_empty());
+    for s in live {
+        match vs.profile[s] {
+            Profile::Cautious => {
+                assert_eq!(vs.params[s].time_headway_s.to_bits(), 2.5f64.to_bits());
+                assert_eq!(vs.mobil[s].politeness.to_bits(), 0.9f64.to_bits());
+            }
+            p => assert_eq!((p, vs.mobil[s].politeness.to_bits()), (Profile::Erratic, 0)),
+        }
+    }
+}
+
 /// One straight one-lane road of `length_m` at `speed` (m/s).
 fn straight(length_m: f64, speed: f64) -> Network {
     Network {
