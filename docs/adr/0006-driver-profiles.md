@@ -225,3 +225,31 @@ results are in the PR and in an addendum below.
   `[fleet]` tables onto them 1:1.
 - The CLI takes `--drivers` and `--fleet` and echoes both mixes; the viewer
   edits them in a folded section and applies them on "Reset".
+
+## Addendum (M4.4): tuning per run, applied on Reset
+
+- `Config::tuning` holds each profile's IDM parameters and MOBIL politeness
+  (`Tuning`, in `Profile::ALL` order), the §2 values by default. A trip
+  takes its profile's tuning at spawn (`base_with`, `driver_with`); erratic
+  drivers draw their jitter around it and their politeness from
+  U(0, 2 × `politeness`), so the default 0.2 gives §2's U(0, 0.4) bit for
+  bit and the golden hash is unchanged. The other MOBIL values (threshold,
+  bias, safe braking) stay per profile.
+- `rusthour-api` validates the ranges (`TUNING_FIELDS`: desired speed
+  0.5–1.5 × limit, `T` 0.5–3 s, `a` 0.3–4, `b` 0.5–5 m/s², `s0` 0.5–6 m,
+  `p` 0–1) with `NetworkError::BadTuning`; outside them the model
+  misbehaves (`√(a·b)`, gaps near zero). Erratic noise (±0.5 m/s², §4) is
+  only below every jittered `a` while erratic `a` stays at 0.63 m/s² or
+  more; tuned lower, an erratic driver may hesitate for a second at a
+  start. `shortcut:` scale the noise with `a` if that shows.
+- **On Reset, not live.** Live overrides were considered: changing a
+  profile's values mid-run would need the engine to take timed commands and
+  the frontend to record them (tick, values) and replay them on Reset, or
+  the run would no longer follow from its seed and settings. That is a
+  command log in the core, the remote protocol's job (M8). The viewer
+  therefore edits the tuning like the mix and applies it on Reset: one
+  restart per experiment, and a run stays reproducible from
+  `(seed, Config)`. `shortcut:` revisit when M8 brings timed commands.
+- Only drivers spawned after a change would see it anyway: parameters are
+  per vehicle (ADR-0004 §1), so a live change would also have to rewrite
+  the live vehicles' columns, and erratic jitter is not stored.
