@@ -365,6 +365,15 @@ pub enum NetworkError {
     },
     /// The config's driver or fleet mix has no weight above 0.
     EmptyMix,
+    /// A tuned driver parameter is outside its range ([`crate::TUNING_FIELDS`]).
+    BadTuning {
+        /// The profile.
+        profile: crate::DriverProfile,
+        /// The parameter's name.
+        parameter: &'static str,
+        /// The rejected value.
+        value: f64,
+    },
 }
 
 impl fmt::Display for NetworkError {
@@ -458,6 +467,11 @@ impl fmt::Display for NetworkError {
                 write!(f, "the step length must be 1 to 1000 ms, got {dt_ms}")
             }
             Self::EmptyMix => write!(f, "the driver or fleet mix has no share above 0"),
+            Self::BadTuning {
+                profile,
+                parameter,
+                value,
+            } => crate::tuning::explain(f, *profile, parameter, *value),
         }
     }
 }
