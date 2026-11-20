@@ -5,8 +5,9 @@
 //! route is the sum of each road's current travel-time estimate, origin and
 //! destination included: `length / speed limit` on an empty road,
 //! `length / mean speed` of its vehicles otherwise ([`Router::observe`],
-//! M2.9); plus, per movement, a static turn penalty and the observed delay
-//! at the stop line (ADR-0005 §2).
+//! M2.9); plus, per movement, the observed delay at the stop line, which
+//! decays to a prior by control and turn, and a static U-turn penalty
+//! (ADR-0005 §2, addendum M4.7).
 //! The A* bound comes from landmarks (ALT, M4.5): the exact costs to and
 //! from a few roads, recomputed whenever the costs change ([`Router::observe`]),
 //! so the bound is admissible and consistent (ADR-0005, addendum M4.5).
@@ -33,24 +34,32 @@ const SOURCE: u32 = u32::MAX - 1;
 const MIN_SPEED_MPS: f64 = 0.01;
 /// Weight of a new observation in the travel-time and delay estimates (EMAs).
 const SMOOTHING: f64 = 0.2;
-/// Delay prior of a movement whose road ranks below another at the node (s).
-const YIELD_PRIOR_S: f64 = 4.0;
-/// Delay prior of a movement at a stop sign (s).
-const STOP_PRIOR_S: f64 = 6.0;
+/// Delay priors (s): what a movement's observed delay decays to without
+/// samples, before [`turn_s`] is added. They match the delays the engine
+/// observes at low load (ADR-0005, addendum M4.7). Without a sign or a
+/// higher-ranked road at the node.
+const FREE_PRIOR_S: f64 = 1.0;
+/// Its road ranks below another at the node.
+const YIELD_PRIOR_S: f64 = 2.0;
+/// At a stop sign: the head is held from its look-ahead to the line.
+const STOP_PRIOR_S: f64 = 14.0;
+/// At a signal, on top of Webster's uniform delay: a head is held from its
+/// look-ahead on, so it is held longer than it waits at red.
+const SIGNAL_HOLD_FACTOR: f64 = 1.2;
+/// Static cost of a U-turn (s): the engine turns on the spot, so this is a
+/// deterrent, not a measured delay.
+const UTURN_S: f64 = 20.0;
 
 /// Number of landmarks for the A* bound. Each costs two Dijkstra runs per
 /// `observe`; 4 ran faster than 8 on both benchmarks (ADR-0005, addendum M4.5).
 const LANDMARKS: usize = 4;
 
-/// Static cost of a turn (s).
-// shortcut: guessed values from ADR-0005, and the M3 trial passed on them; calibrate with M4.7.
+/// What a turn adds to its movement's delay prior at low load (s).
 fn turn_s(turn: Turn) -> f64 {
     match turn {
-        Turn::Straight => 0.0,
-        Turn::Right => 2.0,
-        Turn::Left => 4.0,
-        Turn::LeftAcross => 8.0,
-        Turn::UTurn => 20.0,
+        Turn::Straight | Turn::UTurn => 0.0,
+        Turn::Right => 1.0,
+        Turn::Left | Turn::LeftAcross => 2.0,
     }
 }
 
@@ -66,7 +75,7 @@ pub struct Router {
     move_s: Vec<f64>,
     /// Per movement: its turn type, for inspection.
     kind: Vec<Turn>,
-    /// Per movement: static turn penalty (s).
+    /// Per movement: static turn penalty (s), only for U-turns.
     turn_s: Vec<f64>,
     /// Per movement: what `delay_s` decays to without samples (s).
     prior_s: Vec<f64>,
@@ -150,7 +159,7 @@ impl Router {
             succ[fill[from as usize] as usize] = to;
             fill[from as usize] += 1;
         }
-        // Turn penalties and yield, stop and signal priors, per movement.
+        // U-turn penalties, and delay priors by control and turn, per movement.
         let (in_first, incoming) = movement::incoming(net);
         let plans: Vec<Option<Plan>> = (0..net.nodes.len())
             .map(|node| Plan::new(net, &in_first, &incoming, node))
@@ -166,18 +175,20 @@ impl Router {
             let prior_s = if let Some(plan) = &plans[node] {
                 // A non-signal arm at a signal node yields to the signal arms.
                 plan.phase_of(from)
-                    .map_or(YIELD_PRIOR_S, |_| plan.delay_prior_s())
+                    .map_or(YIELD_PRIOR_S, |_| SIGNAL_HOLD_FACTOR * plan.delay_prior_s())
             } else if net.roads[from as usize].end_control == EndControl::Stop {
                 STOP_PRIOR_S
             } else if arms.iter().any(|&r| rank(net, r) > mine) {
                 YIELD_PRIOR_S
             } else {
-                0.0
+                FREE_PRIOR_S
             };
             for i in first[from as usize] as usize..first[from as usize + 1] as usize {
                 kind[i] = Turn::of(net, from, succ[i], arms);
-                turn[i] = turn_s(kind[i]);
-                prior[i] = prior_s;
+                if kind[i] == Turn::UTurn {
+                    turn[i] = UTURN_S;
+                }
+                prior[i] = prior_s + turn_s(kind[i]);
             }
         }
         let in_scc = largest_scc(&first, &succ);
@@ -762,7 +773,7 @@ mod tests {
 
     /// From road 0 (heading N into node 1) to road 6: left across the
     /// oncoming road 1, right, left (roads 2, 3), or straight, left,
-    /// straight (roads 4, 5), 3 s slower to drive.
+    /// straight (roads 4, 5), 1 s slower to drive.
     fn left_or_around() -> Network {
         let r = |from, to, length_m, d: [f64; 2]| Road {
             start_dir: d,
@@ -785,7 +796,7 @@ mod tests {
                 r(1, 3, 100.0, w),
                 r(3, 4, 100.0, n),
                 r(1, 2, 100.0, n),
-                r(2, 4, 130.0, w),
+                r(2, 4, 110.0, w),
                 r(4, 5, 100.0, w),
             ],
             connections: vec![(0, 2), (0, 4), (2, 3), (3, 6), (4, 5), (5, 6)],
@@ -808,12 +819,13 @@ mod tests {
             let router = Router::new(&net);
             router.movement_delays(0).map(|m| m.3).collect::<Vec<_>>()
         };
-        assert_eq!(priors(EndControl::None), [0.0, 0.0]);
-        assert_eq!(priors(EndControl::GiveWay), [4.0, 4.0]);
-        assert_eq!(priors(EndControl::Stop), [6.0, 6.0]);
+        // Left across onto road 2 adds 2 s to the straight movement's prior.
+        assert_eq!(priors(EndControl::None), [3.0, 1.0]);
+        assert_eq!(priors(EndControl::GiveWay), [4.0, 2.0]);
+        assert_eq!(priors(EndControl::Stop), [16.0, 14.0]);
         // One phase: red 5 s of a 30 s cycle.
-        let signal = 5.0 * 5.0 / 60.0;
-        assert_eq!(priors(EndControl::Signals), [signal, signal]);
+        let signal = 1.2 * 5.0 * 5.0 / 60.0;
+        assert_eq!(priors(EndControl::Signals), [signal + 2.0, signal]);
     }
 
     #[test]

@@ -50,7 +50,9 @@ use rusthour_core::{Config, Engine, Stream, run_and_hash};
 /// truck, bus), which sets the length and caps or scales the driver's
 /// parameters, and the hash includes each slot's class and speed cap and the
 /// waiting trips' classes.
-const GOLDEN_HASH: u64 = 1_619_931_015_877_810_556;
+/// Changed in M4.7: routing delay priors are calibrated to the observed
+/// junction delays and include the turn, and only U-turns keep a static cost.
+const GOLDEN_HASH: u64 = 10_080_704_109_632_428_281;
 
 /// A four-road ring with a short road and a merging side road that routing
 /// excludes. Random demand keeps 10 vehicles on the ring, and hand-placed
