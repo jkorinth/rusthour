@@ -1138,3 +1138,155 @@ review decides whether they stand.
   picked a different route of the same cost, and the run diverges from
   there. The golden hash of `tests/determinism.rs` is unchanged, because
   its short run never meets such a tie.
+
+## Addendum (M4.7): turn costs and patience, calibrated
+
+There are no local traffic counts, so M4.7 calibrates against reference
+curves instead, and against the delays the engine itself observes for
+routing. These points change §2 and the M3.3 and M3.4 addenda. The
+milestone review decides whether they stand.
+
+- **References:**
+  - *Give-way and stop:* HCM 2000, ch. 17, two-way stop control. The
+    capacity of a minor movement is
+    `c = vc·e^(−vc·tc/3600) / (1 − e^(−vc·tf/3600))` (eq. 17-3) and its
+    control delay `3600/c + 900·T·[(x − 1) + √((x − 1)² + (3600/c)·x/(450·T))]`
+    (eq. 17-38, `T` = 0.25 h), plus 5 s at a stop sign. Base critical gaps
+    and follow-up times (exhibit 17-5): left from the major road 4.1/2.2 s,
+    right from the minor road 6.2/3.3 s, crossing 6.5/4.0 s, left from the
+    minor road 7.1/3.5 s. The German HBS (FGSV, 2015) uses the same
+    gap-acceptance model with values of the same order, which are not
+    reproduced here. Adams' delay, `(e^(q·tc) − q·tc − 1)/q`, is the wait of
+    a lone minor car for a gap in a random stream.
+  - *Signals:* Webster (1958, *Traffic signal settings*, Road Research
+    Technical Paper 39), uniform delay `C·(1 − g/C)² / (2·(1 − y))`,
+    at low flow `y → 0`. The default plan has two phases of 25 s green, 3 s
+    amber and 2 s all-red, so `C` = 60 s, `g` = 25 s (amber counts as red,
+    as in the M3.4 prior) and the delay is 10.2 s.
+  - *Impatience:* drivers accept shorter gaps the longer they wait
+    (Mahmassani and Sheffi, 1981, Transportation Research B 15(3)). HCM
+    rates a minor-movement delay above 50 s as level of service F.
+- **Measured** on a synthetic four-arm cross (`tests/junction_delay.rs`):
+  300 m single-lane approaches at 50 km/h, normal cars only, Poisson
+  arrivals, 60 veh/h on the movement measured and `vc` veh/h on its
+  conflicting streams (split evenly when there are two), four simulated
+  hours. *Control delay* is the time on the approach less a lone car's at
+  an empty node; *held* is what routing observes (ticks the head is told
+  to stop, §2). `print_junction_delays` (ignored) prints the full table.
+
+  | Movement | `vc` veh/h | 0 | 150 | 300 | 600 | 900 |
+  | --- | --- | --- | --- | --- | --- | --- |
+  | Give-way, right | simulated control delay (s) | 0.2 | 1.0 | 2.5 | 9.3 | starves |
+  | | HCM (s) | 3.5 | 4.3 | 5.3 | 8.1 | 12.8 |
+  | | simulated / HCM above zero flow (s) | | 0.7 / 0.8 | 2.3 / 1.8 | 9.1 / 4.6 | |
+  | Give-way, crossing | simulated / HCM above zero flow (s) | | 0.4 / 1.0 | 0.7 / 2.2 | 3.4 / 5.8 | 8.1 / 12.0 |
+  | Give-way, left | simulated / HCM above zero flow (s) | | 0.4 / 1.0 | 1.0 / 2.3 | 3.9 / 6.4 | 13.2 / 14.1 |
+  | Left from the major road | simulated / HCM above zero flow (s) | | 0.6 / 0.3 | 1.2 / 0.7 | 3.3 / 1.6 | |
+  | Stop, right | simulated control delay (s) | 11.7 | 11.9 | 14.3 | 24.7 | starves |
+  | | HCM with 5 s for the stop (s) | 8.5 | 9.3 | 10.3 | 13.1 | 17.8 |
+
+  The comparison is above zero flow because a lone car passes an empty
+  give-way node at speed (M3.3), while the HCM's `3600/c` term counts about
+  3.5 s for slowing down there. Up to 300 veh/h the simulated give-way
+  delays are within about half of the HCM's. Above that a right turn,
+  which merges into the stream, waits up to twice as long, and at 900 veh/h
+  it starves: a car pulling out from rest makes the major stream brake,
+  and the platoon that forms leaves no gap. Crossing and left turns stay
+  below the HCM. The effective critical gap is longer than the 3 s
+  `arriving` window, because the head is held from its look-ahead on and
+  starts from rest; a window of 5 or 6 s doubled the delays at 300 veh/h,
+  so the window stays.
+
+  Signals: lone cars, one per second of the cycle, have a mean control
+  delay of 9.8 s against Webster's 10.2 s. Routing observes 14.5 s for
+  them, because a head is held from its look-ahead, about 150 m before the
+  line, and the IDM slows it early.
+- **Routing priors:** the router's expectation for a movement is its static
+  cost plus its delay, which decays to the prior without samples. Under the
+  old costs the static turn cost was added on top of observed delays that
+  already include the turn, and the priors were guessed. Now the turn is
+  part of the prior and decays with samples like the rest, so before and
+  after samples the router expects what it will observe.
+
+  | Parameter | Before | After |
+  | --- | --- | --- |
+  | Static turn cost (s) | straight 0, right 2, left 4, left across 8, U-turn 20 | U-turn 20 only (a deterrent: the engine turns on the spot) |
+  | Turn part of the prior (s) | | straight 0, right 1, left 2, left across 2 |
+  | Prior without a sign or higher-ranked road (s) | 0 | 1 |
+  | Prior when yielding to a higher rank (s) | 4 | 2 |
+  | Prior at a stop sign (s) | 6 | 14 |
+  | Prior at a signal arm | Webster, `red²/(2·cycle)` | 1.2 × Webster |
+  | `PATIENCE_MS` | 10 s | 10 s |
+
+  The values fit the held delays the engine observes at low load, on the
+  cross at 300 veh/h (`the_routers_prior_matches_the_simulated_delay_at_low_load`,
+  within 25% or 1.5 s) and on bensheim-5km with 1,000 vehicles in the first
+  hour, seed 42:
+
+  | Control | Turn | Passages | Observed (s) | Expected before (s) | Expected after (s) |
+  | --- | --- | --- | --- | --- | --- |
+  | Equal rank | straight | 138,490 | 0.9 | 0.0 | 1.0 |
+  | | right | 25,798 | 1.4 | 2.0 | 2.0 |
+  | | left | 7,662 | 2.6 | 4.0 | 3.0 |
+  | | left across | 16,864 | 2.3 | 8.0 | 3.0 |
+  | Highest rank | straight | 28,896 | 0.6 | 0.0 | 1.0 |
+  | | right | 5,588 | 0.4 | 2.0 | 2.0 |
+  | | left across | 1,158 | 0.7 | 8.0 | 3.0 |
+  | Yield | straight | 14,232 | 1.1 | 4.0 | 2.0 |
+  | | right | 10,551 | 2.6 | 6.0 | 3.0 |
+  | | left | 5,200 | 4.4 | 8.0 | 4.0 |
+  | | left across | 1,677 | 4.8 | 12.0 | 4.0 |
+  | Stop | right | 617 | 11.2 | 8.0 | 15.0 |
+  | | left | 335 | 13.2 | 10.0 | 16.0 |
+  | Signal arm | straight | 7,089 | 6.8 | 6.1 | 7.3 |
+  | | right | 3,494 | 6.7 | 9.4 | 9.9 |
+  | | left | 1,659 | 6.8 | 10.3 | 9.6 |
+  | | left across | 1,476 | 9.7 | 15.7 | 11.3 |
+  | Non-signal arm at a signal | straight | 3,236 | 1.1 | 4.0 | 2.0 |
+
+  Weighted by passages, the expectation is off by 0.44 s on average,
+  against 1.64 s before. The stop-sign prior is above bensheim-5km's and
+  below the cross's (15–17 s), whose approaches are longer and faster. The
+  signal factor of 1.2 lies between bensheim-5km (about 1.1) and the cross
+  (1.3 at 300 veh/h). A turn that never yields, on the highest-ranked road,
+  is still expected to cost 1–2.3 s more than it does, and the few stop and
+  non-signal-arm movements err by up to 3.8 s; one table for all controls
+  is simpler.
+- **Patience** stays at 10 s. Among equal ranks it decides when a head goes
+  first-come instead of yielding to the right, and it is the only forced
+  move. In the saturated four-way test (every arm served within 20 s) and
+  on the cross with 900 veh/h conflicting with an equal-ranked left turn:
+
+  | `PATIENCE_MS` | Longest wait for `go` (s) | Longest without a departure (s) | Left turn at 900 veh/h (s) |
+  | --- | --- | --- | --- |
+  | 5,000 | 14.1 | 16.5 | 3.0 |
+  | 10,000 | 16.0 | 18.3 | 4.5 |
+  | 15,000 | 17.4 | 20.3 (fails) | 5.2 |
+  | 20,000 | 21.4 (fails) | 26.2 | 5.4 |
+
+  15 s brings back the M3.3 starvation, and below saturation patience
+  hardly matters. On bensheim-5km 5 s and 10 s are equal within the seed
+  spread (5,316 against 5,338 arrivals/h, 1.35% against 1.41% removed). 10 s
+  keeps the M3.3 margin, well below the 50 s of level of service F, so the
+  value is now measured rather than guessed.
+- *Deviation, no per-profile patience:* since patience hardly changes
+  delays below saturation, a per-profile value would change little, and
+  it needs a change to `control`'s interface (AGENTS.md §7). It stays
+  deferred (ADR-0006).
+- **Open findings** for the milestone review: the give-way right turn
+  starves at 900 veh/h conflicting flow, against an HCM delay of 13 s; and
+  routing's *held* delay counts the approach, so it is about 1.5 times the
+  control delay at signals and stop signs. The priors absorb the second.
+- **bensheim-5km**, 5,000 vehicles, two simulated hours, two runs at a time
+  on this machine:
+
+  | Seed | Arrivals/h before → after | Removed per arrival before → after | Wall time before → after |
+  | --- | --- | --- | --- |
+  | 42 | 5,274 → 5,306 | 1.42% → 1.24% | 42.5 → 44.8 s |
+  | 1 | 5,113 → 5,305 | 1.53% → 1.36% | 42.5 → 45.1 s |
+  | 2 | 5,387 → 5,284 | 1.23% → 1.53% | 42.1 → 45.5 s |
+  | 3 | 5,326 → 5,458 | 1.50% → 1.52% | 41.9 → 44.8 s |
+  | Mean | 5,275 → 5,338 | 1.42% → 1.41% | |
+
+  The M3.8 gate (at most 5% removed, at least 4,545 arrivals/h) holds. The
+  golden hash of `tests/determinism.rs` changes.
