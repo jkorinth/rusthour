@@ -571,12 +571,56 @@ fn show_mix(ui: &mut egui::Ui, t: &mut Traffic) {
                     ui.visuals().warn_fg_color,
                     "each column needs a share above 0",
                 );
-            } else if t.mix_pending() {
-                ui.label("“Reset” starts over with this mix");
+            }
+            ui.add_space(6.0);
+            show_tuning(ui, t);
+            if ok && t.edits_pending() {
+                ui.label("“Reset” starts over with these settings");
             }
         })
         .header_response
-        .on_hover_text("Shares of driver profiles and vehicle classes; only the ratios matter");
+        .on_hover_text(
+            "Shares of driver profiles and vehicle classes (only the ratios matter), \
+             and each profile's driver parameters",
+        );
+}
+
+/// Each profile's driver parameters, one column per profile.
+fn show_tuning(ui: &mut egui::Ui, t: &mut Traffic) {
+    egui::Grid::new("tuning").num_columns(5).show(ui, |ui| {
+        ui.label("");
+        for name in rusthour_api::DriverMix::NAMES {
+            ui.weak(name);
+        }
+        ui.end_row();
+        for f in &rusthour_api::TUNING_FIELDS {
+            let label = if f.unit.is_empty() {
+                f.name.to_owned()
+            } else {
+                format!("{} ({})", f.name, f.unit)
+            };
+            ui.label(label);
+            for tuning in &mut t.tuning {
+                let mut v = (f.get)(tuning);
+                let field = egui::DragValue::new(&mut v)
+                    .range(f.range.clone())
+                    .speed(0.01)
+                    .max_decimals(2);
+                if ui.add(field).changed() {
+                    (f.set)(tuning, v);
+                }
+            }
+            ui.end_row();
+        }
+    });
+    ui.weak("erratic drivers vary ±20% around these, politeness from 0 to twice it");
+    if ui
+        .button("Default parameters")
+        .on_hover_text("The profiles' parameters from ADR-0006")
+        .clicked()
+    {
+        t.tuning = rusthour_api::Config::default().tuning;
+    }
 }
 
 /// One mix as a grid of share fields, each with its normalised percentage;
