@@ -4,8 +4,9 @@
 
 use eframe::egui::{self, Align2, Key, Pos2, Rect, Shape, Stroke, Vec2, pos2};
 use rusthour_api::{
-    Gone, Network, Placement, Point, RoadClass, RoadId, RoadInfo, SignalSnapshot, Simulation,
-    StopCause, TurnType, VehicleId, VehicleInfo, VehicleSnapshot, WaitReason,
+    DriverProfile, Gone, Network, Placement, Point, RoadClass, RoadId, RoadInfo, SignalSnapshot,
+    Simulation, StopCause, TurnType, VehicleClass, VehicleId, VehicleInfo, VehicleSnapshot,
+    WaitReason,
 };
 
 use crate::camera::{Camera, LANE_WIDTH_M};
@@ -587,15 +588,48 @@ pub fn vehicle_lines(
     }
     let d = info.driver;
     out.push(format!(
-        "driver: wants {:.0}% of the limit, headway {:.1} s, accel {:.1} m/s², \
-         braking {:.1} m/s², min gap {:.1} m",
+        "{}, {} driver",
+        vehicle_class_text(info.class),
+        profile_text(d.profile)
+    ));
+    let cap = d
+        .max_speed_mps
+        .map_or(String::new(), |v| format!(", at most {:.0} km/h", v * 3.6));
+    out.push(format!(
+        "car-following: wants {:.0}% of the limit{cap}; headway {:.1} s, \
+         accel {:.1} m/s², braking {:.1} m/s², min gap {:.1} m",
         d.desired_speed_factor * 100.0,
         d.time_headway_s,
         d.max_accel_mps2,
         d.comfort_decel_mps2,
         d.min_gap_m
     ));
+    out.push(format!(
+        "lane changes: politeness {:.1}, threshold {:.1} m/s², keep-right bias \
+         {:.1} m/s², safe braking {:.1} m/s²",
+        d.politeness, d.threshold_mps2, d.bias_right_mps2, d.safe_decel_mps2
+    ));
     out
+}
+
+/// A vehicle class in words, as in the legend.
+pub fn vehicle_class_text(c: VehicleClass) -> &'static str {
+    match c {
+        VehicleClass::Car => "car",
+        VehicleClass::Van => "van",
+        VehicleClass::Truck => "truck",
+        VehicleClass::Bus => "bus",
+    }
+}
+
+/// A driver profile in words, as in the legend.
+pub fn profile_text(p: DriverProfile) -> &'static str {
+    match p {
+        DriverProfile::Aggressive => "aggressive",
+        DriverProfile::Normal => "normal",
+        DriverProfile::Cautious => "cautious",
+        DriverProfile::Erratic => "erratic",
+    }
 }
 
 fn turn_text(t: TurnType) -> &'static str {
@@ -662,9 +696,7 @@ pub fn road_lines(info: &RoadInfo, network: &Network) -> Vec<String> {
 mod tests {
     use super::*;
     use crate::world::World;
-    use rusthour_api::{
-        DriverInfo, DriverProfile, MovementInfo, Node, NodeId, Road, Turns, VehicleClass,
-    };
+    use rusthour_api::{DriverInfo, MovementInfo, Node, NodeId, Road, Turns};
 
     /// One road of `lanes` lanes, 100 m east from the origin, named "Hauptstraße".
     fn east(lanes: u8) -> Network {
@@ -815,6 +847,11 @@ mod tests {
                 max_accel_mps2: 1.4,
                 comfort_decel_mps2: 2.0,
                 min_gap_m: 2.0,
+                max_speed_mps: None,
+                politeness: 0.2,
+                threshold_mps2: 0.1,
+                bias_right_mps2: 0.3,
+                safe_decel_mps2: 4.0,
             },
             wait,
             standing_s: 200.0,
@@ -895,6 +932,40 @@ mod tests {
             gone_text(Gone::Unknown, None, &net),
             "No longer on the map."
         );
+    }
+
+    #[test]
+    fn the_vehicle_panel_names_class_and_profile_and_the_parameters() {
+        let mut truck = info(WaitReason::FreeRoad, 10.0);
+        truck.class = VehicleClass::Truck;
+        truck.driver = DriverInfo {
+            profile: DriverProfile::Aggressive,
+            desired_speed_factor: 1.1,
+            time_headway_s: 1.333,
+            max_accel_mps2: 0.7,
+            max_speed_mps: Some(80.0 / 3.6),
+            politeness: 0.1,
+            bias_right_mps2: 0.5,
+            ..truck.driver
+        };
+        let lines = vehicle_lines(&truck, &east(1), &SignalSnapshot::default());
+        let n = lines.len();
+        assert_eq!(
+            lines[n - 3..],
+            [
+                "truck, aggressive driver",
+                "car-following: wants 110% of the limit, at most 80 km/h; headway 1.3 s, \
+                 accel 0.7 m/s², braking 2.0 m/s², min gap 2.0 m",
+                "lane changes: politeness 0.1, threshold 0.1 m/s², keep-right bias \
+                 0.5 m/s², safe braking 4.0 m/s²"
+            ]
+        );
+        let car = vehicle_lines(
+            &info(WaitReason::FreeRoad, 10.0),
+            &east(1),
+            &SignalSnapshot::default(),
+        );
+        assert!(car[car.len() - 2].starts_with("car-following: wants 100% of the limit; headway"));
     }
 
     #[test]
