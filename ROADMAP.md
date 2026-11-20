@@ -201,7 +201,7 @@ seed ⇒ identical state hash.
 | M4.3 | Fleet/driver mix configurable per run (CLI and viewer); it moves into the scenario file with M5.5 | done | feat/M4.3-fleet-mix |
 | M4.4 | `rusthour-viz`: live parameter panel, color by driver/vehicle type, inspect a vehicle | done | feat/M4.4-viewer-drivers |
 | M4.5 | Routing: tighter admissible A* bound from ALT landmarks (about 8, farthest-first) on free-flow travel time plus static turn cost, precomputed at load; precompute `Turn::of` per (arm, exit) in `Priority::new`; target `step_multilane/5000` ≤ 0.7 ms (M3 architect review) | done | perf/M4.5-alt-routing |
-| M4.6 | Move `holds_at_red` and `holds_at_stop_sign` into the `Controller` trait (default `false`), so a new controller touches no shared match blocks; with the next new controller (M3 architect review) | todo | |
+| M4.6 | Move `holds_at_red` and `holds_at_stop_sign` into the `Controller` trait (default `false`), so a new controller touches no shared match blocks; with the next new controller (M3 architect review) | moved | M5.2 |
 | M4.7 | Calibrate turn costs (`routing::turn_s`) and right-of-way patience (`PATIENCE_MS`) against measured junction delays (M3 architect review) | done | feat/M4.7-calibration |
 | M4.8 | Viewer fixes from the M3 UX review, candidates for a 0.4.x patch: draw the route line through `Placement::center_line` like the lanes (N2); the follow hint compares the speed reached, not the speed set (N3) | done | fix/M4.8-route-line-follow-hint |
 | M4.9 | Viewer and CLI polish from the M3 UX review: `rusthour-viz --road <id>` and `?road=<id>` select and centre a road (N1); build label falls back to the git commit, shows on the map-error screen, README says where it is (N4); controls wrap into two rows below about 600 pt (N5); CLI usage line without `--map` doesn't suggest `--steps` is required (N6); bolder outline for the selected road (N7) | done | feat/M4.9-viewer-cli-polish |
@@ -217,7 +217,7 @@ extend them.
 | --- | --- | --- | --- |
 | M5.0 | ADR: stable ids for edits — patches must keep pointing at the same road/intersection after re-import or other edits, which list-position ids (`NodeId`, `RoadId`, road pairs) don't guarantee; likely derived from the OSM source ids carried since M1.2, mapped to dense indices at load time; an id that no longer resolves after a re-import must fail loudly, never match a nearby item | todo | |
 | M5.1 | Network edit model (change controller, lanes, speed limits, close roads) as serializable patches, addressed by the stable ids from M5.0 | todo | |
-| M5.2 | Roundabout controller with gap acceptance (driver-dependent) | todo | |
+| M5.2 | Roundabout controller with gap acceptance (driver-dependent); first moves `holds_at_red` and `holds_at_stop_sign` into the `Controller` trait (M4.6) | todo | |
 | M5.3 | Convert crossroads → roundabout edit, incl. geometry | todo | |
 | M5.4 | `rusthour-viz`: click-to-edit intersections, save edits as patch | todo | |
 | M5.5 | Scenario file format (TOML): map, vehicle count, duration, seed(s) and network patches; demand and fleet-mix sections come with M6 and M4.3 | todo | |
@@ -261,6 +261,19 @@ viewer, save it, and get a statistical before/after report from the CLI.
 
 Longer ideas, such as a detailed maneuvering submodel (turning around in
 congestion, lateral positions), are in [docs/ideas.md](docs/ideas.md).
+
+From M4 (ADR-0005 addenda M4.5 and M4.7):
+
+- core performance: `step_multilane/5000` is about 1.15 ms on the 2-core dev
+  container against the 0.7 ms target; routing is now about 8% of the step, so
+  the rest has to come from the vehicle update, lane changes and lane-queue
+  access. Profile and pick the next lever.
+- core: a give-way right turn starves at about 900 veh/h of conflicting flow,
+  where the HCM predicts about 13 s of delay; a car pulling out makes the
+  main stream brake and the queue leaves no gaps.
+- core: the per-movement delay that routing observes runs about 1.5× the
+  control delay at signals and stop signs, because it is counted from about
+  150 m before the line; the priors compensate, the measurement doesn't.
 
 From the M2 user trial (docs/trials/M2.md):
 
