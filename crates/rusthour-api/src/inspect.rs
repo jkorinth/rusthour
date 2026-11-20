@@ -31,7 +31,8 @@ pub enum Gone {
     Unknown,
 }
 
-/// The driver of a vehicle: its profile and IDM parameters.
+/// The driver of a vehicle: its profile and its IDM and MOBIL parameters,
+/// after the vehicle class capped or scaled them (ADR-0007 §3).
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct DriverInfo {
     /// Driver profile the parameters came from.
@@ -47,6 +48,21 @@ pub struct DriverInfo {
     pub comfort_decel_mps2: f32,
     /// Minimum gap (m).
     pub min_gap_m: f32,
+    /// The vehicle's top speed (m/s), `None` without a cap.
+    #[serde(default)]
+    pub max_speed_mps: Option<f32>,
+    /// MOBIL politeness: weight of the followers' gain against its own.
+    #[serde(default)]
+    pub politeness: f32,
+    /// MOBIL changing threshold (m/s²).
+    #[serde(default)]
+    pub threshold_mps2: f32,
+    /// MOBIL keep-right bias (m/s²).
+    #[serde(default)]
+    pub bias_right_mps2: f32,
+    /// MOBIL safe braking: the most a new follower may have to brake (m/s²).
+    #[serde(default)]
+    pub safe_decel_mps2: f32,
 }
 
 /// Why a stopped lane head waits. More with M3.7.
@@ -243,7 +259,7 @@ pub(crate) fn vehicle(e: &Engine, id: VehicleId) -> Result<VehicleInfo, Gone> {
     };
     let s = core_id.slot as usize;
     let dt_s = f64::from(e.config().dt_ms) / 1000.0;
-    let p = &vs.params[s];
+    let (p, mobil) = (&vs.params[s], &vs.mobil[s]);
     Ok(VehicleInfo {
         id,
         road: RoadId(vs.road(s)),
@@ -264,6 +280,14 @@ pub(crate) fn vehicle(e: &Engine, id: VehicleId) -> Result<VehicleInfo, Gone> {
             max_accel_mps2: p.max_accel_mps2 as f32,
             comfort_decel_mps2: p.comfort_decel_mps2 as f32,
             min_gap_m: p.min_gap_m as f32,
+            max_speed_mps: p
+                .max_speed_mps
+                .is_finite()
+                .then_some(p.max_speed_mps as f32),
+            politeness: mobil.politeness as f32,
+            threshold_mps2: mobil.threshold_mps2 as f32,
+            bias_right_mps2: mobil.bias_right_mps2 as f32,
+            safe_decel_mps2: mobil.safe_decel_mps2 as f32,
         },
         wait: wait(w),
         standing_s: (f64::from(vs.stuck_ticks[s]) * dt_s) as f32,
