@@ -87,6 +87,13 @@ impl VehicleClass {
         }
     }
 
+    /// Length, in meters.
+    #[must_use]
+    #[allow(clippy::cast_possible_truncation)] // a few meters
+    pub fn length_m(self) -> f32 {
+        self.to_core().spec().length_m as f32
+    }
+
     /// Width to draw, in meters.
     #[must_use]
     #[allow(clippy::cast_possible_truncation)] // a few meters
