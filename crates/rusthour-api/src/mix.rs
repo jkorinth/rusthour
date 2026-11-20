@@ -80,6 +80,12 @@ fn parse(kind: &str, names: [&'static str; 4], text: &str) -> Result<[f64; 4], M
         let share = value
             .parse::<f64>()
             .map_err(|_| MixError::Syntax(format!("{name}: “{value}” is not a number")))?;
+        // A number too big for f64 parses as inf; say so rather than "got inf".
+        if share.is_infinite() && !value.to_ascii_lowercase().contains("inf") {
+            return Err(MixError::Syntax(format!(
+                "{name}: “{value}” is out of range"
+            )));
+        }
         if shares[i].replace(share).is_some() {
             return Err(MixError::Syntax(format!("{name} is given twice")));
         }

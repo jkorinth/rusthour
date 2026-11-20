@@ -61,6 +61,9 @@ fn a_mix_is_parsed_from_names_and_shares() {
     assert!(err("car").contains("“car” is not name=share"));
     assert!(err("car=lots").contains("“lots” is not a number"));
     assert!(err("car=-1").contains("car must be a number ≥ 0, got -1"));
+    assert!(err("car=1e400").contains("car: “1e400” is out of range"));
+    assert!(err("car=-1e400").contains("car: “-1e400” is out of range"));
+    assert!(err("car=inf").contains("car must be a number ≥ 0, got inf"));
     assert!(err("car=0").contains("at least one share must be above 0"));
 }
 
