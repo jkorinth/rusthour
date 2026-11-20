@@ -277,6 +277,18 @@ From M4 (ADR-0005 addenda M4.5 and M4.7):
   control delay at signals and stop signs, because it is counted from about
   150 m before the line; the priors compensate, the measurement doesn't.
 
+From the M4 user trial (docs/trials/M4.md):
+
+- `rusthour-viz`: draw turning long vehicles (trucks, buses) along their
+  path through the junction instead of as straight rectangles that poke
+  across it (finding 8).
+- `rusthour-viz`: native flags `--vehicles`, `--drivers`, `--fleet` (as in
+  the CLI, so a CLI run can be reproduced in the viewer) and `--version`,
+  and a plain error instead of a debug dump when there is no display
+  (finding 15).
+- `rusthour-viz`: find a street by name, e.g. a search box or `--road`
+  taking a name (finding 16).
+
 From the M2 user trial (docs/trials/M2.md):
 
 - `rusthour-import`: check how the OSM ways of roundabout approaches that
