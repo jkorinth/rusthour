@@ -2,8 +2,8 @@
 //! [`Pacer`], one snapshot per frame, reset with the same seed (ADR-0004 §3).
 
 use rusthour_api::{
-    Config, DriverMix, FleetMix, InProcess, Network, NetworkError, Pacer, RoadId, SignalSnapshot,
-    Simulation, Status, VehicleSnapshot, scale_from_slider,
+    Config, DriverMix, DriverTuning, FleetMix, InProcess, Network, NetworkError, Pacer, RoadId,
+    SignalSnapshot, Simulation, Status, TUNING_FIELDS, VehicleSnapshot, scale_from_slider,
 };
 use web_time::Instant;
 
@@ -40,6 +40,8 @@ pub struct Traffic {
     pub drivers: DriverMix,
     /// The fleet mix as edited, in percent; the next restart applies it.
     pub fleet: FleetMix,
+    /// Each profile's parameters as edited; the next restart applies them.
+    pub tuning: [DriverTuning; 4],
 }
 
 impl Traffic {
@@ -49,7 +51,7 @@ impl Traffic {
         let fleet = FleetMix::from_shares(FleetMix::default().shares().map(percent));
         let config = Config {
             target_vehicles: default_vehicles(&network),
-            // As `mix_pending` compares them; the same ratios as the default.
+            // As `edits_pending` compares them; the same ratios as the default.
             profile_mix: drivers.weights().expect("the default is valid"),
             class_mix: fleet.weights().expect("the default is valid"),
             ..Config::default()
@@ -66,6 +68,7 @@ impl Traffic {
             epoch: 0,
             drivers,
             fleet,
+            tuning: config.tuning,
         })
     }
 
@@ -89,23 +92,29 @@ impl Traffic {
         self.config.target_vehicles
     }
 
-    /// Whether the edited mix differs from the running one; an all-zero
-    /// mix never applies, so it doesn't count.
-    pub fn mix_pending(&self) -> bool {
+    /// Whether the edited mix or tuning differs from the running one; an
+    /// all-zero mix never applies, so it doesn't count.
+    pub fn edits_pending(&self) -> bool {
         let differs = |w: Result<[u32; 4], _>, now| w.is_ok_and(|w| w != now);
         differs(self.drivers.weights(), self.config.profile_mix)
             || differs(self.fleet.weights(), self.config.class_mix)
+            || self.tuning != self.config.tuning
     }
 
     /// Restarts from tick 0 with the same seed, network and population, and
-    /// the edited mix where it is valid; keeps the speed and whether it is
-    /// paused.
+    /// the edited mix and tuning where they are valid; keeps the speed and
+    /// whether it is paused.
     pub fn reset(&mut self) {
         if let Ok(w) = self.drivers.weights() {
             self.config.profile_mix = w;
         }
         if let Ok(w) = self.fleet.weights() {
             self.config.class_mix = w;
+        }
+        let in_range =
+            |t: &DriverTuning| TUNING_FIELDS.iter().all(|f| f.range.contains(&(f.get)(t)));
+        if self.tuning.iter().all(in_range) {
+            self.config.tuning = self.tuning;
         }
         let network = self.sim.network().clone();
         self.sim = InProcess::with_network(self.config, SEED, network)
@@ -318,14 +327,14 @@ mod tests {
     fn an_edited_mix_applies_on_reset_unless_it_is_all_zero() {
         use rusthour_api::{FleetMix, VehicleClass};
         let mut t = traffic();
-        assert!(!t.mix_pending(), "nothing edited yet");
+        assert!(!t.edits_pending(), "nothing edited yet");
         let trucks = FleetMix::from_shares([0.0, 0.0, 1.0, 0.0]);
         t.fleet = trucks;
-        assert!(t.mix_pending());
+        assert!(t.edits_pending());
         run(&mut t, 300);
         assert!(t.snapshot.class.iter().any(|&c| c != VehicleClass::Truck));
         t.reset();
-        assert!(!t.mix_pending());
+        assert!(!t.edits_pending());
         run(&mut t, 300);
         assert!(!t.snapshot.is_empty());
         assert!(t.snapshot.class.iter().all(|&c| c == VehicleClass::Truck));
@@ -333,6 +342,28 @@ mod tests {
         t.reset();
         run(&mut t, 300);
         assert!(t.snapshot.class.iter().all(|&c| c == VehicleClass::Truck));
+    }
+
+    #[test]
+    fn edited_tuning_applies_on_reset() {
+        use rusthour_api::{DriverMix, FleetMix};
+        let mut t = traffic();
+        t.drivers = DriverMix::from_shares([0.0, 0.0, 1.0, 0.0]);
+        t.fleet = FleetMix::from_shares([1.0, 0.0, 0.0, 0.0]);
+        t.tuning[2].time_headway_s = 2.8;
+        assert!(t.edits_pending());
+        t.reset();
+        assert!(!t.edits_pending());
+        run(&mut t, 300);
+        let id = t.snapshot.id[0];
+        let info = t.sim().inspect_vehicle(id).unwrap();
+        assert!((info.driver.time_headway_s - 2.8).abs() < 1e-6, "{info:?}");
+        // Out of range (the fields clamp, but not every caller): kept as it was.
+        t.tuning[2].time_headway_s = 99.0;
+        t.reset();
+        run(&mut t, 300);
+        let info = t.sim().inspect_vehicle(t.snapshot.id[0]).unwrap();
+        assert!((info.driver.time_headway_s - 2.8).abs() < 1e-6, "{info:?}");
     }
 
     #[test]
