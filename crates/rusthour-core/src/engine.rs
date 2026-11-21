@@ -992,7 +992,8 @@ fn blocked(net: &Network, vs: &Vehicles, slot: usize, road: u32, to_lane: u8) ->
 /// Don't block the box: the lane `to_lane` of lane head `slot`'s next road
 /// will have no room for the whole vehicle when it gets there. The tail's
 /// rear counts as driving on while the head covers the distance to the line,
-/// in proportion to the two speeds and at most as far (M4.12).
+/// in proportion to the two speeds and at most as far (M4.12); a standing
+/// tail must have left the room already (M4.14).
 fn no_room(net: &Network, vs: &Vehicles, slot: usize, to_lane: u8) -> bool {
     let Some(&to_road) = vs.route[slot].get(vs.route_pos[slot] as usize + 1) else {
         return false;
@@ -1003,7 +1004,12 @@ fn no_room(net: &Network, vs: &Vehicles, slot: usize, to_lane: u8) -> bool {
             let t = t as usize;
             let (v, vt) = (vs.speed_mps[slot], vs.speed_mps[t]);
             let dist_m = net.roads[vs.road(slot) as usize].length_m - vs.pos_m[slot];
-            let ahead_m = if vt >= v { dist_m } else { dist_m * vt / v };
+            // vt / v is +inf for a standing head, so min gives dist_m.
+            let ahead_m = if vt < STUCK_SPEED_MPS {
+                0.0
+            } else {
+                dist_m * (vt / v).min(1.0)
+            };
             vs.pos_m[t] - vs.params[t].length_m + ahead_m < vs.params[slot].length_m
         })
 }

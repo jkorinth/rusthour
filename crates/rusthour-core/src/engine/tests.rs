@@ -825,3 +825,15 @@ fn the_room_check_counts_on_a_tail_driving_away() {
         assert_eq!(free, room, "tail at {tail_speed} m/s");
     }
 }
+
+/// A standing head behind a standing tail gets no room before the tail has
+/// left it (M4 architect review, B1: a truck 4 m short of the line was let go
+/// on every other tick and crept towards the junction).
+#[test]
+fn regression_m4_14_a_standing_tail_gives_no_early_room() {
+    let mut e = Engine::with_network(Config::default(), 1, two_roads());
+    // A standing car with its rear 9 m into road 1.
+    put_class(&mut e, 13.5, 0.0, &[1], Class::Car);
+    let head = put_class(&mut e, 96.0, 0.0, &[0, 1], Class::Truck);
+    assert!(no_room(&e.network, &e.vehicles, head, 0));
+}
