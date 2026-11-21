@@ -56,7 +56,7 @@ fn saturate(
         // Whether each watched head waits for room, as phase 3 will see it.
         let full: Vec<bool> = (watch.iter())
             .map(|&r| e.vehicles.lane(e.vehicles.lane_id(r, 0)).front())
-            .map(|f| f.is_some_and(|&s| no_room(&e.vehicles, s as usize, 0)))
+            .map(|f| f.is_some_and(|&s| no_room(&e.network, &e.vehicles, s as usize, 0)))
             .collect();
         e.step(1);
         let t = e.tick();
@@ -761,7 +761,11 @@ fn the_room_check_uses_the_vehicles_own_length() {
         // A car on road 1 whose rear is 5.5 m from its start: room for 4.5 m.
         put_class(&mut e, 10.0, 0.0, &[1], Class::Car);
         let head = put_class(&mut e, 99.0, 0.0, &[0, 1], class);
-        assert_eq!(!no_room(&e.vehicles, head, 0), room, "{class:?}");
+        assert_eq!(
+            !no_room(&e.network, &e.vehicles, head, 0),
+            room,
+            "{class:?}"
+        );
     }
 }
 
@@ -803,5 +807,21 @@ fn a_trip_yields_to_a_vehicle_about_to_enter_its_road() {
         let mut e = Engine::with_network(Config::default(), 1, two_roads());
         put_class(&mut e, pos_m, 0.0, &[0, 1], Class::Truck);
         assert_eq!(e.cuts_in(1, 4.5), yields, "truck at {pos_m} m");
+    }
+}
+
+/// The room check counts on a tail that drives away at least as fast as the
+/// head approaches (M4 trial, finding 5: trucks braked behind a truck that had
+/// just crossed, until its rear was 12 m into the next road); a standing
+/// tail must have left the room already.
+#[test]
+fn the_room_check_counts_on_a_tail_driving_away() {
+    for (tail_speed, room) in [(8.0, true), (0.0, false)] {
+        let mut e = Engine::with_network(Config::default(), 1, two_roads());
+        // A car on road 1 with its rear 3.5 m from its start.
+        put_class(&mut e, 8.0, tail_speed, &[1], Class::Car);
+        let head = put_class(&mut e, 80.0, 8.0, &[0, 1], Class::Truck);
+        let free = !no_room(&e.network, &e.vehicles, head, 0);
+        assert_eq!(free, room, "tail at {tail_speed} m/s");
     }
 }
