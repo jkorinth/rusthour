@@ -338,11 +338,35 @@ impl Engine {
         (gap >= params.min_gap_m + v * params.time_headway_s).then_some(v)
     }
 
+    /// Whether a vehicle `length_m` long, entering lane 0 of `road` at its
+    /// start, leaves a lane head about to enter that lane from the node
+    /// behind less than `s0 + v·T`: traffic entering from outside the
+    /// network yields (`StVO` §10, M4.12).
+    // shortcut: looks at lane heads only, not at the vehicles behind them.
+    fn cuts_in(&self, road: u32, length_m: f64) -> bool {
+        let (net, vs) = (&self.network, &self.vehicles);
+        let n = net.roads[road as usize].from as usize;
+        let first = self.incoming_first[n] as usize..self.incoming_first[n + 1] as usize;
+        self.incoming[first].iter().any(|&r| {
+            (0..net.roads[r as usize].lanes).any(|lane| {
+                vs.lane(vs.lane_id(r, lane)).front().is_some_and(|&h| {
+                    let h = h as usize;
+                    let (p, v) = (&vs.params[h], vs.speed_mps[h]);
+                    let gap = net.roads[r as usize].length_m - vs.pos_m[h] - length_m;
+                    vs.route[h].get(vs.route_pos[h] as usize + 1) == Some(&road)
+                        && next_lane(net, &self.lanes, vs, h, r, lane) == 0
+                        && gap < p.min_gap_m + v * p.time_headway_s
+                })
+            })
+        })
+    }
+
     /// Phase 1: new trips draw a driver profile (ADR-0006) and a vehicle
     /// class (ADR-0007) and join their
     /// origin's FIFO; then, origin by origin
     /// from the cursor, each FIFO head is routed and inserted if the entry
-    /// gap allows, up to `MAX_ROUTES_PER_STEP` per step.
+    /// gap allows and it doesn't cut in front of a vehicle about to enter its
+    /// road, up to `MAX_ROUTES_PER_STEP` per step.
     fn spawn_trips(&mut self) {
         let ctx = DemandContext {
             tick: self.tick,
@@ -373,10 +397,13 @@ impl Engine {
             }
             let road = u32::try_from(origin).expect("road id fits u32");
             let tuning = self.config.tuning[profile as usize];
-            let Some(v) = self.entry_speed(road, &class.apply(profile.base_with(&tuning)).idm)
-            else {
+            let idm = class.apply(profile.base_with(&tuning)).idm;
+            let Some(v) = self.entry_speed(road, &idm) else {
                 continue;
             };
+            if self.cuts_in(road, idm.length_m) {
+                continue;
+            }
             routed += 1;
             self.pending[origin].pop_front();
             self.waiting -= 1;

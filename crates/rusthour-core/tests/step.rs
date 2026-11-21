@@ -215,7 +215,8 @@ fn waiting_trips_enter_one_per_origin_road_and_step() {
     };
     let mut e = Engine::with_network(config, 3, ring_with_spur());
     e.step(1);
-    // Four routable origins; the entry gap admits one vehicle on each.
-    assert_eq!(e.vehicles().live_count(), 4);
+    // Four routable origins; the entry gap admits one vehicle on each, but
+    // road 3's would cut in front of the one entered 8 m before it on road 2.
+    assert_eq!(e.vehicles().live_count(), 3);
     assert_eq!(e.waiting() as usize, 200 - e.vehicles().live_count());
 }
