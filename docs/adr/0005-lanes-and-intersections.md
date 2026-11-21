@@ -747,6 +747,8 @@ they stand.
     31 s, against the 20 s limit. With the rule, every arm is served
     within 16–18 s.
   - Higher ranks are unaffected: a major road may still hold a minor one.
+    Since M4.12 a crawling major head waives its priority to an overdue
+    minor one (ADR-0007, addendum M4.12).
 - **Conflicts without a bit matrix:** `Priority::new(net, incoming,
   outgoing, patience)` stores one position per road end on the circle
   around the node: per incoming lane in its arm, and per outgoing road.

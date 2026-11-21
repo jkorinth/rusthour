@@ -2,7 +2,9 @@
 //! signs, `priority_road`, class, speed limit and lanes; among equals a left
 //! turn yields to oncoming traffic, then right before left; first arrival
 //! and a rotating pointer break ties. Only conflicting movements yield, and
-//! a stop sign needs a full stop first.
+//! a stop sign needs a full stop first. In a jam, a higher-ranked head
+//! crawling below 10 km/h waives its priority to an overdue one, except on
+//! a roundabout's ring (M4.12, ADR-0007 addendum M4.12).
 //!
 //! Known limit: a priority road that bends at a junction ("abknickende
 //! Vorfahrt") is treated as two equal roads.
@@ -711,6 +713,52 @@ mod tests {
                         b.slot != a.slot && arriving(b) && class(&net, b) >= class(&net, a)
                     });
                     prop_assert!(held_by_equal_or_higher, "{a:?} held for a lower class: {aps:?} {go:?}");
+                }
+            }
+        }
+
+        /// Past the patience, in a jam of standing or crawling heads that
+        /// leave once they get `go`: some arrival still goes on every tick,
+        /// and a held head waits for one of at least its class, or crawls
+        /// and waives its priority to an overdue one (M4.12).
+        #[test]
+        fn some_arrival_goes_in_a_jam_past_the_patience(
+            classes in prop::array::uniform4((any::<bool>(), prop::sample::select(vec![8.3, 13.9]), 1..=2u8)),
+            arms in prop::array::uniform4(prop::option::of((0..3u32, 0.0..JAM_MPS))),
+            // Rarely blocked, so a minor head can starve past the patience.
+            blocked in prop::collection::vec(prop::array::uniform4(prop::bool::weighted(0.01)), 120..300),
+        ) {
+            let net = node(classes);
+            let mut p = priority(&net);
+            // Each arm's current head and the tick it arrived unblocked.
+            let mut heads = [(0u32, None::<u64>); 4];
+            for (tick, blocked) in (0u64..).zip(&blocked) {
+                let aps: Vec<Approach> = (0..4u32)
+                    .zip(&arms)
+                    .filter_map(|(r, arm)| arm.map(|(turn, v)| Approach {
+                        blocked: blocked[r as usize],
+                        to_road: [straight(r), left(r), right(r)][turn as usize],
+                        ..ap(r, r * 1000 + heads[r as usize].0, 2.0, v)
+                    }))
+                    .collect();
+                for a in aps.iter().filter(|a| arriving(a)) {
+                    heads[a.from_road as usize].1.get_or_insert(tick);
+                }
+                let go = decide(&mut p, &net, tick, &aps);
+                if aps.iter().any(arriving) {
+                    prop_assert!(aps.iter().zip(&go).any(|(a, &g)| g && arriving(a)), "deadlock at {tick}: {aps:?}");
+                }
+                let overdue = |b: &Approach| heads[b.from_road as usize].1.is_some_and(|t| tick - t >= 100);
+                for (a, _) in aps.iter().zip(&go).filter(|&(a, &g)| !g && !a.blocked) {
+                    let fair = aps.iter().any(|b| {
+                        b.slot != a.slot && arriving(b)
+                            && (class(&net, b) >= class(&net, a) || a.speed_mps < JAM_MPS && overdue(b))
+                    });
+                    prop_assert!(fair, "{a:?} held at {tick}: {aps:?} {go:?}");
+                }
+                // A head that got `go` leaves; the next one arrives.
+                for (a, _) in aps.iter().zip(&go).filter(|&(a, &g)| g && !a.blocked) {
+                    heads[a.from_road as usize] = (heads[a.from_road as usize].0 + 1, None);
                 }
             }
         }
