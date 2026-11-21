@@ -200,7 +200,7 @@ seed ⇒ identical state hash.
 | M4.2 | Vehicle classes: car, van, truck, bus | done | feat/M4.2-vehicle-classes |
 | M4.3 | Fleet/driver mix configurable per run (CLI and viewer); it moves into the scenario file with M5.5 | done | feat/M4.3-fleet-mix |
 | M4.4 | `rusthour-viz`: live parameter panel, color by driver/vehicle type, inspect a vehicle | done | feat/M4.4-viewer-drivers |
-| M4.5 | Routing: tighter admissible A* bound from ALT landmarks (about 8, farthest-first) on free-flow travel time plus static turn cost, precomputed at load; precompute `Turn::of` per (arm, exit) in `Priority::new`; target `step_multilane/5000` ≤ 0.7 ms (M3 architect review) | done | perf/M4.5-alt-routing |
+| M4.5 | Routing: tighter admissible A* bound from ALT landmarks (about 8, farthest-first) on free-flow travel time plus static turn cost, precomputed at load; precompute `Turn::of` per (arm, exit) in `Priority::new`; target `step_multilane/5000` ≤ 0.7 ms (M3 architect review); target missed: about 1.15 ms, deviations in the ADR-0005 addendum M4.5, follow-up M5.10 | done | perf/M4.5-alt-routing |
 | M4.6 | Move `holds_at_red` and `holds_at_stop_sign` into the `Controller` trait (default `false`), so a new controller touches no shared match blocks; with the next new controller (M3 architect review) | moved | M5.2 |
 | M4.7 | Calibrate turn costs (`routing::turn_s`) and right-of-way patience (`PATIENCE_MS`) against measured junction delays (M3 architect review) | done | feat/M4.7-calibration |
 | M4.8 | Viewer fixes from the M3 UX review, candidates for a 0.4.x patch: draw the route line through `Placement::center_line` like the lanes (N2); the follow hint compares the speed reached, not the speed set (N3) | done | fix/M4.8-route-line-follow-hint |
@@ -229,6 +229,7 @@ extend them.
 | M5.7 | `rusthour-cli run`: headless, multi-seed (parallel runs follow in M7.1) | todo | |
 | M5.8 | `rusthour-cli compare A B`: means, confidence intervals, effect sizes | todo | |
 | M5.9 | Scenario + patch → CLI comparison end-to-end | todo | |
+| M5.10 | Core step performance: `step_multilane/5000` is about 1.15 ms on the 2-core dev container (routing about 8% of it); profile the vehicle update, lane changes and lane-queue access, and reach ≤ 0.7 ms or re-set the target with evidence; multi-seed `compare` runs are where step cost starts to matter (M4 architect review) | todo | |
 
 **Acceptance:** a user can replace an intersection with a roundabout in the
 viewer, save it, and get a statistical before/after report from the CLI.
@@ -268,10 +269,6 @@ congestion, lateral positions), are in [docs/ideas.md](docs/ideas.md).
 
 From M4 (ADR-0005 addenda M4.5 and M4.7, ADR-0007 addendum M4.12):
 
-- core performance: `step_multilane/5000` is about 1.15 ms on the 2-core dev
-  container against the 0.7 ms target; routing is now about 8% of the step, so
-  the rest has to come from the vehicle update, lane changes and lane-queue
-  access. Profile and pick the next lever.
 - core: a give-way right turn starves at about 900 veh/h of conflicting flow,
   where the HCM predicts about 13 s of delay; a car pulling out makes the
   main stream brake and the queue leaves no gaps.
@@ -282,6 +279,25 @@ From M4 (ADR-0005 addenda M4.5 and M4.7, ADR-0007 addendum M4.12):
 - core: the per-movement delay that routing observes runs about 1.5× the
   control delay at signals and stop signs, because it is counted from about
   150 m before the line; the priors compensate, the measurement doesn't.
+- core: erratic noise (+0.5 m/s² while standing) lets erratic drivers creep
+  until the integration clamp, so a gap can reach 0 (the condition of the
+  `shortcut:` in `vehicle/idm.rs`); apply the noise only while moving, or
+  clamp the follower at `s0` behind its leader (M4 architect review, N9).
+
+From the M4 UX milestone review:
+
+- `rusthour-viz` palettes: neighbouring speed steps differ by only about
+  1.2:1 in contrast and van and bus look alike at overview zoom; widen the
+  lightness span or shift the hue, keep "stopped" the most visible, and test
+  a minimum contrast between neighbours (N1).
+- `rusthour-viz` tuning table: say that vehicle classes scale or cap the
+  values (also in the README), and show each field's range from
+  `TUNING_FIELDS` on hover instead of clamping silently (N2, N3);
+  `--road` without an id prints the usage line and exits 2, with the
+  viewer-arguments item (trial finding 15) below (N5).
+- `rusthour-cli` echoes the mixes in alphabetical order; use the order of
+  `--help` and the viewer (N4). `rusthour-api`: `NetworkError::EmptyMix`
+  should say which mix is empty, at the next protocol change (N6).
 
 From the M4 user trial (docs/trials/M4.md):
 
