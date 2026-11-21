@@ -360,6 +360,28 @@ priors. Accepted in the M4 review, with the M4.14 room-check fix.
   5,000 now lead on Starkenburgstraße. The first 30 simulated minutes at
   5,000 vehicles take about 5% longer (13.6 against 13.0 s), with more
   vehicles moving. The golden hash changes.
+- **Room-check fix (M4.14, M4 architect review B1):** as first built, fix 3
+  counted a standing tail as having moved the head's whole distance to the
+  line when the head stood too (`vt >= v` with both 0), so a head held at
+  the line got room on every other tick, competed for right of way, and
+  crept towards the junction. Now the tail counts only while it drives
+  (at least 0.1 m/s, the engine's standing threshold), which is what the
+  text above says. Re-measured on bensheim-5km, two simulated hours
+  (`main` with M4.12 before, reproducing the table above):
+
+  | Run | Arrivals/h before → after | Removed per arrival before → after |
+  | --- | --- | --- |
+  | Default mix, 5,000, seed 42 | 5,700 → 5,671 | 0.44% → 0.33% |
+  | Default mix, 5,000, seed 1 | 5,732 → 5,542 | 0.32% → 0.53% |
+  | Default mix, 5,000, seed 2 | 5,750 → 5,788 | 0.56% → 0.47% |
+  | Default mix, 5,000, seed 3 | 5,827 → 5,747 | 0.62% → 0.65% |
+  | Default mix, 5,000, mean | 5,752 → 5,687 | 0.48% → 0.49% |
+  | Trucks, 4,000, seed 42 | 2,402 → 2,304 | 4.6% → 4.5% |
+  | Trucks, 1,000, seeds 42 and 1–3 | 2,694 → 2,707 | 0 → 0 removed |
+
+  The M3.8 gate still holds, and trucks don't gridlock again. Arrivals at
+  5,000 fall by about 1% and at 4,000 trucks by 4%: heads now wait for
+  room they were wrongly given. The golden hash changes.
 - **Proposed, not done:**
   - *Trucks avoid living streets and access roads.* Realistic: such streets
     are often signed against heavy goods vehicles (Zeichen 253, `hgv=no` in
