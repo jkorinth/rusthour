@@ -56,7 +56,9 @@ use rusthour_core::{Config, Engine, Stream, run_and_hash};
 /// head about to enter it from the node behind; the room check counts on a
 /// tail driving away from the head, and the turn part of routing's delay
 /// priors is smaller.
-const GOLDEN_HASH: u64 = 1_755_471_952_217_386_508;
+/// Changed in M4.14: the room check no longer counts on a standing tail, so
+/// a standing head waits until the room is there.
+const GOLDEN_HASH: u64 = 3_708_986_040_628_129_946;
 
 /// A four-road ring with a short road and a merging side road that routing
 /// excludes. Random demand keeps 10 vehicles on the ring, and hand-placed
