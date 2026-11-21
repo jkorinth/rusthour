@@ -26,8 +26,9 @@ impl VehicleId {
     }
 }
 
-/// A driver's style (ADR-0006).
+/// A driver's style (ADR-0006). New profiles may be added.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[non_exhaustive]
 pub enum DriverProfile {
     /// Short headway, brisk, egoistic lane changes.
     Aggressive,
@@ -52,8 +53,9 @@ impl DriverProfile {
     }
 }
 
-/// What a vehicle is (ADR-0007).
+/// What a vehicle is (ADR-0007). New classes may be added.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[non_exhaustive]
 pub enum VehicleClass {
     /// Passenger car.
     #[default]
@@ -103,7 +105,8 @@ impl VehicleClass {
 }
 
 /// All vehicles at one tick, as parallel columns in lane order. Entry `i` is
-/// `id[i]`, `road[i]`, and so on. Reused between frames to avoid allocation.
+/// `id[i]`, `road[i]`, and so on; `profile` and `class` may be empty (see
+/// there). Reused between frames to avoid allocation.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct VehicleSnapshot {
     /// Step count the snapshot was taken at.
@@ -125,10 +128,12 @@ pub struct VehicleSnapshot {
     pub speed_mps: Vec<f32>,
     /// Vehicle length in meters; it depends on the class.
     pub length_m: Vec<f32>,
-    /// Driver profile.
+    /// Driver profile. Empty from producers before 0.5.0 (protocol 2);
+    /// consumers then fall back to `Normal`.
     #[serde(default)]
     pub profile: Vec<DriverProfile>,
-    /// Vehicle class.
+    /// Vehicle class. Empty from producers before 0.5.0 (protocol 2);
+    /// consumers then fall back to `Car`.
     #[serde(default)]
     pub class: Vec<VehicleClass>,
 }
