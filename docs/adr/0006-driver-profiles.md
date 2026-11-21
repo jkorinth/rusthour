@@ -1,6 +1,6 @@
 # ADR-0006: Driver profiles (M4.1)
 
-- **Status:** proposed
+- **Status:** accepted
 - **Date:** 2026-11-19
 - **Roadmap:** M4.1; M4.3 makes the mix configurable, M4.4 colours by it
 - **Builds on:** ADR-0004 §1 (per-vehicle `IdmParams`, RNG streams) and
