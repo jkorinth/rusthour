@@ -17,6 +17,9 @@ const NONE: u32 = u32::MAX;
 const NEVER: u64 = u64::MAX;
 /// Below this speed a stop head has stood (m/s).
 const STOOD_MPS: f64 = 0.1;
+/// Below this speed (10 km/h) a higher-ranked head counts as in a jam and
+/// lets an overdue lower-ranked head go first (M4.12).
+const JAM_MPS: f64 = 10.0 / 3.6;
 
 /// One incoming lane's state.
 #[derive(Debug, Clone, Copy)]
@@ -47,7 +50,8 @@ pub struct Priority {
     arms: Vec<Arm>,
     /// `(road, point)` of the outgoing roads, ascending by road.
     exits: Vec<(u32, u16)>,
-    /// Ticks after which a head waiting among equals is served first-come.
+    /// Ticks after which a head waiting among equals, or behind a higher-ranked
+    /// head in a jam, is served first-come.
     patience: u64,
     /// Arm that wins the next tie in a deadlock.
     pointer: u32,
@@ -253,21 +257,32 @@ impl Controller for Priority {
             arriving(a) && !a.blocked && (!arm(i).stop_sign || arm(i).stood)
         };
         // `i` yields to competing `j` with a conflicting movement: a higher
-        // rank; or the same rank and `i` turns left across `j` coming straight
-        // or turning right; or `j` is on the right, or opposite/merging
-        // (|cross| ≤ 0.5) and there first.
+        // rank, unless `j` crawls and `i` is overdue and there first; or the
+        // same rank and `i` turns left across `j` coming straight or turning
+        // right; or `j` is on the right, or opposite/merging (|cross| ≤ 0.5)
+        // and there first.
         let yields = |i: usize, j: usize| {
             let (a, b) = (&aps[i], &aps[j]);
             if i == j || !competing(j) || !self.conflict(a, b) {
                 return false;
             }
+            // Impatience: past the limit, the earlier arrival goes.
+            let overdue = |k: usize| since(k) != NEVER && tick - since(k) >= self.patience;
+            let first_come = since(j) < since(i);
+            // In a jam a higher-ranked head waives its priority to an overdue
+            // one (`StVO` §11(3)); not on a roundabout's ring (M4.12).
+            let waives = |hi: &Approach, lo: usize| {
+                overdue(lo)
+                    && hi.speed_mps < JAM_MPS
+                    && !net.roads[hi.from_road as usize].roundabout
+                    && since(i) != since(j)
+            };
             match self.class(net, b).partial_cmp(&self.class(net, a)) {
-                Some(std::cmp::Ordering::Greater) => true,
+                Some(std::cmp::Ordering::Greater) => !waives(b, i) || first_come,
+                Some(std::cmp::Ordering::Less) => waives(a, j) && first_come,
                 Some(std::cmp::Ordering::Equal) => {
-                    // Impatience: past the limit, the earlier arrival goes.
-                    let overdue = |k: usize| since(k) != NEVER && tick - since(k) >= self.patience;
                     if (overdue(i) || overdue(j)) && since(i) != since(j) {
-                        return since(j) < since(i);
+                        return first_come;
                     }
                     if left_across(net, a, b) && through(net, b) {
                         return true;
@@ -282,7 +297,7 @@ impl Controller for Priority {
                     let cross = da[0] * db[1] - da[1] * db[0];
                     cross > 0.5 || (cross >= -0.5 && since(j) <= since(i))
                 }
-                _ => false,
+                None => false,
             }
         };
         for (i, g) in go.iter_mut().enumerate() {
@@ -601,6 +616,44 @@ mod tests {
         assert_eq!(go, [false, true]);
     }
 
+    /// M4 trial, finding 4: on Fichtestraße (road 1566) trucks waited for
+    /// room in the exit road together with the queued heads of two
+    /// higher-ranked roads; whenever room opened, a major head standing at
+    /// its line took it, so the minor head never went and was removed.
+    #[test]
+    fn regression_m4_12_an_overdue_minor_head_goes_before_a_major_one_in_a_jam() {
+        // Road 3 (major) comes from road 0's left, so only class matters.
+        let net = node([MINOR, MINOR, MINOR, MAJOR]);
+        let mut p = priority(&net);
+        let minor = ap(0, 1, 2.0, 0.0);
+        // A new major head reaches its line every tick, standing.
+        for (tick, major) in (0..100).zip(2..) {
+            let go = decide(&mut p, &net, tick, &[minor, ap(3, major, 2.0, 0.0)]);
+            assert_eq!(go, [false, true], "not yet overdue at {tick}");
+        }
+        let go = decide(&mut p, &net, 100, &[minor, ap(3, 200, 2.0, 0.0)]);
+        assert_eq!(go, [true, false]);
+    }
+
+    #[test]
+    fn an_overdue_minor_head_still_yields_to_moving_or_circulating_majors() {
+        for (ring, speed) in [(false, 8.0), (true, 0.0)] {
+            let net = node([MINOR, MINOR, MINOR, (ring, 13.9, 1)]);
+            let mut p = priority(&net);
+            let minor = ap(0, 1, 2.0, 0.0);
+            assert_eq!(decide(&mut p, &net, 0, &[minor]), [true]);
+            let blocked = Approach {
+                blocked: true,
+                ..minor
+            };
+            for tick in 1..=100 {
+                decide(&mut p, &net, tick, &[blocked]);
+            }
+            let go = decide(&mut p, &net, 101, &[minor, ap(3, 2, 2.0, speed)]);
+            assert_eq!(go, [false, true], "ring {ring}, {speed} m/s");
+        }
+    }
+
     fn class(net: &Network, a: &Approach) -> Class {
         let r = &net.roads[a.from_road as usize];
         (r.roundabout, r.speed_limit_mps, r.lanes)
@@ -628,7 +681,8 @@ mod tests {
         /// On every tick: if any unblocked head is arriving, one of them
         /// gets `go` (no deadlock), and an unblocked head told to stop
         /// always has such a head of at least its class (no major waits for
-        /// a minor, nor for a head that can't enter).
+        /// a minor, nor for a head that can't enter). Only within the
+        /// patience: past it a crawling major lets an overdue minor go.
         #[test]
         fn some_arrival_goes_and_no_head_waits_for_a_lower_class(
             classes in prop::array::uniform4((any::<bool>(), prop::sample::select(vec![8.3, 13.9]), 1..=2u8)),
