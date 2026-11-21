@@ -33,7 +33,8 @@ const MAX_ROUTES_PER_STEP: u32 = 8;
 /// Below this speed a vehicle counts as standing (m/s).
 const STUCK_SPEED_MPS: f64 = 0.1;
 /// Wait after which a head among equal-ranked conflicting heads is served
-/// first-come, so a steady stream from the right can't starve it (M3.3).
+/// first-come, so a steady stream from the right can't starve it (M3.3); also
+/// before a higher-ranked head crawling in a jam (M4.12).
 /// 15 s brings the starvation back; below saturation it hardly matters
 /// (ADR-0005, addendum M4.7).
 const PATIENCE_MS: u64 = 10_000;
