@@ -1058,8 +1058,8 @@ Wormser Straße on bensheim-5km, zig-zagged.
 ## Addendum (M4.5): landmark bound for A*
 
 These points replace the straight-line heuristic of §2 and differ from
-the M4.5 roadmap row in two places, marked *deviation*. The milestone
-review decides whether they stand.
+the M4.5 roadmap row in two places, marked *deviation*. Accepted in the M4
+review; the step cost follows up in M5.10.
 
 - **Bound:** ALT. For each landmark `L` the router keeps the cheapest cost
   from `L` to every road and from every road to `L`, both counted as A\*
@@ -1145,8 +1145,9 @@ review decides whether they stand.
 
 There are no local traffic counts, so M4.7 calibrates against reference
 curves instead, and against the delays the engine itself observes for
-routing. These points change §2 and the M3.3 and M3.4 addenda. The
-milestone review decides whether they stand.
+routing. These points change §2 and the M3.3 and M3.4 addenda. Accepted
+in the M4 review. The measurements below predate M4.12, which lowered the
+turn priors and changed the room check (ADR-0007, addendum M4.12).
 
 - **References:**
   - *Give-way and stop:* HCM 2000, ch. 17, two-way stop control. The
@@ -1247,7 +1248,11 @@ milestone review decides whether they stand.
   | Non-signal arm at a signal | straight | 3,236 | 1.1 | 4.0 | 2.0 |
 
   Weighted by passages, the expectation is off by 0.44 s on average,
-  against 1.64 s before. The stop-sign prior is above bensheim-5km's and
+  against 1.64 s before. This table was measured before M4.12: since then
+  the turn part of the prior is 0.5 s for right and 1.5 s for left turns,
+  and heads merging into a stream are held for room less, so the "Expected
+  after" column and the 0.44 s describe the priors of M4.7. The cross's
+  prior test still checks the current priors. The stop-sign prior is above bensheim-5km's and
   below the cross's (15–17 s), whose approaches are longer and faster. The
   signal factor of 1.2 lies between bensheim-5km (about 1.1) and the cross
   (1.3 at 300 veh/h). A turn that never yields, on the highest-ranked road,
