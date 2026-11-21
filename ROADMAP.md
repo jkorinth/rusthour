@@ -209,7 +209,7 @@ seed ⇒ identical state hash.
 | M4.11 | M4 user trial (docs/trials/M4.md) | done | docs/M4.11-trial |
 | M4.12 | M4 trial fixes (core): truck gridlock and arrival rate | done | fix/M4.12-truck-gridlock |
 | M4.13 | M4 trial fixes (viewer, CLI, README) | done | fix/M4.13-trial-ux |
-| M4.14 | M4 milestone review fixes | claimed | fix/M4.14-review |
+| M4.14 | M4 milestone review fixes | done | fix/M4.14-review |
 
 ### M5 — Network editing & A/B studies → `v0.6.0`
 
