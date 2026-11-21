@@ -258,6 +258,8 @@ impl Vehicles {
             self.noise_mps2.push(0.0);
             self.lc_from.push(0);
             self.lc_ticks.push(u16::MAX);
+            // Room for every slot to be free, so `despawn` never reallocates.
+            self.free.reserve(self.generation.len());
             slot
         };
         let s = slot as usize;

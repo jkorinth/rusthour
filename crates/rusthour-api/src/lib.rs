@@ -360,7 +360,10 @@ mod tests {
             stuck_timeout_s: 1,
             ..Config::default()
         };
-        let mut sim = InProcess::with_network(config, 7, ring()).unwrap();
+        // A signal holds vehicles long enough for the 1 s stuck timeout.
+        let mut net = ring();
+        net.roads[2].end_control = crate::EndControl::Signals;
+        let mut sim = InProcess::with_network(config, 7, net).unwrap();
         sim.step(3000);
         let status = sim.status();
         let mut by_road = vec![(RoadId(9), 9)]; // replaced, not appended to

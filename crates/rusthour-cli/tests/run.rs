@@ -76,7 +76,8 @@ fn ring_map(dir: &std::path::Path) -> std::path::PathBuf {
             from_node: 1,
             to_node: 2,
         }),
-        roundabout: true,
+        // Not a roundabout: circulating heads would skip the room check.
+        roundabout: false,
         class: rusthour_api::RoadClass::Unknown,
         priority_road: false,
         end_control: rusthour_api::EndControl::None,
@@ -113,6 +114,10 @@ fn report_stuck_lists_the_roads_with_removals() {
         map.to_str().unwrap(),
         "--vehicles",
         "40",
+        // Trips yield to traffic when they enter (M4.12); trucks need a whole
+        // 15 m road, so a truck and car mix still locks the ring.
+        "--fleet",
+        "truck=1,car=1",
         "--steps",
         "30000",
         "--report-stuck",
@@ -128,7 +133,7 @@ fn report_stuck_lists_the_roads_with_removals() {
     let first = &roads[0];
     assert!(first["name"].as_str().unwrap().starts_with("Ring "));
     assert!(first["osm_way"].as_i64().unwrap() >= 700);
-    assert_eq!(first["roundabout"], true);
+    assert_eq!(first["roundabout"], false);
     std::fs::remove_dir_all(dir).ok();
 }
 

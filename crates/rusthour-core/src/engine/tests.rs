@@ -782,3 +782,26 @@ proptest::proptest! {
         proptest::prop_assert!(top > 0.9 * cap, "reached {} of {}", top, cap);
     }
 }
+
+fn two_roads() -> Network {
+    Network {
+        nodes: vec![[0.0, 0.0], [100.0, 0.0], [200.0, 0.0]],
+        roads: vec![
+            road(0, 1, 100.0, 13.9, [[1.0, 0.0]; 2]),
+            road(1, 2, 100.0, 13.9, [[1.0, 0.0]; 2]),
+        ],
+        connections: vec![(0, 1)],
+    }
+}
+
+/// A trip starting on a road waits for a vehicle about to enter it from the
+/// node behind (M4 trial, finding 4: trips starting on road 2136 kept a
+/// truck on road 2134 waiting for room until it was removed).
+#[test]
+fn a_trip_yields_to_a_vehicle_about_to_enter_its_road() {
+    for (pos_m, yields) in [(96.0, true), (10.0, false)] {
+        let mut e = Engine::with_network(Config::default(), 1, two_roads());
+        put_class(&mut e, pos_m, 0.0, &[0, 1], Class::Truck);
+        assert_eq!(e.cuts_in(1, 4.5), yields, "truck at {pos_m} m");
+    }
+}
