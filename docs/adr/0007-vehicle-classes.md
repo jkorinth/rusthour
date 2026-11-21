@@ -1,6 +1,6 @@
 # ADR-0007: Vehicle classes (M4.2)
 
-- **Status:** proposed
+- **Status:** accepted
 - **Date:** 2026-11-19
 - **Roadmap:** M4.2; M4.3 makes the mix configurable, M4.4 colours by it
 - **Builds on:** ADR-0004 §1 (per-vehicle `IdmParams`, `length_m`),
@@ -263,7 +263,7 @@ the PR and in an addendum below.
 ## Addendum (M4.12): trial fixes, truck gridlock and arrival rate
 
 These points change §4 and §6, ADR-0005 §4 and the M4.7 addendum's turn
-priors. The milestone review decides whether they stand.
+priors. Accepted in the M4 review, with the M4.14 room-check fix.
 
 - **Why trucks were removed** (M4 trial, finding 4). Traced on
   bensheim-5km with 500 and 1,000 trucks; none of the suspects in the

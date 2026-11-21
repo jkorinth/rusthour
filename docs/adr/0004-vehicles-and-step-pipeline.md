@@ -57,6 +57,11 @@ pub struct Vehicles {          // one entry per slot, alive or free
   phases use scratch buffers owned by the engine. M2.8 checks this with a
   counting allocator (e.g. `dhat`, safe code) after warm-up; a flat route
   pool replaces the per-slot `Vec`s if it finds growth.
+  Each origin's queue of waiting trips starts with room for 4. Since new
+  trips yield to vehicles about to enter (M4.12) about 110 trips wait at
+  5,000 vehicles, so the queues of busy origins grow during warm-up; the
+  growth is amortised and bounded by their peak, and the warm-up covers it
+  (ADR-0007, addendum M4.12).
 - **IDM parameters per vehicle**, in one column of a small `Copy` struct
   owned by `vehicle::idm` (M2.3), since one formula reads them all
   together. M4 profiles and noise produce a per-vehicle value at spawn, so
