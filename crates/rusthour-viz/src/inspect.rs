@@ -640,6 +640,7 @@ pub fn vehicle_class_text(c: VehicleClass) -> &'static str {
         VehicleClass::Van => "van",
         VehicleClass::Truck => "truck",
         VehicleClass::Bus => "bus",
+        _ => "vehicle",
     }
 }
 
@@ -650,6 +651,7 @@ pub fn profile_text(p: DriverProfile) -> &'static str {
         DriverProfile::Normal => "normal",
         DriverProfile::Cautious => "cautious",
         DriverProfile::Erratic => "erratic",
+        _ => "driver",
     }
 }
 
