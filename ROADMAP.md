@@ -207,7 +207,7 @@ seed ⇒ identical state hash.
 | M4.9 | Viewer and CLI polish from the M3 UX review: `rusthour-viz --road <id>` and `?road=<id>` select and centre a road (N1); build label falls back to the git commit, shows on the map-error screen, README says where it is (N4); controls wrap into two rows below about 600 pt (N5); CLI usage line without `--map` doesn't suggest `--steps` is required (N6); bolder outline for the selected road (N7) | done | feat/M4.9-viewer-cli-polish |
 | M4.10 | Flaky `no_allocations_in_steady_state`: libtest's "running for over 60 seconds" warning allocated on its own thread and dhat counted it; the test now runs without the libtest harness | done | fix/M4.10-alloc-test-flake |
 | M4.11 | M4 user trial (docs/trials/M4.md) | done | docs/M4.11-trial |
-| M4.12 | M4 trial fixes (core): truck gridlock and arrival rate | claimed | fix/M4.12-truck-gridlock |
+| M4.12 | M4 trial fixes (core): truck gridlock and arrival rate | done | fix/M4.12-truck-gridlock |
 | M4.13 | M4 trial fixes (viewer, CLI, README) | done | fix/M4.13-trial-ux |
 
 ### M5 — Network editing & A/B studies → `v0.6.0`
@@ -265,7 +265,7 @@ viewer, save it, and get a statistical before/after report from the CLI.
 Longer ideas, such as a detailed maneuvering submodel (turning around in
 congestion, lateral positions), are in [docs/ideas.md](docs/ideas.md).
 
-From M4 (ADR-0005 addenda M4.5 and M4.7):
+From M4 (ADR-0005 addenda M4.5 and M4.7, ADR-0007 addendum M4.12):
 
 - core performance: `step_multilane/5000` is about 1.15 ms on the 2-core dev
   container against the 0.7 ms target; routing is now about 8% of the step, so
@@ -274,6 +274,10 @@ From M4 (ADR-0005 addenda M4.5 and M4.7):
 - core: a give-way right turn starves at about 900 veh/h of conflicting flow,
   where the HCM predicts about 13 s of delay; a car pulling out makes the
   main stream brake and the queue leaves no gaps.
+- core routing: trucks avoid living streets and access roads (often signed
+  against heavy goods vehicles; `hgv=no` isn't imported yet), and plan with
+  their class's speed cap on maps with motorways; both cheap and exact with
+  the landmark bound (ADR-0007, addendum M4.12).
 - core: the per-movement delay that routing observes runs about 1.5× the
   control delay at signals and stop signs, because it is counted from about
   150 m before the line; the priors compensate, the measurement doesn't.
