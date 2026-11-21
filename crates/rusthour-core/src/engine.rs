@@ -985,20 +985,27 @@ fn next_lane(net: &Network, lanes: &Lanes, vs: &Vehicles, slot: usize, from: u32
 /// next road; circulating vehicles keep priority on the ring (ADR-0005 §4).
 fn blocked(net: &Network, vs: &Vehicles, slot: usize, road: u32, to_lane: u8) -> bool {
     let to_road = vs.route[slot][vs.route_pos[slot] as usize + 1];
-    no_room(vs, slot, to_lane)
+    no_room(net, vs, slot, to_lane)
         && !(net.roads[road as usize].roundabout && net.roads[to_road as usize].roundabout)
 }
 
 /// Don't block the box: the lane `to_lane` of lane head `slot`'s next road
-/// has no room for the whole car yet.
-fn no_room(vs: &Vehicles, slot: usize, to_lane: u8) -> bool {
-    let Some(&next) = vs.route[slot].get(vs.route_pos[slot] as usize + 1) else {
+/// will have no room for the whole vehicle when it gets there. The tail's
+/// rear counts as driving on while the head covers the distance to the line,
+/// in proportion to the two speeds and at most as far (M4.12).
+fn no_room(net: &Network, vs: &Vehicles, slot: usize, to_lane: u8) -> bool {
+    let Some(&to_road) = vs.route[slot].get(vs.route_pos[slot] as usize + 1) else {
         return false;
     };
-    vs.lane(vs.lane_id(next, to_lane)).back().is_some_and(|&t| {
-        let t = t as usize;
-        vs.pos_m[t] - vs.params[t].length_m < vs.params[slot].length_m
-    })
+    vs.lane(vs.lane_id(to_road, to_lane))
+        .back()
+        .is_some_and(|&t| {
+            let t = t as usize;
+            let (v, vt) = (vs.speed_mps[slot], vs.speed_mps[t]);
+            let dist_m = net.roads[vs.road(slot) as usize].length_m - vs.pos_m[slot];
+            let ahead_m = if vt >= v { dist_m } else { dist_m * vt / v };
+            vs.pos_m[t] - vs.params[t].length_m + ahead_m < vs.params[slot].length_m
+        })
 }
 
 /// Phase 4's cap for `slot` outside towns: its IDM acceleration behind the

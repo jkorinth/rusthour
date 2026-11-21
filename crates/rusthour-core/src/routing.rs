@@ -54,12 +54,14 @@ const UTURN_S: f64 = 20.0;
 /// `observe`; 4 ran faster than 8 on both benchmarks (ADR-0005, addendum M4.5).
 const LANDMARKS: usize = 4;
 
-/// What a turn adds to its movement's delay prior at low load (s).
+/// What a turn adds to its movement's delay prior at low load (s); halved
+/// for right and 0.5 s less for left turns since the room check counts on a
+/// departing tail (ADR-0007, addendum M4.12).
 fn turn_s(turn: Turn) -> f64 {
     match turn {
         Turn::Straight | Turn::UTurn => 0.0,
-        Turn::Right => 1.0,
-        Turn::Left | Turn::LeftAcross => 2.0,
+        Turn::Right => 0.5,
+        Turn::Left | Turn::LeftAcross => 1.5,
     }
 }
 
@@ -818,13 +820,13 @@ mod tests {
             let router = Router::new(&net);
             router.movement_delays(0).map(|m| m.3).collect::<Vec<_>>()
         };
-        // Left across onto road 2 adds 2 s to the straight movement's prior.
-        assert_eq!(priors(EndControl::None), [3.0, 1.0]);
-        assert_eq!(priors(EndControl::GiveWay), [4.0, 2.0]);
-        assert_eq!(priors(EndControl::Stop), [16.0, 14.0]);
+        // Left across onto road 2 adds 1.5 s to the straight movement's prior.
+        assert_eq!(priors(EndControl::None), [2.5, 1.0]);
+        assert_eq!(priors(EndControl::GiveWay), [3.5, 2.0]);
+        assert_eq!(priors(EndControl::Stop), [15.5, 14.0]);
         // One phase: red 5 s of a 30 s cycle.
         let signal = 1.2 * 5.0 * 5.0 / 60.0;
-        assert_eq!(priors(EndControl::Signals), [signal + 2.0, signal]);
+        assert_eq!(priors(EndControl::Signals), [signal + 1.5, signal]);
     }
 
     #[test]

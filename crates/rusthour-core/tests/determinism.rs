@@ -53,8 +53,10 @@ use rusthour_core::{Config, Engine, Stream, run_and_hash};
 /// Changed in M4.7: routing delay priors are calibrated to the observed
 /// junction delays and include the turn, and only U-turns keep a static cost.
 /// Changed in M4.12: a trip doesn't enter its first road in front of a lane
-/// head about to enter it from the node behind.
-const GOLDEN_HASH: u64 = 12_091_105_809_694_451_037;
+/// head about to enter it from the node behind; the room check counts on a
+/// tail driving away from the head, and the turn part of routing's delay
+/// priors is smaller.
+const GOLDEN_HASH: u64 = 1_755_471_952_217_386_508;
 
 /// A four-road ring with a short road and a merging side road that routing
 /// excludes. Random demand keeps 10 vehicles on the ring, and hand-placed

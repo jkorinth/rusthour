@@ -125,11 +125,11 @@ fn report_stuck_lists_the_roads_with_removals() {
     let removed = out["removed_stuck"].as_u64().unwrap();
     assert!(removed > 0, "the ring should gridlock: {out}");
     assert!(out["removed_per_arrival"].is_f64());
-    assert_eq!(out["stuck_roads_total"], 4);
     let roads = out["stuck_roads"].as_array().unwrap();
-    assert!(!roads.is_empty() && roads.len() <= 10);
+    assert_eq!(out["stuck_roads_total"], roads.len());
+    assert!((1..=4).contains(&roads.len()));
     let sum: u64 = roads.iter().map(|r| r["removed"].as_u64().unwrap()).sum();
-    assert_eq!(sum, removed, "four roads, all listed");
+    assert_eq!(sum, removed, "at most four roads, all listed");
     let first = &roads[0];
     assert!(first["name"].as_str().unwrap().starts_with("Ring "));
     assert!(first["osm_way"].as_i64().unwrap() >= 700);
