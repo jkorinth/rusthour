@@ -259,3 +259,115 @@ the PR and in an addendum below.
   `step/5000` 782 → 780 µs (no change detected); `step_multilane/5000`
   1.36 → 1.32 ms (−4%, changed traffic). The governor's `min` is not
   measurable.
+
+## Addendum (M4.12): trial fixes, truck gridlock and arrival rate
+
+These points change §4 and §6, ADR-0005 §4 and the M4.7 addendum's turn
+priors. The milestone review decides whether they stand.
+
+- **Why trucks were removed** (M4 trial, finding 4). Traced on
+  bensheim-5km with 500 and 1,000 trucks; none of the suspects in the
+  vehicle itself (a road shorter than the truck, MOBIL gaps, lane capacity)
+  was the cause. Two entry rules let a waiting head starve:
+  - *Higher rank in a jam.* On Fichtestraße (road 1566, a 7 km/h living
+    street) the head waited for room in the exit road together with the
+    queued heads of two higher-ranked roads. Whenever room opened, a major
+    head standing at its line took it; patience (M3.3) only applied among
+    equal ranks, so the minor head never went, and the trucks behind it on
+    roads 1568 and 1570 were removed.
+  - *New trips first.* On Konrad-Adenauer-Straße (road 2134) a truck waited
+    for room on road 2136 while trips starting on 2136 kept entering in
+    front of it: a trip needs a gap of `s0 + v·T` to the tail, a waiting
+    truck the room for its 12 m.
+  Trucks meet both more often than cars because room for 12 m opens rarely
+  in a slow queue. The rest of the 4,000-truck gridlock is capacity: a truck
+  takes about 2.5–3 cars' space and time at a junction (below).
+- **Fix 1, waiving priority in a jam (`control::priority`):** a head that
+  has waited longer than the patience (10 s) goes first-come before a
+  higher-ranked head that crawls below 10 km/h, as StVO §11(3) asks of a
+  driver with priority when the traffic situation requires it. Not before
+  a head circulating on a roundabout, whose ring would lock. A moving
+  major stream keeps its priority, so gap acceptance at low load is
+  unchanged.
+- **Fix 2, new trips yield (`Engine::spawn_trips`, StVO §10):** a trip
+  doesn't enter lane 0 of its origin road while a lane head about to enter
+  that lane from the node behind would be left less than its own
+  `s0 + v·T` behind the new vehicle's rear. `shortcut:` only lane heads are
+  checked. `Engine::spawn` keeps inserting without it, for tests and
+  benches. At 5,000 vehicles about 110 trips wait at a time (about 5
+  before). The free-slot list reserves room for every slot, so `despawn`
+  never reallocates when more trips wait at once.
+- **Why trucks arrive at about half the rate of cars** (finding 5): not
+  routing and not the 80 km/h cap. With 500 vehicles, seeds 42 and 1,
+  arrivals per hour by variant of the truck (`main` with fixes 1 and 2):
+
+  | Variant | Arrivals/h |
+  | --- | ---: |
+  | Cars | 4,289 |
+  | Trucks | 2,234 |
+  | Trucks 4.5 m long | 3,060 |
+  | Trucks without the 0.7 m/s² cap | 2,956 |
+  | Trucks with the car's `T` and `s0` | 2,622 |
+  | Trucks without the 2 m/s² `b` cap | 2,290 |
+  | Trucks with all four as a car (cap and keep-right left) | 4,239 |
+
+  So the speed cap and keep-right cost about 1%: no road above 80 km/h
+  carries traffic here, and routes planned at car speed would only differ
+  on such roads. 500 vehicles aren't low density for trucks: the ratio is
+  0.93 at 50 vehicles and 0.81 at 200. 500 trucks have the trip time of
+  about 1,400 cars, a passenger-car equivalent of about 2.8, which fits
+  their length (16 m against 6.5 m per vehicle in a queue) and their slow
+  start at every junction (the HCM counts 2.0).
+- **Fix 3, the room check counts on a departing tail (`engine::no_room`):**
+  one part of finding 5 is an artifact. A head was told to stop until the
+  next road's tail had moved the head's whole length onto that road, even
+  while the tail drove away, so a truck following a truck across a junction
+  braked until the leader's rear was 12 m in and then took a long time to
+  regain speed. The tail's rear now counts as driving on while the head
+  covers its distance to the line, in proportion to the two speeds and
+  never further than that distance; a standing tail still needs the room
+  now. If the tail stops after a head has committed, the head enters and
+  stands with its rear across the junction; the model doesn't block
+  crossing traffic for that, so it costs nothing but realism. At 500 trucks
+  the time held for room fell from 12.6% to 6.3% of the
+  vehicle-time, for cars from 4.5% to 0.8%.
+  - *Turn priors:* turns that merge into a stream were held for room most,
+    so the delays routing observes fell. On the M4.7 cross at 300 veh/h a
+    right turn with priority is now never held (0.6 s before) and other
+    turns 0.1–1.0 s less. The turn part of the prior drops from 1 to 0.5 s
+    for right and from 2 to 1.5 s for left turns; the other priors stay.
+- **Measured** on bensheim-5km, two simulated hours (`main` before):
+
+  | Run | Arrivals/h before → after | Removed per arrival before → after |
+  | --- | --- | --- |
+  | Default mix, 5,000, seed 42 | 5,306 → 5,700 | 1.24% → 0.44% |
+  | Default mix, 5,000, seed 1 | 5,305 → 5,732 | 1.36% → 0.32% |
+  | Default mix, 5,000, seed 2 | 5,284 → 5,750 | 1.53% → 0.56% |
+  | Default mix, 5,000, seed 3 | 5,458 → 5,827 | 1.52% → 0.62% |
+  | Default mix, 5,000, mean | 5,338 → 5,752 | 1.41% → 0.48% |
+  | Trucks, 4,000, seed 42 | 2,024 → 2,402 | 44.7% → 4.6% |
+  | Trucks, 2,000, seed 42 | 2,595 → 2,776 | 1.95% → 0% |
+  | Trucks, 1,000, seeds 42 and 1–3 | 2,558 → 2,694 | 21 → 0 removed |
+  | Trucks, 500, seeds 42 and 1–3 | 2,305 → 2,439 | 2 → 0 removed |
+  | Cars, 500, seed 42 | 4,300 → 4,397 | 0 → 0 |
+  | Buses, 500, seed 42 | 2,956 → 3,137 | 0 → 0 |
+
+  The M3.8 gate (at most 5% removed, at least 4,545 arrivals/h at 5,000)
+  holds. Each fix alone, from the runs before fix 3 (default mix, 5,000,
+  seeds 42 and 1–3): fix 1 alone 5,168 arrivals/h and 0.77% removed, fixes
+  1 and 2 5,384 and 0.71%; fix 2 alone doubled the removals at 1,000
+  trucks, because more trucks then reached the starving merges. Removals at
+  5,000 now lead on Starkenburgstraße. The first 30 simulated minutes at
+  5,000 vehicles take about 5% longer (13.6 against 13.0 s), with more
+  vehicles moving. The golden hash changes.
+- **Proposed, not done:**
+  - *Trucks avoid living streets and access roads.* Realistic: such streets
+    are often signed against heavy goods vehicles (Zeichen 253, `hgv=no` in
+    OSM, which the importer doesn't read). Cheap in A\*: a class-dependent
+    penalty only raises costs, so the landmark bound stays admissible and
+    routes stay deterministic. It needs a class argument to `Router::route`
+    and a test of where destinations lie on such streets; a backlog item.
+  - *Routing with the class's speed cap:* also cheap and exact with the
+    current landmark tables (`max(travel_s, length / cap)` is never below
+    the costs they were built on), but it changes nothing here (about 1%,
+    above). A backlog item for maps with motorways.
