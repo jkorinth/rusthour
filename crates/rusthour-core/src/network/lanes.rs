@@ -184,7 +184,9 @@ impl Lanes {
     fn movement(&self, from: u32, to: u32) -> Option<&Move> {
         let m =
             &self.moves[self.first[from as usize] as usize..self.first[from as usize + 1] as usize];
-        m.binary_search_by_key(&to, |m| m.to).ok().map(|i| &m[i])
+        // A road has a handful of movements (the api rejects duplicates): a
+        // scan beats a binary search.
+        m.iter().find(|m| m.to == to)
     }
 
     /// The lanes of `from` that may take the movement to `to`; all lanes if
