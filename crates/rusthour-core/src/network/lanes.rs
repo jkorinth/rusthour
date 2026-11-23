@@ -220,6 +220,9 @@ impl Lanes {
                 target.length_m < SHORT_ROAD_M || target.lanes > net.roads[from as usize].lanes
             })
             .map_or(u16::MAX, |c| self.from_mask(net, to, c));
+        if mask >> e & 1 == 1 {
+            return e; // the common case, and what the search below returns
+        }
         (0..=last)
             .filter(|&l| mask & (1 << l) != 0)
             .min_by_key(|&l| (l.abs_diff(e), l))
