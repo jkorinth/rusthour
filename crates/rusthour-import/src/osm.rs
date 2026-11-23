@@ -863,34 +863,14 @@ fn road_class(highway: &str) -> RoadClass {
     }
 }
 
-/// A road's `turn:lanes` in one direction, lane 0 (rightmost) first, if
-/// tagged; a lane with an unknown value is `None`.
-fn turn_lanes(
-    tags: &[(String, String)],
-    forward: bool,
-    oneway: bool,
-) -> Option<Vec<Option<Turns>>> {
+/// A road's `turn:lanes` value in one direction, if tagged.
+fn turn_lanes(tags: &[(String, String)], forward: bool, oneway: bool) -> Option<&str> {
     let key = if forward {
         "turn:lanes:forward"
     } else {
         "turn:lanes:backward"
     };
-    let value = tag(tags, key).or_else(|| tag(tags, "turn:lanes").filter(|_| oneway))?;
-    // Listed left to right.
-    let lanes = value.split('|').rev().map(|lane| {
-        lane.split(';')
-            .map(|turn| match turn.trim() {
-                "left" | "slight_left" | "sharp_left" => Some(Turns::LEFT),
-                "right" | "slight_right" | "sharp_right" => Some(Turns::RIGHT),
-                "through" | "merge_to_left" | "merge_to_right" | "none" | "" => {
-                    Some(Turns::THROUGH)
-                }
-                "reverse" => Some(Turns::U_TURN),
-                _ => None,
-            })
-            .try_fold(Turns(0), |turns, turn| Some(turns | turn?))
-    });
-    Some(lanes.collect())
+    tag(tags, key).or_else(|| tag(tags, "turn:lanes").filter(|_| oneway))
 }
 
 /// A road's attributes from its way's tags in one direction, for
@@ -908,7 +888,7 @@ fn attributes(way: &Way, highway: &str, forward: bool, oneway: bool, report: &mu
         report.clamped_lanes.push(Named::of(way.id, name));
     }
     let turn_lanes = turn_lanes(&way.tags, forward, oneway).map_or_else(Vec::new, |turns| {
-        match turns.into_iter().collect::<Option<Vec<_>>>() {
+        match Turns::parse_osm_lanes(turns) {
             Some(turns) if turns.len() == usize::from(lanes) => {
                 report.turn_lanes += 1;
                 turns

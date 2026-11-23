@@ -1,6 +1,6 @@
 //! Road network interchange data (ADR-0002); see [`Network`].
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::fmt;
 
 use rusthour_core::network as core;
@@ -150,6 +150,30 @@ impl Turns {
     pub const U_TURN: Self = Self(8);
     /// Every known bit.
     pub const ALL: Self = Self(15);
+
+    /// Parses an OSM `turn:lanes` value such as `left|through;right`, listed
+    /// left to right, into one entry per lane, rightmost (lane 0) first.
+    /// `slight_*` and `sharp_*` count as left or right, `merge_to_*`, `none`
+    /// and an empty value as through, and `reverse` as a U-turn (ADR-0005
+    /// §3). `None` if a lane has any other value.
+    #[must_use]
+    pub fn parse_osm_lanes(value: &str) -> Option<Vec<Self>> {
+        (value.split('|').rev())
+            .map(|lane| {
+                lane.split(';')
+                    .map(|turn| match turn.trim() {
+                        "left" | "slight_left" | "sharp_left" => Some(Self::LEFT),
+                        "right" | "slight_right" | "sharp_right" => Some(Self::RIGHT),
+                        "through" | "merge_to_left" | "merge_to_right" | "none" | "" => {
+                            Some(Self::THROUGH)
+                        }
+                        "reverse" => Some(Self::U_TURN),
+                        _ => None,
+                    })
+                    .try_fold(Self(0), |turns, turn| Some(turns | turn?))
+            })
+            .collect()
+    }
 }
 
 impl std::ops::BitOr for Turns {
@@ -167,7 +191,7 @@ impl std::ops::BitOr for Turns {
 /// the way id alone is ambiguous and the road's [`Node`]s need not carry these
 /// OSM node ids. Together the three ids identify the road again after a
 /// re-import (M5.0), unless the way itself changed there.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 pub struct OsmWayPart {
     /// OSM way id.
     pub way: i64,
@@ -356,6 +380,22 @@ pub enum NetworkError {
         /// The connection's outgoing road.
         to_road: RoadId,
     },
+    /// Two nodes have the same OSM node id, so edits can't address them
+    /// (ADR-0008 §1).
+    DuplicateOsmNode {
+        /// The two nodes.
+        nodes: [NodeId; 2],
+        /// Their OSM node id.
+        osm_node: i64,
+    },
+    /// Two roads have the same OSM way part, so edits can't address them
+    /// (ADR-0008 §1).
+    DuplicateOsmRoad {
+        /// The two roads.
+        roads: [RoadId; 2],
+        /// Their OSM way part.
+        osm: OsmWayPart,
+    },
     /// The network has more than `u32::MAX` nodes or roads.
     TooLarge,
     /// The config's step length is outside 1..=1000 ms.
@@ -377,6 +417,7 @@ pub enum NetworkError {
 }
 
 impl fmt::Display for NetworkError {
+    #[allow(clippy::too_many_lines)] // one short arm per variant
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::NonFiniteNode { node } => {
@@ -461,6 +502,16 @@ impl fmt::Display for NetworkError {
                 f,
                 "the connection from road {} to road {} appears twice",
                 from_road.0, to_road.0
+            ),
+            Self::DuplicateOsmNode { nodes, osm_node } => write!(
+                f,
+                "nodes {} and {} have the same OSM node id {osm_node}",
+                nodes[0].0, nodes[1].0
+            ),
+            Self::DuplicateOsmRoad { roads, osm } => write!(
+                f,
+                "roads {} and {} come from the same OSM way part (way {} from {} to {})",
+                roads[0].0, roads[1].0, osm.way, osm.from_node, osm.to_node
             ),
             Self::TooLarge => write!(f, "the network has more than {} nodes or roads", u32::MAX),
             Self::BadStepLength { dt_ms } => {
@@ -554,6 +605,33 @@ impl RoadClass {
 }
 
 impl Network {
+    /// Checks that no two nodes or roads share an OSM key.
+    pub(crate) fn check_keys(&self) -> Result<(), NetworkError> {
+        let mut seen = HashMap::with_capacity(self.nodes.len());
+        for (i, n) in self.nodes.iter().enumerate() {
+            if let Some(osm_node) = n.osm_node
+                && let Some(first) = seen.insert(osm_node, id(i))
+            {
+                return Err(NetworkError::DuplicateOsmNode {
+                    nodes: [NodeId(first), NodeId(id(i))],
+                    osm_node,
+                });
+            }
+        }
+        let mut seen = HashMap::with_capacity(self.roads.len());
+        for (i, r) in self.roads.iter().enumerate() {
+            if let Some(osm) = r.osm
+                && let Some(first) = seen.insert(osm, id(i))
+            {
+                return Err(NetworkError::DuplicateOsmRoad {
+                    roads: [RoadId(first), RoadId(id(i))],
+                    osm,
+                });
+            }
+        }
+        Ok(())
+    }
+
     /// Checks the network and builds the core's representation of it.
     ///
     /// This is a trust boundary: networks may come from files or remote
@@ -563,6 +641,7 @@ impl Network {
         if self.nodes.len() > max || self.roads.len() > max {
             return Err(NetworkError::TooLarge);
         }
+        self.check_keys()?;
         let finite = |p: &Point| p.x.is_finite() && p.y.is_finite();
 
         let mut nodes = Vec::with_capacity(self.nodes.len());
