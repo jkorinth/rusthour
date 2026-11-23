@@ -251,6 +251,18 @@ fn best_change(net: &Network, lanes: &Lanes, vs: &Vehicles, q: usize, i: usize) 
     let p = &vs.params[c];
     let zone = route_zone_m(vs, c);
     let dist_m = net.roads[r as usize].length_m - vs.pos_m[c];
+    // In the zone, never away from the lanes of the next movement; and only
+    // into a gap of `s0` both ways. In dense traffic there is often no such
+    // side, and then nothing else needs computing.
+    let sides = [(from.wrapping_sub(1), false), (from + 1, true)].map(|(to, left)| {
+        if to >= n || (dist_m < zone && off(to) > off(from)) {
+            return None;
+        }
+        gap_check(vs, c, vs.lane_id(r, to)).map(|gap| (to, left, gap))
+    });
+    if sides.iter().all(Option::is_none) {
+        return None;
+    }
     let penalty = 2.0 * p.comfort_decel_mps2 * (1.0 - dist_m / zone).max(0.0);
     let a_c = accel(net, vs, c, leader_of(net, lanes, vs, c, from, old_leader));
     let a_o = old_follower.map(|o| {
@@ -268,16 +280,9 @@ fn best_change(net: &Network, lanes: &Lanes, vs: &Vehicles, q: usize, i: usize) 
     // Moving right gains nothing if `c` may not then pass its old leader.
     let held_right = old_leader.is_some_and(|l| banned(l, vs.speed_mps[c]));
     let mut best: Option<(f64, u8)> = None;
-    for (to, left) in [(from.wrapping_sub(1), false), (from + 1, true)] {
-        // In the zone, never away from the lanes of the next movement.
-        if to >= n || (dist_m < zone && off(to) > off(from)) {
-            continue;
-        }
+    for (to, left, (nl, nf)) in sides.into_iter().flatten() {
         // In the zone, a change towards them is mandatory: politeness is waived.
         let mandatory = dist_m < zone && off(to) < off(from);
-        let Some((nl, nf)) = gap_check(vs, c, vs.lane_id(r, to)) else {
-            continue;
-        };
         let m = &vs.mobil[c];
         let a_n = nf.map(|f| {
             let now = accel(net, vs, f, leader_of(net, lanes, vs, f, to, nl));
