@@ -75,6 +75,9 @@ pub struct Priority {
     winner: u32,
     /// `decide` scratch, one per approach, sized for every arm; not hashed.
     seen: Vec<Seen>,
+    /// The last `decide` had no approach, so every arm is reset and another
+    /// such call changes nothing; derived, not hashed.
+    idle: bool,
 }
 
 impl Priority {
@@ -139,6 +142,7 @@ impl Priority {
         }
         Self {
             seen: Vec::with_capacity(arms.len()),
+            idle: false,
             arms,
             exits: outgoing.iter().map(|&r| (r, at(false, r))).collect(),
             patience,
@@ -153,6 +157,37 @@ impl Priority {
     pub fn set_signal(&mut self, road: u32, signal: bool) {
         for arm in self.arms.iter_mut().filter(|arm| arm.road == road) {
             arm.signal = Some(signal);
+        }
+    }
+
+    /// Forgets heads that left and notes new arrivals and stop-sign stands;
+    /// fills `seen` for `aps`.
+    fn track(&mut self, net: &Network, tick: u64, aps: &[Approach], seen: &mut Vec<Seen>) {
+        let mut rest = aps.iter().peekable();
+        seen.clear();
+        for (k, arm) in self.arms.iter_mut().enumerate() {
+            let Some(a) = rest.next_if(|a| (a.from_road, a.lane) == (arm.road, arm.lane)) else {
+                (arm.head, arm.since, arm.released, arm.stood) = (NONE, NEVER, NONE, false);
+                continue;
+            };
+            seen.push(Seen {
+                arm: k,
+                ..Seen::default()
+            });
+            if a.slot != arm.head {
+                (arm.head, arm.since, arm.released, arm.stood) = (a.slot, NEVER, NONE, false);
+            }
+            if arm.since == NEVER && arriving(a) {
+                arm.since = tick;
+            }
+            arm.stood |= a.speed_mps < STOOD_MPS && a.dist_m <= 2.0 * a.min_gap_m;
+        }
+        debug_assert!(
+            rest.next().is_none(),
+            "approaches from lanes not ending here"
+        );
+        for (s, a) in seen.iter_mut().zip(aps) {
+            *s = self.seen(net, s.arm, a);
         }
     }
 
@@ -252,34 +287,13 @@ fn arriving(a: &Approach) -> bool {
 
 impl Controller for Priority {
     fn decide(&mut self, net: &Network, tick: u64, aps: &[Approach], go: &mut [bool]) {
-        // Forget heads that left; note new arrivals and stop-sign stands.
-        let mut rest = aps.iter().peekable();
+        // Most nodes see no head in reach most of the time.
+        if aps.is_empty() && self.idle {
+            return;
+        }
+        self.idle = aps.is_empty();
         let mut seen = std::mem::take(&mut self.seen);
-        seen.clear();
-        for (k, arm) in self.arms.iter_mut().enumerate() {
-            let Some(a) = rest.next_if(|a| (a.from_road, a.lane) == (arm.road, arm.lane)) else {
-                (arm.head, arm.since, arm.released, arm.stood) = (NONE, NEVER, NONE, false);
-                continue;
-            };
-            seen.push(Seen {
-                arm: k,
-                ..Seen::default()
-            });
-            if a.slot != arm.head {
-                (arm.head, arm.since, arm.released, arm.stood) = (a.slot, NEVER, NONE, false);
-            }
-            if arm.since == NEVER && arriving(a) {
-                arm.since = tick;
-            }
-            arm.stood |= a.speed_mps < STOOD_MPS && a.dist_m <= 2.0 * a.min_gap_m;
-        }
-        debug_assert!(
-            rest.next().is_none(),
-            "approaches from lanes not ending here"
-        );
-        for (s, a) in seen.iter_mut().zip(aps) {
-            *s = self.seen(net, s.arm, a);
-        }
+        self.track(net, tick, aps, &mut seen);
 
         let arm = |i: usize| &self.arms[seen[i].arm];
         let since = |i: usize| arm(i).since;
