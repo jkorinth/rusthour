@@ -12,6 +12,7 @@ mod mix;
 mod network;
 mod pacer;
 mod placement;
+mod refs;
 mod signal;
 mod snapshot;
 mod tuning;
@@ -28,6 +29,7 @@ pub use network::{
 };
 pub use pacer::{DEFAULT_BUDGET_S, MAX_FRAME_S, Pacer, scale_from_slider, slider_from_scale};
 pub use placement::Placement;
+pub use refs::{EditId, NodeRef, Refs, RoadRef, Unresolved};
 pub use rusthour_core::Config;
 pub use signal::{SignalSnapshot, SignalState};
 pub use snapshot::{DriverProfile, VehicleClass, VehicleId, VehicleSnapshot};
