@@ -619,38 +619,39 @@ impl Engine {
         let vs = &self.vehicles;
         let (net, lanes) = (&self.network, &self.lanes);
         for (q, lane) in vs.lanes.iter().enumerate() {
-            let mut ahead: Option<usize> = None;
+            // Every vehicle of a lane is on the same road and lane.
+            let Some(&head) = lane.front() else {
+                continue;
+            };
+            let (road, ix) = (
+                &net.roads[vs.road(head as usize) as usize],
+                vs.lane_of(head as usize),
+            );
+            // The leader's rear and speed.
+            let mut ahead: Option<(f64, f64)> = None;
             // The lane to the left on a road outside towns, and how many of
             // its vehicles have their rear ahead of the current one.
-            let left = lane.front().and_then(|&h| {
-                let road = &net.roads[vs.road(h as usize) as usize];
-                let has_left = vs.lane_of(h as usize) + 1 < road.lanes;
-                (has_left && road.speed_limit_mps > OUT_OF_TOWN_MPS).then(|| vs.lane(q + 1))
-            });
+            let has_left = ix + 1 < road.lanes;
+            let left = (has_left && road.speed_limit_mps > OUT_OF_TOWN_MPS).then(|| vs.lane(q + 1));
             let mut passed = 0;
             // The lanes to either side on a multi-lane road.
-            let sides = lane.front().map_or([None, None], |&h| {
-                let (n, l) = (
-                    net.roads[vs.road(h as usize) as usize].lanes,
-                    vs.lane_of(h as usize),
-                );
-                [(l > 0).then(|| q - 1), (l + 1 < n).then(|| q + 1)]
-            });
+            let sides = [
+                (ix > 0).then(|| vs.lane(q - 1)),
+                has_left.then(|| vs.lane(q + 1)),
+            ];
             let mut side_ahead = [(0, None); 2];
             for &s in lane {
                 let s = s as usize;
-                let (p, v) = (&vs.params[s], vs.speed_mps[s]);
-                let road = &net.roads[vs.road(s) as usize];
-                let leader = if let Some(l) = ahead {
+                let (p, v, pos) = (&vs.params[s], vs.speed_mps[s], vs.pos_m[s]);
+                let leader = if let Some((rear, speed_mps)) = ahead {
                     Some(Leader {
-                        gap_m: (vs.pos_m[l] - vs.params[l].length_m - vs.pos_m[s]).max(0.0),
-                        speed_mps: vs.speed_mps[l],
+                        gap_m: (rear - pos).max(0.0),
+                        speed_mps,
                     })
                 } else {
-                    let dist_m = road.length_m - vs.pos_m[s];
-                    let mut leader =
-                        leader_ahead(net, lanes, vs, s, vs.lane_of(s), dist_m).map(|(l, _)| l);
-                    let mut limit = leader.map_or(f64::INFINITY, |l| vs.pos_m[s] + l.gap_m);
+                    let dist_m = road.length_m - pos;
+                    let mut leader = leader_ahead(net, lanes, vs, s, ix, dist_m).map(|(l, _)| l);
+                    let mut limit = leader.map_or(f64::INFINITY, |l| pos + l.gap_m);
                     if self.stop[q] {
                         // Stop line: a standing obstacle at the road end, unless
                         // the next road's tail still sticks out nearer. The
@@ -674,12 +675,12 @@ impl Engine {
                 // Let in a car ahead beside that must merge into this lane (M3.12).
                 for (side, state) in sides.iter().zip(&mut side_ahead) {
                     if let &Some(side) = side {
-                        a = a.min(merge_cap(net, lanes, vs, vs.lane(side), state, s, v0));
+                        a = a.min(merge_cap(net, lanes, vs, side, state, s, v0));
                     }
                 }
                 // Speed governor: noise can't push a truck past its cap.
                 accel[s] = a.min((p.max_speed_mps - v) / dt).max(-MAX_DECEL_MPS2);
-                ahead = Some(s);
+                ahead = Some((pos - p.length_m, v));
             }
         }
         self.vehicles.accel_mps2 = accel;
