@@ -718,11 +718,12 @@ impl Engine {
         for lane in &vs.lanes {
             for &s in lane {
                 let u = s as usize;
-                let (route, mut k) = (&vs.route[u], vs.route_pos[u] as usize);
                 let mut pos = vs.pos_m[u];
-                if pos < net.roads[route[k] as usize].length_m {
+                // `road(u)`, not the route: most heads stay, and this skips a load.
+                if pos < net.roads[vs.road(u) as usize].length_m {
                     break;
                 }
+                let (route, mut k) = (&vs.route[u], vs.route_pos[u] as usize);
                 // Arriving vehicles stay for phase 7.
                 let mut lane = vs.lane_of(u);
                 while k + 1 < route.len() && pos >= net.roads[route[k] as usize].length_m {
