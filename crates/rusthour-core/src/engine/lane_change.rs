@@ -198,7 +198,7 @@ fn leader_of(
         return Some(behind(vs, slot, l));
     }
     let dist_m = net.roads[vs.road(slot) as usize].length_m - vs.pos_m[slot];
-    leader_ahead(net, lanes, vs, slot, lane, dist_m).map(|(l, _)| l)
+    leader_ahead(net, lanes, vs, slot, (lane, None), dist_m).map(|(l, _)| l)
 }
 
 /// The new leader and follower of `slot` in `LaneId` `q`, if the gaps to
