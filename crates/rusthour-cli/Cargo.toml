@@ -17,6 +17,7 @@ rusthour-api.workspace = true
 rusthour-import.workspace = true
 clap.workspace = true
 serde_json.workspace = true
+toml.workspace = true
 
 [lints]
 workspace = true

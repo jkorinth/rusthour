@@ -192,3 +192,81 @@ fn the_driver_and_fleet_mix_are_options_and_in_the_output() {
         "{err}"
     );
 }
+
+#[test]
+fn patches_apply_with_warnings_and_unresolved_targets_exit_2() {
+    let dir = std::env::temp_dir().join(format!("rusthour-cli-patch-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let map = ring_map(&dir);
+    let patch = |name: &str, text: &str| {
+        let path = dir.join(name);
+        std::fs::write(&path, text).unwrap();
+        path.to_str().unwrap().to_owned()
+    };
+    let slow = patch(
+        "slow.toml",
+        r#"
+        map = { area = "bensheim-1km", source_date = "2026-10-20" }
+        [[edit]]
+        kind = "speed_limit"
+        id = "slow-ring"
+        road = { way = 700, from_node = 1, to_node = 2 }
+        kmh = 20
+        "#,
+    );
+    let close = patch(
+        "close.json",
+        r#"{ "edit": [{ "kind": "close", "id": "close-ring", "road": { "way": 701, "from_node": 1, "to_node": 2 } }] }"#,
+    );
+    let args = |patches: &[&str]| {
+        let mut args = vec!["run", "--map", map.to_str().unwrap(), "--steps", "50"];
+        for p in patches {
+            args.extend(["--patch", p]);
+        }
+        Command::new(env!("CARGO_BIN_EXE_rusthour"))
+            .args(args)
+            .output()
+            .unwrap()
+    };
+
+    let out = args(&[&slow, &close]);
+    let err = String::from_utf8_lossy(&out.stderr);
+    assert!(out.status.success(), "{err}");
+    assert!(
+        err.contains("warning: patch made on bensheim-1km of 2026-10-20"),
+        "{err}"
+    );
+    assert!(
+        err.contains("warning: closing roads (`close-ring`) cuts off"),
+        "{err}"
+    );
+
+    let gone = patch(
+        "gone.toml",
+        r#"
+        [[edit]]
+        kind = "close"
+        id = "close-gone"
+        road = { way = 700, from_node = 1, to_node = 3 }
+        [[edit]]
+        kind = "lanes"
+        id = "slow-ring"
+        road = { way = 702, from_node = 1, to_node = 2 }
+        lanes = 2
+        "#,
+    );
+    let out = args(&[&slow, &gone]);
+    let err = String::from_utf8_lossy(&out.stderr);
+    assert_eq!(out.status.code(), Some(2), "{err}");
+    assert!(out.stdout.is_empty());
+    assert!(
+        err.contains("error: edit `close-gone` targets road way 700 from 1 to 3")
+            && err.contains("way 700 from 1 to 2"),
+        "{err}"
+    );
+    assert!(
+        err.contains("error: edit id `slow-ring` is used more than once"),
+        "{err}"
+    );
+    std::fs::remove_dir_all(dir).ok();
+}

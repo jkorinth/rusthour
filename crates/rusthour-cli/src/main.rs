@@ -3,7 +3,7 @@
 use std::path::{Path, PathBuf};
 
 use clap::{CommandFactory as _, Parser, Subcommand, error::ErrorKind};
-use rusthour_api::{Config, DriverMix, FleetMix, InProcess, Network, Simulation};
+use rusthour_api::{Config, DriverMix, FleetMix, InProcess, MapRef, Network, Patch, Simulation};
 
 /// Rust Hour traffic simulator, headless mode.
 #[derive(Debug, Parser)]
@@ -48,6 +48,11 @@ enum Command {
         /// [default: car=85,van=8,truck=5,bus=2]
         #[arg(long, value_name = "NAME=SHARE,...")]
         fleet: Option<FleetMix>,
+        /// Network edits to apply to the map, a TOML file (JSON if it ends
+        /// in `.json`); repeat for several, applied in order. Exits with 2
+        /// if an edit's target is not on the map (needs --map).
+        #[arg(long, value_name = "FILE")]
+        patch: Vec<PathBuf>,
     },
 }
 
@@ -62,19 +67,24 @@ fn main() {
             report_stuck,
             drivers,
             fleet,
+            patch,
         } => {
             // Not clap's `requires`: its usage line lists every option given,
             // which made `--steps` look required.
-            if vehicles > 0 && map.is_none() {
-                let mut cmd = Cli::command();
-                cmd.build();
-                cmd.find_subcommand_mut("run")
-                    .expect("defined above")
-                    .error(
-                        ErrorKind::MissingRequiredArgument,
-                        "--vehicles needs a road network: add --map <file.rhnet>",
-                    )
-                    .exit();
+            for (needs_map, option) in
+                [(vehicles > 0, "--vehicles"), (!patch.is_empty(), "--patch")]
+            {
+                if needs_map && map.is_none() {
+                    let mut cmd = Cli::command();
+                    cmd.build();
+                    cmd.find_subcommand_mut("run")
+                        .expect("defined above")
+                        .error(
+                            ErrorKind::MissingRequiredArgument,
+                            format!("{option} needs a road network: add --map <file.rhnet>"),
+                        )
+                        .exit();
+                }
             }
             // Parsing validated both mixes, so they normalise.
             let drivers = drivers.unwrap_or_default().normalised().expect("validated");
@@ -88,8 +98,10 @@ fn main() {
             };
             let mut sim = match map.map(|path| load(&path)) {
                 None => InProcess::new(config, seed),
-                Some(Ok(network)) => InProcess::with_network(config, seed, network)
-                    .unwrap_or_else(|err| fail(&format!("invalid map: {err}"))),
+                Some(Ok((meta, network))) => {
+                    InProcess::with_network(config, seed, patched(network, &meta, &patch))
+                        .unwrap_or_else(|err| fail(&format!("invalid map: {err}")))
+                }
                 Some(Err(msg)) => fail(&msg),
             };
             sim.step(steps);
@@ -139,11 +151,50 @@ fn stuck_roads(sim: &impl Simulation) -> (Vec<serde_json::Value>, usize) {
     (top, counts.len())
 }
 
-fn load(path: &Path) -> Result<Network, String> {
+fn load(path: &Path) -> Result<(MapRef, Network), String> {
     let bytes = std::fs::read(path).map_err(|e| format!("cannot read {}: {e}", path.display()))?;
-    let (_, network) = rusthour_import::rhnet::decode(&bytes)
+    let (meta, network) = rusthour_import::rhnet::decode(&bytes)
         .map_err(|e| format!("{} is not a usable map: {e}", path.display()))?;
-    Ok(network)
+    let map = MapRef {
+        area: meta.area,
+        source_date: meta.source_date,
+    };
+    Ok((map, network))
+}
+
+/// `network` with the patch files applied. Prints warnings; exits with 2,
+/// listing every failure, if a target doesn't resolve.
+fn patched(network: Network, map: &MapRef, files: &[PathBuf]) -> Network {
+    if files.is_empty() {
+        return network;
+    }
+    let patches: Vec<Patch> = (files.iter())
+        .map(|path| {
+            let text = std::fs::read_to_string(path)
+                .unwrap_or_else(|e| fail(&format!("cannot read {}: {e}", path.display())));
+            let parsed = if path.extension().is_some_and(|e| e == "json") {
+                serde_json::from_str(&text).map_err(|e| e.to_string())
+            } else {
+                toml::from_str(&text).map_err(|e| e.to_string())
+            };
+            parsed
+                .unwrap_or_else(|e| fail(&format!("{} is not a usable patch: {e}", path.display())))
+        })
+        .collect();
+    match rusthour_api::apply(&network, map, &patches) {
+        Ok((network, _, warnings)) => {
+            for w in warnings {
+                eprintln!("warning: {w}");
+            }
+            network
+        }
+        Err(errors) => {
+            for e in errors {
+                eprintln!("error: {e}");
+            }
+            std::process::exit(2);
+        }
+    }
 }
 
 fn fail(msg: &str) -> ! {
