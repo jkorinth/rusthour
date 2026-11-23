@@ -11,6 +11,7 @@ mod inspect;
 mod mix;
 mod network;
 mod pacer;
+mod patch;
 mod placement;
 mod refs;
 mod signal;
@@ -28,6 +29,7 @@ pub use network::{
     OsmWayPart, Point, Road, RoadClass, RoadId, Turns,
 };
 pub use pacer::{DEFAULT_BUDGET_S, MAX_FRAME_S, Pacer, scale_from_slider, slider_from_scale};
+pub use patch::{Edit, MapRef, Patch, PatchError, PatchWarning, Target, apply};
 pub use placement::Placement;
 pub use refs::{EditId, NodeRef, Refs, RoadRef, Unresolved};
 pub use rusthour_core::Config;
