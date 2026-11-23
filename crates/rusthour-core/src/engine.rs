@@ -60,6 +60,8 @@ const MAX_FALLBACK_REPLANS_PER_STEP: u32 = 4;
 /// `wrong_lane_ticks` of a head with no route from its lane: it goes from
 /// the wrong one rather than stand until the stuck net removes it.
 const NO_ROUTE: u16 = u16::MAX;
+/// No lane known.
+const NO_LANE: u8 = u8::MAX;
 
 /// The M2 car, now the normal driver.
 #[cfg(test)]
@@ -158,6 +160,10 @@ pub struct Engine {
     /// Per `LaneId`: the head was told to stop at the road end (phase 3
     /// writes, phase 4 reads).
     stop: Vec<bool>,
+    /// Per `LaneId`: the lane the head enters on its next road, if phase 3
+    /// found it (it does for every head within its look-ahead), else
+    /// `NO_LANE`; phase 4 reads it.
+    head_lane: Vec<u8>,
     /// Per `LaneId`: why `stop` is set; written with it, never read by a
     /// phase, not hashed (ADR-0005, addendum M3.11).
     stop_cause: Vec<LaneStop>,
@@ -249,6 +255,7 @@ impl Engine {
             vehicles: Vehicles::new(&network),
             head_limit_m: vec![f64::INFINITY; lanes],
             stop: vec![false; lanes],
+            head_lane: vec![NO_LANE; lanes],
             stop_cause: vec![LaneStop::Go; lanes],
             exits: Exits::new(),
             controls,
@@ -494,6 +501,7 @@ impl Engine {
     /// and after `WRONG_LANE_MS` standing re-plans from its lane (ADR-0005 §7).
     fn decide(&mut self) {
         self.stop.fill(false);
+        self.head_lane.fill(NO_LANE);
         self.stop_cause.fill(LaneStop::Go);
         let (net, lanes, vs) = (&self.network, &self.lanes, &mut self.vehicles);
         let wrong_lane_ticks = WRONG_LANE_MS / u64::from(self.config.dt_ms);
@@ -517,6 +525,7 @@ impl Engine {
                         continue;
                     }
                     let to_lane = next_lane(net, lanes, vs, u, r, lane);
+                    self.head_lane[vs.lane_id(r, lane)] = to_lane;
                     let mut ap = Approach {
                         from_road: r,
                         lane,
@@ -559,6 +568,7 @@ impl Engine {
                                 vs.route_pos[u] = 0;
                                 ap.to_road = route[1];
                                 ap.to_lane = next_lane(net, lanes, vs, u, r, lane);
+                                self.head_lane[vs.lane_id(r, lane)] = ap.to_lane;
                                 ap.blocked = blocked(net, vs, u, r, ap.to_lane);
                             } else {
                                 *waited = NO_ROUTE;
@@ -650,7 +660,9 @@ impl Engine {
                     })
                 } else {
                     let dist_m = road.length_m - pos;
-                    let mut leader = leader_ahead(net, lanes, vs, s, ix, dist_m).map(|(l, _)| l);
+                    let entered = (self.head_lane[q] != NO_LANE).then_some(self.head_lane[q]);
+                    let mut leader =
+                        leader_ahead(net, lanes, vs, s, (ix, entered), dist_m).map(|(l, _)| l);
                     let mut limit = leader.map_or(f64::INFINITY, |l| pos + l.gap_m);
                     if self.stop[q] {
                         // Stop line: a standing obstacle at the road end, unless
@@ -945,13 +957,14 @@ pub fn run_and_hash(config: Config, seed: u64, steps: u64) -> u64 {
 /// The leader of lane head `slot`, `dist_m` before its road end in `lane`
 /// (its own, or one it weighs changing to), and its slot:
 /// the tail of the next route road that has one, within `50 m + v²/b`
-/// (ADR-0004 §2). The destination's end is free road.
+/// (ADR-0004 §2). The destination's end is free road. `entered` is the lane it
+/// enters on its next road, if already known.
 fn leader_ahead(
     net: &Network,
     lanes: &Lanes,
     vs: &Vehicles,
     slot: usize,
-    mut lane: u8,
+    (mut lane, entered): (u8, Option<u8>),
     mut dist_m: f64,
 ) -> Option<(Leader, u32)> {
     let horizon = horizon(&vs.params[slot], vs.speed_mps[slot]);
@@ -962,7 +975,14 @@ fn leader_ahead(
         if dist_m > horizon {
             return None;
         }
-        lane = lanes.entry(net, from, lane, r, route.get(k + 2 + i).copied());
+        let after = route.get(k + 2 + i).copied();
+        lane = match entered {
+            Some(e) if i == 0 => {
+                debug_assert_eq!(e, lanes.entry(net, from, lane, r, after));
+                e
+            }
+            _ => lanes.entry(net, from, lane, r, after),
+        };
         from = r;
         if let Some(&slot_t) = vs.lane(vs.lane_id(r, lane)).back() {
             let t = slot_t as usize;
