@@ -23,6 +23,19 @@ const STOOD_MPS: f64 = 0.1;
 /// lets an overdue lower-ranked head go first (M4.12).
 const JAM_MPS: f64 = 10.0 / 3.6;
 
+/// A road's rank at its end node, see [`rank`].
+type Rank = (bool, bool, bool, u8, f64, u8);
+
+/// Per approach, found once per `decide`: its arm, rank and exit point,
+/// and whether others yield to it.
+#[derive(Debug, Clone, Copy, Default)]
+struct Seen {
+    arm: usize,
+    rank: Rank,
+    exit: Option<u16>,
+    competing: bool,
+}
+
 /// One incoming lane's state.
 #[derive(Debug, Clone, Copy)]
 struct Arm {
@@ -60,6 +73,8 @@ pub struct Priority {
     /// Slot that won the last deadlock; it wins again while it is a
     /// candidate, so the pointer turns per vehicle served, not per tick.
     winner: u32,
+    /// `decide` scratch, one per approach, sized for every arm; not hashed.
+    seen: Vec<Seen>,
 }
 
 impl Priority {
@@ -123,6 +138,7 @@ impl Priority {
             }));
         }
         Self {
+            seen: Vec::with_capacity(arms.len()),
             arms,
             exits: outgoing.iter().map(|&r| (r, at(false, r))).collect(),
             patience,
@@ -140,11 +156,18 @@ impl Priority {
         }
     }
 
-    /// The rank of `a`'s road here.
-    fn class(&self, net: &Network, a: &Approach) -> (bool, bool, bool, u8, f64, u8) {
-        match self.arms[self.arm(a)].signal {
-            None => rank(net, a.from_road),
-            Some(signal) => (false, signal, false, 0, 0.0, 0),
+    /// What `decide` needs to know of `a`, at arm `k`.
+    fn seen(&self, net: &Network, k: usize, a: &Approach) -> Seen {
+        let (exits, arm) = (&self.exits, &self.arms[k]);
+        Seen {
+            arm: k,
+            rank: match arm.signal {
+                None => rank(net, a.from_road),
+                Some(signal) => (false, signal, false, 0, 0.0, 0),
+            },
+            exit: (exits.binary_search_by_key(&a.to_road, |&(r, _)| r).ok()).map(|i| exits[i].1),
+            // The heads others yield to: arriving, able to enter, and past any stop sign.
+            competing: arriving(a) && !a.blocked && (!arm.stop_sign || arm.stood),
         }
     }
 
@@ -164,16 +187,14 @@ impl Priority {
     /// The movements of `a` and `b` cross or merge, that is, enter the same
     /// lane of one road (ADR-0005 §5). An unknown target conflicts with
     /// everything.
-    fn conflict(&self, a: &Approach, b: &Approach) -> bool {
-        let exit =
-            |to| (self.exits.binary_search_by_key(&to, |&(r, _)| r).ok()).map(|i| self.exits[i].1);
-        let (Some(a2), Some(b2)) = (exit(a.to_road), exit(b.to_road)) else {
+    fn conflict(&self, (a, sa): (&Approach, &Seen), (b, sb): (&Approach, &Seen)) -> bool {
+        let (Some(a2), Some(b2)) = (sa.exit, sb.exit) else {
             return true;
         };
         if a2 == b2 {
             return a.to_lane == b.to_lane;
         }
-        let (a1, b1) = (self.arms[self.arm(a)].point, self.arms[self.arm(b)].point);
+        let (a1, b1) = (self.arms[sa.arm].point, self.arms[sb.arm].point);
         let (lo, hi) = (a1.min(a2), a1.max(a2));
         let inside = |p| lo < p && p < hi;
         a1 != b1 && inside(b1) != inside(b2)
@@ -233,11 +254,17 @@ impl Controller for Priority {
     fn decide(&mut self, net: &Network, tick: u64, aps: &[Approach], go: &mut [bool]) {
         // Forget heads that left; note new arrivals and stop-sign stands.
         let mut rest = aps.iter().peekable();
-        for arm in &mut self.arms {
+        let mut seen = std::mem::take(&mut self.seen);
+        seen.clear();
+        for (k, arm) in self.arms.iter_mut().enumerate() {
             let Some(a) = rest.next_if(|a| (a.from_road, a.lane) == (arm.road, arm.lane)) else {
                 (arm.head, arm.since, arm.released, arm.stood) = (NONE, NEVER, NONE, false);
                 continue;
             };
+            seen.push(Seen {
+                arm: k,
+                ..Seen::default()
+            });
             if a.slot != arm.head {
                 (arm.head, arm.since, arm.released, arm.stood) = (a.slot, NEVER, NONE, false);
             }
@@ -250,14 +277,13 @@ impl Controller for Priority {
             rest.next().is_none(),
             "approaches from lanes not ending here"
         );
+        for (s, a) in seen.iter_mut().zip(aps) {
+            *s = self.seen(net, s.arm, a);
+        }
 
-        let arm = |i: usize| &self.arms[self.arm(&aps[i])];
+        let arm = |i: usize| &self.arms[seen[i].arm];
         let since = |i: usize| arm(i).since;
-        // The heads others yield to: arriving, able to enter, and past any stop sign.
-        let competing = |i: usize| {
-            let a = &aps[i];
-            arriving(a) && !a.blocked && (!arm(i).stop_sign || arm(i).stood)
-        };
+        let competing = |i: usize| seen[i].competing;
         // `i` yields to competing `j` with a conflicting movement: a higher
         // rank, unless `j` crawls and `i` is overdue and there first; or the
         // same rank and `i` turns left across `j` coming straight or turning
@@ -265,7 +291,7 @@ impl Controller for Priority {
         // and there first.
         let yields = |i: usize, j: usize| {
             let (a, b) = (&aps[i], &aps[j]);
-            if i == j || !competing(j) || !self.conflict(a, b) {
+            if i == j || !competing(j) || !self.conflict((a, &seen[i]), (b, &seen[j])) {
                 return false;
             }
             // Impatience: past the limit, the earlier arrival goes.
@@ -279,7 +305,7 @@ impl Controller for Priority {
                     && !net.roads[hi.from_road as usize].roundabout
                     && since(i) != since(j)
             };
-            match self.class(net, b).partial_cmp(&self.class(net, a)) {
+            match seen[j].rank.partial_cmp(&seen[i].rank) {
                 Some(std::cmp::Ordering::Greater) => !waives(b, i) || first_come,
                 Some(std::cmp::Ordering::Less) => waives(a, j) && first_come,
                 Some(std::cmp::Ordering::Equal) => {
@@ -310,12 +336,11 @@ impl Controller for Priority {
         // Deadlock: every competing head yields. The top class's earliest
         // arrival goes, ties to the first arm from the rotating pointer.
         let stuck = (0..aps.len()).all(|i| !(go[i] && competing(i)));
-        let top = (0..aps.len()).filter(|&i| competing(i)).filter(|&i| {
-            !(0..aps.len())
-                .any(|j| competing(j) && self.class(net, &aps[j]) > self.class(net, &aps[i]))
-        });
+        let top = (0..aps.len())
+            .filter(|&i| competing(i))
+            .filter(|&i| !(0..aps.len()).any(|j| competing(j) && seen[j].rank > seen[i].rank));
         let n = self.arms.len();
-        let turn = |i: usize| (self.arm(&aps[i]) + n - self.pointer as usize) % n;
+        let turn = |i: usize| (seen[i].arm + n - self.pointer as usize) % n;
         // Only searched when stuck: it is O(heads²).
         let pick = if stuck {
             top.min_by_key(|&i| (aps[i].slot != self.winner, since(i), turn(i)))
@@ -326,8 +351,7 @@ impl Controller for Priority {
             go[i] = true;
             if aps[i].slot != self.winner {
                 self.winner = aps[i].slot;
-                self.pointer =
-                    u32::try_from((self.arm(&aps[i]) + 1) % n).expect("arm count fits u32");
+                self.pointer = u32::try_from((seen[i].arm + 1) % n).expect("arm count fits u32");
             }
         }
 
@@ -337,12 +361,12 @@ impl Controller for Priority {
         }
 
         // Commitment: `go` that can no longer stop holds until it leaves.
-        for (a, &g) in aps.iter().zip(go.iter()) {
+        for ((a, &g), s) in aps.iter().zip(go.iter()).zip(&seen) {
             if g && !a.can_stop {
-                let k = self.arm(a);
-                self.arms[k].released = a.slot;
+                self.arms[s.arm].released = a.slot;
             }
         }
+        self.seen = seen;
     }
 
     fn hash_into(&self, h: &mut StateHasher) {
@@ -677,7 +701,8 @@ mod tests {
             let p = priority(&net);
             let ap = |(road, lane, to_road, to_lane)| Approach { lane, to_road, to_lane, ..ap(road, 0, 2.0, 0.0) };
             let (a, b) = (ap(a), ap(b));
-            prop_assert_eq!(p.conflict(&a, &b), p.conflict(&b, &a), "{:?} vs {:?}", a, b);
+            let (sa, sb) = (p.seen(&net, p.arm(&a), &a), p.seen(&net, p.arm(&b), &b));
+            prop_assert_eq!(p.conflict((&a, &sa), (&b, &sb)), p.conflict((&b, &sb), (&a, &sa)), "{:?} vs {:?}", a, b);
         }
 
         /// On every tick: if any unblocked head is arriving, one of them
