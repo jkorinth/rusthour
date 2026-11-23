@@ -334,3 +334,89 @@ edit, and `--road`/`?road=` keep taking `RoadId`s.
 - How often keys break over months is not measured; the assets workflow
   can report gone and new keys against the previous build when it next
   rebuilds (backlog).
+
+## Addendum (M5.1): patches as built
+
+The decisions M5.1 took where the ADR left room.
+
+- **Where it lives:** `rusthour-api` (`refs.rs`, `patch.rs`). `apply` is a
+  pure function from the api `Network` to a new one, because the keys live
+  only on api types; `rusthour-core` is unchanged and the golden hash with
+  no patches stays as it was. The core's `Router` is only called to find
+  roads that closures cut off (below).
+- **Signature:** `apply(base: &Network, map: &MapRef, patches: &[Patch])
+  -> Result<(Network, Refs, Vec<PatchWarning>), Vec<PatchError>>`. `map`
+  is the loaded asset's area and extract date, for the provenance warning.
+- **Format:** a patch is an optional `[map]` table (`area`,
+  `source_date`) and a list of `[[edit]]` tables, each with `kind`, `id`
+  and the kind's fields:
+
+  ```toml
+  [[edit]]
+  kind = "speed_limit"
+  id = "slow-b47"
+  road = { way = 198045888, from_node = 15837308, to_node = 1573379680 }
+  kmh = 30
+  ```
+
+  `Edit` is one internally tagged enum whose variants each carry `id`,
+  rather than a struct with a flattened kind: serde can't reject unknown
+  fields through `flatten`, and for hand-written files a misspelt optional
+  field must be an error, not silently ignored. `Edit` is
+  `#[non_exhaustive]`; M5.3 adds a `roundabout` variant.
+- **Edit kinds:**
+
+  | `kind` | Fields | Effect |
+  | --- | --- | --- |
+  | `junction_control` | `junction`, `control` | `end_control` of every road into the node: all-way stop or give-way, signals, or `none` (right of way by class) |
+  | `arm_control` | `road`, `control` | `end_control` of that road |
+  | `lanes` | `road`, `lanes` (1–16) | lane count; turn lanes kept if the count is unchanged, else dropped with a warning |
+  | `turn_lanes` | `road`, `turn_lanes` | turn lanes as an OSM `turn:lanes` string (left to right, `\|` and `;`), and the lane count from it |
+  | `speed_limit` | `road`, `kmh` (1–250) | speed limit |
+  | `close`, `reopen` | `road` | one direction of a road |
+
+  `control` is `none`, `give_way`, `stop` or `signals`. `turn_lanes` is
+  parsed by `Turns::parse_osm_lanes`, which the importer now shares, so a
+  patch accepts exactly the values a map does.
+- **Closing a road** keeps the road, its id and its key, and removes every
+  movement into and out of it; its `end_control` becomes `none`, so a
+  signal plan has no phase for it. The router's SCC filter then leaves it
+  out of demand and routes, and routing priors, landmarks, lane sets and
+  signal plans are rebuilt from the patched network when the engine is
+  built, as for any map. A closed road is not *deleted*: `reopen` restores
+  its movements of the base map (except those to or from roads still
+  closed). Roads that were routable before and are not after, other than
+  the closed ones, give one `CutOff` warning naming the closing edits.
+- **Conflicts:** the attributes are control, lanes (set by `lanes` and
+  `turn_lanes`), speed limit and closure (set by `close` and `reopen`); a
+  second edit of the same attribute of the same road wins with an
+  `Overrides` warning. A `junction_control` counts per arm.
+- **All failures together:** every edit is resolved and checked, across
+  all patches, and errors are collected in edit order (unresolved targets,
+  out-of-range values, duplicate edit ids) before anything is returned.
+  No M5.1 edit creates or removes keys, so this equals resolving each edit
+  on the state the previous ones left. `Refs::delete_node` (crate-private)
+  and `Unresolved::Deleted` are ready for M5.3's roundabout edit.
+- **Provenance:** one warning per distinct `[map]` that differs from the
+  loaded map; a patch without `[map]` gets none.
+- **Messages:** `PatchError` and `PatchWarning` implement `Display` in the
+  §2 shape. The road's name is not stored in M5.1 patches (a TOML comment
+  serves hand-written files); M5.4 may add an optional `name` when the
+  viewer writes patches. Hints list keys only.
+- **Validation:** `Network` validation (and `apply`) rejects duplicate OSM
+  keys with `NetworkError::DuplicateOsmNode` and `DuplicateOsmRoad`.
+- **CLI:** `rusthour run --map <file> --patch <file> [--patch <file>…]`
+  takes TOML, or JSON for a `.json` file, applied in order. Warnings go to
+  stderr as `warning: …`; any `PatchError` prints `error: …` per failure
+  and exits with 2; an unreadable or malformed patch file exits with 1.
+- **Demo (sanity check, no statistics):** bensheim-5km, 5,000 vehicles,
+  seed 42, 72,000 steps (2 simulated hours), release build:
+
+  | Run | Arrived | Removed as stuck | Roads with removals | Wall time |
+  | --- | ---: | ---: | ---: | ---: |
+  | No patch | 11,341 | 37 | 29 | 68 s |
+  | 30 km/h on all 146 roads of Berliner Ring | 11,157 | 49 | 35 | 69 s |
+  | Rodensteinstraße closed (way 42376313, both directions) | 11,484 | 101 | 61 | 67 s |
+
+  The closure warns that it cuts off 6 roads behind it. The hash without
+  patches equals the one of `main`.
