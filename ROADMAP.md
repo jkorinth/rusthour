@@ -219,7 +219,7 @@ extend them.
 
 | ID | Item | Status | Owner |
 | --- | --- | --- | --- |
-| M5.0 | ADR: stable ids for edits — patches must keep pointing at the same road/intersection after re-import or other edits, which list-position ids (`NodeId`, `RoadId`, road pairs) don't guarantee; likely derived from the OSM source ids carried since M1.2, mapped to dense indices at load time; an id that no longer resolves after a re-import must fail loudly, never match a nearby item | claimed | docs/M5.0-stable-ids |
+| M5.0 | ADR: stable ids for edits — patches must keep pointing at the same road/intersection after re-import or other edits, which list-position ids (`NodeId`, `RoadId`, road pairs) don't guarantee; likely derived from the OSM source ids carried since M1.2, mapped to dense indices at load time; an id that no longer resolves after a re-import must fail loudly, never match a nearby item (ADR-0008) | done | docs/M5.0-stable-ids |
 | M5.1 | Network edit model (change controller, lanes, speed limits, close roads) as serializable patches, addressed by the stable ids from M5.0 | todo | |
 | M5.2 | Roundabout controller with gap acceptance (driver-dependent); first moves `holds_at_red` and `holds_at_stop_sign` into the `Controller` trait (M4.6) | todo | |
 | M5.3 | Convert crossroads → roundabout edit, incl. geometry | todo | |
