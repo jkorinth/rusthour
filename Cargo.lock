@@ -3333,6 +3333,7 @@ dependencies = [
  "rusthour-core",
  "serde",
  "serde_json",
+ "toml",
 ]
 
 [[package]]
@@ -3343,6 +3344,7 @@ dependencies = [
  "rusthour-api",
  "rusthour-import",
  "serde_json",
+ "toml",
 ]
 
 [[package]]
