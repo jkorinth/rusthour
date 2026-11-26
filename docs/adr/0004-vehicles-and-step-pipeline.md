@@ -513,3 +513,84 @@ with navigation, information delay, local-only observation) is M6.4.
   At the viewer's default density (about one vehicle per 50 m, 5,000 here)
   teleports stay above the 5% target; at about one per 60 m (4,000) they
   are below it. The rest is gridlock recovery, M3.5.
+
+## Addendum (M5.10): step profile, cheap wins, new target
+
+M5.10 had to bring `step_multilane/5000` to 0.7 ms or re-set the target
+with evidence. The target is not reached; this addendum gives the
+evidence and the new target. The state hash and the golden hash are
+unchanged: every change below computes the same values in the same order.
+
+- **Measured** with callgrind (200 steps after 3,000 on the bench grids,
+  instructions per step), its cache simulation, criterion, and bensheim-5km
+  (seed 42, 5,000 vehicles). `main` at eb9c357 before. Wall time on the
+  2-core container is noisy: the same `main` binary took 0.93 to 1.40 ms
+  per `step_multilane/5000` step on different days. So instructions are
+  the measure here, and times are compared only within one run.
+
+  | Measure | Before | After | Change |
+  | --- | ---: | ---: | ---: |
+  | `step/5000` instructions per step | 4.25 M | 3.65 M | −14% |
+  | `step_multilane/5000` instructions per step | 6.38 M | 5.16 M | −19% |
+  | bensheim-5km instructions per step (first 15 min) | 4.14 M | 3.72 M | −10% |
+  | `step/5000` criterion, same run | 831 / 791 µs | 636 / 649 µs | −20% |
+  | `step_multilane/5000` criterion, same run | 1.34 / 1.40 ms | 1.15 / 1.37 ms | −2 to −14% |
+  | bensheim-5km wall time, 2 simulated hours | 57.3 / 58.4 s | 54.3 / 54.7 s | −6% |
+
+  The bensheim output (arrivals, removals, state hash) is identical.
+- **Where the time goes**, `step_multilane/5000`, thousands of
+  instructions per step with the phases kept out of line (which adds about
+  6%), before → after:
+
+  | Phase | Before | After |
+  | --- | ---: | ---: |
+  | 4 accelerations (IDM, the right-pass ban, letting mergers in, the head's look-ahead) | 2,685 | 2,244 |
+  | 3 decisions (approaches, controllers) | 1,845 | 1,521 |
+  | 2 routes (A\*, landmark tables every 5 s) | 451 | 451 |
+  | 5 integration | 440 | 440 |
+  | 2b lane changes (MOBIL) | 503 | 301 |
+  | 7 arrivals and the stuck check | 216 | 216 |
+  | 6 transfers | 197 | 182 |
+  | 1 spawns | 102 | 100 |
+
+  It is compute, not memory: 2 to 3 instructions per cycle, L1 data
+  misses at about 25 per vehicle-step (126,000 per step after, 134,000
+  before), and the working set (about 3 MB) fits the 4 MB L2. Aligning
+  `IdmParams` to a cache line cut L1 misses by 5% and changed no time, so
+  it was dropped.
+- **What changed**, each its own commit:
+  - `Lanes::entry` returns the turn's default lane when the next movement
+    allows it, without the search; `Lanes::movement` scans a road's few
+    movements instead of a binary search.
+  - `Priority::decide` finds each approach's arm, rank, exit point and
+    whether it competes once per call, not once per pair of heads, and
+    returns at once when it had no approach last time and has none now
+    (every arm is then already reset).
+  - Phase 4 reads a lane's road once and carries the leader's rear and
+    speed down the lane; it reuses the lane each head enters on its next
+    road from phase 3 (a scratch per lane, like `stop`).
+  - MOBIL checks for a side with room before it computes any
+    acceleration; in dense traffic there is often none.
+  - Phase 6 checks a head's road end through the road column, not its
+    route.
+- **Tried and dropped:** `merge_to` with the road and lane passed in
+  (−0.3%); the horizon check before the route lookup in phase 3, and
+  skipping nodes with no incoming road (no gain on either map).
+- **Why 0.7 ms needs more:** 0.7 ms needs between 3.8 M instructions per
+  step (at the rate of the M4.5 measurement) and 4.8 M (at the fastest rate
+  measured here), 7 to 26% below what is left. The large pieces left are
+  model work: per vehicle the IDM, the right-pass ban and the merge check
+  against each neighbour lane; per node the priority rule. The last
+  attempts to trim them gained under 1% each.
+- **New target:** `step_multilane/5000` ≤ 5.2 M instructions per step
+  (callgrind, as above), which is machine-independent and met. A wall-time
+  target only makes sense on a quiet machine. The larger levers, each an
+  item of its own:
+  - *Hot record per lane:* position, speed, length and acceleration of a
+    lane's vehicles stored contiguously in lane order, with a slot-to-index
+    map for ids. It removes the gather through slot indices in phases 4 to
+    7, but every lane change and transfer moves records, and the public
+    `pos_m`/`speed_mps` columns that the api and viewer read change shape.
+  - *Phases 3 and 4 in parallel:* both read only start-of-step state
+    (§2), so lanes and nodes can be split over threads natively; wasm stays
+    single-threaded. This is already in the backlog.
