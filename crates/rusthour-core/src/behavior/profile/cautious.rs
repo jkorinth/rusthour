@@ -1,7 +1,10 @@
 //! Cautious: long headway, gentle, polite (ADR-0006 §2).
 
-use super::{Driver, idm};
+use super::{Driver, Gap, idm};
 use crate::behavior::mobil::MobilParams;
+
+/// Wants gaps 0.8 s longer than normal (ADR-0009).
+pub(super) const GAP: Gap = Gap { critical_s: 5.3 };
 
 pub(super) fn driver() -> Driver {
     Driver {
@@ -12,5 +15,6 @@ pub(super) fn driver() -> Driver {
             bias_right_mps2: 0.4,
             safe_decel_mps2: 3.0,
         },
+        gap: GAP,
     }
 }

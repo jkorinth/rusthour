@@ -5,8 +5,10 @@
 
 use crate::StateHasher;
 use crate::network::Network;
+use crate::vehicle::Vehicles;
 
 pub mod priority;
+pub mod roundabout;
 pub mod signal;
 
 /// A lane head near the end of a road into the node.
@@ -38,8 +40,16 @@ pub struct Approach {
 /// Decides which approaches of one node may pass.
 pub trait Controller {
     /// Sets `go[i]` for `approaches[i]`, which are sorted by
-    /// `(from_road, lane)`.
-    fn decide(&mut self, net: &Network, tick: u64, approaches: &[Approach], go: &mut [bool]);
+    /// `(from_road, lane)`; `vs` is the vehicle state at the start of the
+    /// step, for controllers that look beyond the lane heads.
+    fn decide(
+        &mut self,
+        net: &Network,
+        vs: &Vehicles,
+        tick: u64,
+        approaches: &[Approach],
+        go: &mut [bool],
+    );
     /// Feeds the controller's state into `h`.
     fn hash_into(&self, h: &mut StateHasher);
     /// Whether `a` waits only to stand at a stop sign first; valid after
@@ -63,6 +73,8 @@ pub enum NodeControl {
     Priority(priority::Priority),
     /// Fixed-time signals (M3.4).
     Signal(signal::Signal),
+    /// A roundabout entry with gap acceptance (M5.2).
+    Roundabout(roundabout::Roundabout),
 }
 
 /// Runs `$body` with `$c` bound to the controller inside `$node`: the one
@@ -72,13 +84,21 @@ macro_rules! each {
         match $node {
             NodeControl::Priority($c) => $body,
             NodeControl::Signal($c) => $body,
+            NodeControl::Roundabout($c) => $body,
         }
     };
 }
 
 impl Controller for NodeControl {
-    fn decide(&mut self, net: &Network, tick: u64, approaches: &[Approach], go: &mut [bool]) {
-        each!(self, c => c.decide(net, tick, approaches, go));
+    fn decide(
+        &mut self,
+        net: &Network,
+        vs: &Vehicles,
+        tick: u64,
+        approaches: &[Approach],
+        go: &mut [bool],
+    ) {
+        each!(self, c => c.decide(net, vs, tick, approaches, go));
     }
 
     fn hash_into(&self, h: &mut StateHasher) {

@@ -11,7 +11,7 @@ pub mod idm;
 
 use crate::StateHasher;
 use crate::behavior::mobil::MobilParams;
-use crate::behavior::profile::Profile;
+use crate::behavior::profile::{Gap, Profile};
 use class::Class;
 use idm::IdmParams;
 use std::collections::VecDeque;
@@ -43,6 +43,8 @@ pub struct NewVehicle<'a> {
     pub params: IdmParams,
     /// MOBIL parameters.
     pub mobil: MobilParams,
+    /// Gap acceptance at roundabout entries (ADR-0009).
+    pub gap: Gap,
     /// Driver profile the parameters came from.
     pub profile: Profile,
     /// Vehicle class applied on top of it (ADR-0007).
@@ -88,6 +90,8 @@ pub struct Vehicles {
     pub wrong_lane_ticks: Vec<u16>,
     /// MOBIL parameters, set at spawn by the profile (ADR-0005 §6, ADR-0006).
     pub mobil: Vec<MobilParams>,
+    /// Gap acceptance at roundabout entries, set at spawn (ADR-0009).
+    pub gap: Vec<Gap>,
     /// Driver profile (ADR-0006).
     pub profile: Vec<Profile>,
     /// Vehicle class (ADR-0007).
@@ -144,6 +148,7 @@ impl Vehicles {
             held_ticks: Vec::new(),
             wrong_lane_ticks: Vec::new(),
             mobil: Vec::new(),
+            gap: Vec::new(),
             profile: Vec::new(),
             class: Vec::new(),
             noise_mps2: Vec::new(),
@@ -253,6 +258,7 @@ impl Vehicles {
             self.held_ticks.push(0);
             self.wrong_lane_ticks.push(0);
             self.mobil.push(MobilParams::default());
+            self.gap.push(Gap::default());
             self.profile.push(Profile::default());
             self.class.push(Class::default());
             self.noise_mps2.push(0.0);
@@ -265,6 +271,7 @@ impl Vehicles {
         let s = slot as usize;
         self.params[s] = v.params;
         self.mobil[s] = v.mobil;
+        self.gap[s] = v.gap;
         self.profile[s] = v.profile;
         self.class[s] = v.class;
         self.speed_mps[s] = v.speed_mps;
@@ -434,6 +441,7 @@ impl Vehicles {
             ] {
                 h.write_f64(x);
             }
+            h.write_f64(self.gap[s].critical_s);
             h.write_u64(self.profile[s] as u64);
             h.write_u64(self.class[s] as u64);
             h.write_f64(self.noise_mps2[s]);
@@ -502,6 +510,7 @@ mod tests {
             speed_mps: speed,
             params: params(),
             mobil: MobilParams::default(),
+            gap: Gap::default(),
             profile: Profile::Normal,
             class: Class::Car,
             route,

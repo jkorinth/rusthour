@@ -357,6 +357,7 @@ mod tests {
             speed_mps,
             params,
             mobil: crate::behavior::mobil::MobilParams::default(),
+            gap: crate::behavior::profile::Gap::default(),
             profile: crate::behavior::profile::Profile::Normal,
             class: crate::vehicle::class::Class::Car,
             route: &[0],

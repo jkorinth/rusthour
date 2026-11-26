@@ -10,6 +10,7 @@ use crate::StateHasher;
 use crate::behavior::mobil::MobilParams;
 use crate::behavior::profile::{Driver, Profile, Tuning};
 use crate::control::priority::Priority;
+use crate::control::roundabout::{self, Roundabout};
 use crate::control::signal::{Light, Plan, Signal};
 use crate::control::{Approach, Controller, NodeControl};
 use crate::demand::{DemandContext, RandomOd, Trip};
@@ -240,7 +241,17 @@ impl Engine {
                         patience,
                         config.dt_ms,
                     )),
-                    None => NodeControl::Priority(Priority::new(&network, i, o, patience)),
+                    None => match roundabout::ring_into(&network, &incoming_first, &incoming, n) {
+                        Some(ring) => NodeControl::Roundabout(Roundabout::new(
+                            &network,
+                            &ring,
+                            ring.len() - 1,
+                            i,
+                            o,
+                            patience,
+                        )),
+                        None => NodeControl::Priority(Priority::new(&network, i, o, patience)),
+                    },
                 }
             })
             .collect();
@@ -320,8 +331,24 @@ impl Engine {
         let driver = Driver {
             idm: params,
             mobil: MobilParams::default(),
+            gap: Profile::Normal.base().gap,
         };
         let new = entering(route, driver, (Profile::Normal, Class::Car), v, self.tick);
+        Some(self.vehicles.spawn(new))
+    }
+
+    /// Inserts a car with a driver of `profile`, tuned as the run's config
+    /// says, as [`Engine::spawn`] does; an erratic driver draws its jitter
+    /// from the Behavior stream. For tests and studies of driver mixes.
+    ///
+    /// # Panics
+    /// If `route` is empty or names a road not in the network.
+    pub fn spawn_profile(&mut self, route: &[u32], profile: Profile) -> Option<VehicleId> {
+        let tuning = self.config.tuning[profile as usize];
+        let v = self.entry_speed(route[0], &profile.base_with(&tuning).idm)?;
+        let rng = &mut self.rngs[Stream::Behavior as usize - 1];
+        let driver = Class::Car.apply(profile.driver_with(&tuning, rng));
+        let new = entering(route, driver, (profile, Class::Car), v, self.tick);
         Some(self.vehicles.spawn(new))
     }
 
@@ -581,7 +608,7 @@ impl Engine {
             }
             self.go.clear();
             self.go.resize(self.approaches.len(), false);
-            control.decide(net, self.tick, &self.approaches, &mut self.go);
+            control.decide(net, vs, self.tick, &self.approaches, &mut self.go);
             for (a, &go) in self.approaches.iter().zip(&self.go) {
                 let q = vs.lane_id(a.from_road, a.lane);
                 self.stop[q] = !go;
@@ -1096,6 +1123,7 @@ fn entering(
         speed_mps: v,
         params: d.idm,
         mobil: d.mobil,
+        gap: d.gap,
         profile,
         class,
         route,
