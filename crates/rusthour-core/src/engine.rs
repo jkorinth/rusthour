@@ -859,9 +859,11 @@ impl Engine {
     /// next step applies them, by node.
     pub fn signals(&self) -> impl Iterator<Item = (u32, Light, f64)> + '_ {
         (self.controls.iter())
-            .filter_map(|c| match c {
-                NodeControl::Signal(s) => Some(s.lights(self.tick)),
-                NodeControl::Priority(_) => None,
+            .filter_map(|c| {
+                let NodeControl::Signal(s) = c else {
+                    return None;
+                };
+                Some(s.lights(self.tick))
             })
             .flatten()
     }

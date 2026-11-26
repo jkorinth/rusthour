@@ -177,19 +177,6 @@ impl Signal {
                 .map(|(l, ms)| (r, l, ms as f64 / 1000.0))
         })
     }
-
-    /// Whether `a` faces amber or red at `tick`.
-    #[must_use]
-    pub fn holds_at_red(&self, a: &Approach, tick: u64) -> bool {
-        self.light(a.from_road, tick)
-            .is_some_and(|(l, _)| l != Light::Green)
-    }
-
-    /// See [`Priority::holds_at_stop_sign`].
-    #[must_use]
-    pub fn holds_at_stop_sign(&self, a: &Approach) -> bool {
-        self.inner.holds_at_stop_sign(a)
-    }
 }
 
 impl Controller for Signal {
@@ -219,6 +206,15 @@ impl Controller for Signal {
     fn hash_into(&self, h: &mut StateHasher) {
         // The lights are a function of the tick.
         self.inner.hash_into(h);
+    }
+
+    fn holds_at_stop_sign(&self, a: &Approach) -> bool {
+        self.inner.holds_at_stop_sign(a)
+    }
+
+    fn holds_at_red(&self, a: &Approach, tick: u64) -> bool {
+        self.light(a.from_road, tick)
+            .is_some_and(|(l, _)| l != Light::Green)
     }
 }
 

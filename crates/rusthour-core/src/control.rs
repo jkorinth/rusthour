@@ -1,7 +1,7 @@
 //! Intersection controllers: priority, stop, signals, roundabouts (M2, M3,
 //! M5). Each lives in its own submodule implementing [`Controller`] and is
 //! dispatched statically through [`NodeControl`], whose variant list and
-//! `match` are the only lines controllers share (ADR-0004).
+//! `each!` macro are the only lines controllers share (ADR-0004).
 
 use crate::StateHasher;
 use crate::network::Network;
@@ -42,6 +42,17 @@ pub trait Controller {
     fn decide(&mut self, net: &Network, tick: u64, approaches: &[Approach], go: &mut [bool]);
     /// Feeds the controller's state into `h`.
     fn hash_into(&self, h: &mut StateHasher);
+    /// Whether `a` waits only to stand at a stop sign first; valid after
+    /// `decide`. The engine uses it to label why a head waits.
+    fn holds_at_stop_sign(&self, _a: &Approach) -> bool {
+        false
+    }
+    /// Whether `a` faces an amber or red signal at `tick`. Besides labelling
+    /// why a head waits, this changes behaviour: a wrong-lane head at red
+    /// waits for green without counting towards its fallback re-plan.
+    fn holds_at_red(&self, _a: &Approach, _tick: u64) -> bool {
+        false
+    }
 }
 
 /// The controller of one node.
@@ -54,41 +65,31 @@ pub enum NodeControl {
     Signal(signal::Signal),
 }
 
-impl NodeControl {
-    /// Whether `a` waits only to stand at a stop sign first; valid after
-    /// `decide`. The engine uses it to label why a head waits.
-    #[must_use]
-    pub fn holds_at_stop_sign(&self, a: &Approach) -> bool {
-        match self {
-            Self::Priority(c) => c.holds_at_stop_sign(a),
-            Self::Signal(c) => c.holds_at_stop_sign(a),
+/// Runs `$body` with `$c` bound to the controller inside `$node`: the one
+/// list of variants to extend besides the enum.
+macro_rules! each {
+    ($node:expr, $c:ident => $body:expr) => {
+        match $node {
+            NodeControl::Priority($c) => $body,
+            NodeControl::Signal($c) => $body,
         }
-    }
-
-    /// Whether `a` faces an amber or red signal at `tick`. Besides labelling
-    /// why a head waits, this changes behaviour: a wrong-lane head at red
-    /// waits for green without counting towards its fallback re-plan.
-    #[must_use]
-    pub fn holds_at_red(&self, a: &Approach, tick: u64) -> bool {
-        match self {
-            Self::Priority(_) => false,
-            Self::Signal(c) => c.holds_at_red(a, tick),
-        }
-    }
+    };
 }
 
 impl Controller for NodeControl {
     fn decide(&mut self, net: &Network, tick: u64, approaches: &[Approach], go: &mut [bool]) {
-        match self {
-            Self::Priority(c) => c.decide(net, tick, approaches, go),
-            Self::Signal(c) => c.decide(net, tick, approaches, go),
-        }
+        each!(self, c => c.decide(net, tick, approaches, go));
     }
 
     fn hash_into(&self, h: &mut StateHasher) {
-        match self {
-            Self::Priority(c) => c.hash_into(h),
-            Self::Signal(c) => c.hash_into(h),
-        }
+        each!(self, c => c.hash_into(h));
+    }
+
+    fn holds_at_stop_sign(&self, a: &Approach) -> bool {
+        each!(self, c => c.holds_at_stop_sign(a))
+    }
+
+    fn holds_at_red(&self, a: &Approach, tick: u64) -> bool {
+        each!(self, c => c.holds_at_red(a, tick))
     }
 }

@@ -210,15 +210,6 @@ impl Priority {
         (self.arms).partition_point(|arm| (arm.road, arm.lane) < (a.from_road, a.lane))
     }
 
-    /// Whether `a` is held only because it must stand at a stop sign first.
-    /// Valid after `decide` for the same approaches; `decide` applies it
-    /// last, and the engine uses it to label why a head waits.
-    #[must_use]
-    pub fn holds_at_stop_sign(&self, a: &Approach) -> bool {
-        let arm = &self.arms[self.arm(a)];
-        arm.stop_sign && !arm.stood
-    }
-
     /// The movements of `a` and `b` cross or merge, that is, enter the same
     /// lane of one road (ADR-0005 §5). An unknown target conflicts with
     /// everything.
@@ -394,6 +385,12 @@ impl Controller for Priority {
         }
         h.write_u64(u64::from(self.pointer));
         h.write_u64(u64::from(self.winner));
+    }
+
+    /// Held only to stand at a stop sign first; `decide` applies it last.
+    fn holds_at_stop_sign(&self, a: &Approach) -> bool {
+        let arm = &self.arms[self.arm(a)];
+        arm.stop_sign && !arm.stood
     }
 }
 
