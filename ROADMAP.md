@@ -229,7 +229,7 @@ extend them.
 | M5.7 | `rusthour-cli run`: headless, multi-seed (parallel runs follow in M7.1) | todo | |
 | M5.8 | `rusthour-cli compare A B`: means, confidence intervals, effect sizes | todo | |
 | M5.9 | Scenario + patch → CLI comparison end-to-end | todo | |
-| M5.10 | Core step performance: `step_multilane/5000` is about 1.15 ms on the 2-core dev container (routing about 8% of it); profile the vehicle update, lane changes and lane-queue access, and reach ≤ 0.7 ms or re-set the target with evidence; multi-seed `compare` runs are where step cost starts to matter (M4 architect review) | claimed | perf/M5.10-step |
+| M5.10 | Core step performance: `step_multilane/5000` is about 1.15 ms on the 2-core dev container (routing about 8% of it); profile the vehicle update, lane changes and lane-queue access, and reach ≤ 0.7 ms or re-set the target with evidence; multi-seed `compare` runs are where step cost starts to matter (M4 architect review); target re-set: 0.7 ms not reached, instructions per step 6.38 M → 5.16 M (−19%), new target ≤ 5.2 M, evidence and the next levers in the ADR-0004 addendum M5.10 | done | perf/M5.10-step |
 
 **Acceptance:** a user can replace an intersection with a roundabout in the
 viewer, save it, and get a statistical before/after report from the CLI.
