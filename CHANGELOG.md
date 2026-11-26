@@ -1,5 +1,26 @@
 # Changelog
 
+## [0.6.0](https://github.com/jkorinth/rusthour/compare/v0.5.0...v0.6.0) (2026-11-26)
+
+
+### Features
+
+* **api:** network edits as serializable patches ([66af724](https://github.com/jkorinth/rusthour/commit/66af7242194b7d31721bc1f4fdef7f48f9251aab))
+* **api:** stable keys for network items ([5fc87ac](https://github.com/jkorinth/rusthour/commit/5fc87ac5fae2915ae53d8ee51efc97b406f4ebf2))
+* **cli:** apply network patches with `run --patch` ([48e05d1](https://github.com/jkorinth/rusthour/commit/48e05d1605ab194eb2dac90a37f55e98a7a5dd98))
+
+
+### Performance Improvements
+
+* **core:** check a lane head's road end without loading its route ([7574093](https://github.com/jkorinth/rusthour/commit/7574093da822b28dc61a6f8ef4ae20cd62bbf9a9))
+* **core:** find a road's movement by a short scan ([4873e5f](https://github.com/jkorinth/rusthour/commit/4873e5fafd42785720e0f5f800ca352c9b8ffc99))
+* **core:** look up each approach's arm, rank and exit once per decision ([139ac7d](https://github.com/jkorinth/rusthour/commit/139ac7d735891176d7a7f3699235fac621126699))
+* **core:** read each lane's road once in the acceleration phase ([8887697](https://github.com/jkorinth/rusthour/commit/888769703f32745f40a5ecb173ef8e8ec5e0b02f))
+* **core:** reuse the head's next lane from the decision phase ([1ae813a](https://github.com/jkorinth/rusthour/commit/1ae813a2662fa1fa3aa58439ead90f932595fc18))
+* **core:** skip the entry-lane search when the default lane is allowed ([b30ded8](https://github.com/jkorinth/rusthour/commit/b30ded8f74deed4d94d538cc9da54aaa0657d33b))
+* **core:** skip the priority rule at nodes with no head in reach ([ca1cc37](https://github.com/jkorinth/rusthour/commit/ca1cc373c81899d13afc2f6fc81a9c1791e2737e))
+* **core:** weigh a lane change only when a side has room ([ffdfac3](https://github.com/jkorinth/rusthour/commit/ffdfac38bc3ba526c4dc378cda75917188bf4622))
+
 ## [0.5.0](https://github.com/jkorinth/rusthour/compare/v0.4.0...v0.5.0) (2026-11-21)
 
 
