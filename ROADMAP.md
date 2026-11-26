@@ -267,6 +267,14 @@ viewer, save it, and get a statistical before/after report from the CLI.
 Longer ideas, such as a detailed maneuvering submodel (turning around in
 congestion, lateral positions), are in [docs/ideas.md](docs/ideas.md).
 
+From M5 (ADR-0008, confirmed by the maintainer):
+
+- assets workflow: compare each new map with the previous build and report
+  the OSM road and junction keys that appeared or disappeared, so we learn how
+  often saved edits break as OSM changes. Edits whose target was split or
+  merged keep failing loudly (ADR-0008); they are never re-pointed
+  automatically.
+
 From M4 (ADR-0005 addenda M4.5 and M4.7, ADR-0007 addendum M4.12):
 
 - core: a give-way right turn starves at about 900 veh/h of conflicting flow,
