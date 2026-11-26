@@ -8,6 +8,7 @@ use crate::network::Network;
 use crate::vehicle::Vehicles;
 
 pub mod priority;
+pub mod roundabout;
 pub mod signal;
 
 /// A lane head near the end of a road into the node.
@@ -72,6 +73,8 @@ pub enum NodeControl {
     Priority(priority::Priority),
     /// Fixed-time signals (M3.4).
     Signal(signal::Signal),
+    /// A roundabout entry with gap acceptance (M5.2).
+    Roundabout(roundabout::Roundabout),
 }
 
 /// Runs `$body` with `$c` bound to the controller inside `$node`: the one
@@ -81,6 +84,7 @@ macro_rules! each {
         match $node {
             NodeControl::Priority($c) => $body,
             NodeControl::Signal($c) => $body,
+            NodeControl::Roundabout($c) => $body,
         }
     };
 }

@@ -10,6 +10,7 @@ use crate::StateHasher;
 use crate::behavior::mobil::MobilParams;
 use crate::behavior::profile::{Driver, Profile, Tuning};
 use crate::control::priority::Priority;
+use crate::control::roundabout::{self, Roundabout};
 use crate::control::signal::{Light, Plan, Signal};
 use crate::control::{Approach, Controller, NodeControl};
 use crate::demand::{DemandContext, RandomOd, Trip};
@@ -240,7 +241,17 @@ impl Engine {
                         patience,
                         config.dt_ms,
                     )),
-                    None => NodeControl::Priority(Priority::new(&network, i, o, patience)),
+                    None => match roundabout::ring_into(&network, &incoming_first, &incoming, n) {
+                        Some(ring) => NodeControl::Roundabout(Roundabout::new(
+                            &network,
+                            &ring,
+                            ring.len() - 1,
+                            i,
+                            o,
+                            patience,
+                        )),
+                        None => NodeControl::Priority(Priority::new(&network, i, o, patience)),
+                    },
                 }
             })
             .collect();
