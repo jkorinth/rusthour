@@ -5,6 +5,7 @@
 
 use crate::StateHasher;
 use crate::network::Network;
+use crate::vehicle::Vehicles;
 
 pub mod priority;
 pub mod signal;
@@ -38,8 +39,16 @@ pub struct Approach {
 /// Decides which approaches of one node may pass.
 pub trait Controller {
     /// Sets `go[i]` for `approaches[i]`, which are sorted by
-    /// `(from_road, lane)`.
-    fn decide(&mut self, net: &Network, tick: u64, approaches: &[Approach], go: &mut [bool]);
+    /// `(from_road, lane)`; `vs` is the vehicle state at the start of the
+    /// step, for controllers that look beyond the lane heads.
+    fn decide(
+        &mut self,
+        net: &Network,
+        vs: &Vehicles,
+        tick: u64,
+        approaches: &[Approach],
+        go: &mut [bool],
+    );
     /// Feeds the controller's state into `h`.
     fn hash_into(&self, h: &mut StateHasher);
     /// Whether `a` waits only to stand at a stop sign first; valid after
@@ -77,8 +86,15 @@ macro_rules! each {
 }
 
 impl Controller for NodeControl {
-    fn decide(&mut self, net: &Network, tick: u64, approaches: &[Approach], go: &mut [bool]) {
-        each!(self, c => c.decide(net, tick, approaches, go));
+    fn decide(
+        &mut self,
+        net: &Network,
+        vs: &Vehicles,
+        tick: u64,
+        approaches: &[Approach],
+        go: &mut [bool],
+    ) {
+        each!(self, c => c.decide(net, vs, tick, approaches, go));
     }
 
     fn hash_into(&self, h: &mut StateHasher) {

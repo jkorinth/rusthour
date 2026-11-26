@@ -9,6 +9,7 @@ use super::priority::Priority;
 use super::{Approach, Controller};
 use crate::StateHasher;
 use crate::network::{EndControl, Network};
+use crate::vehicle::Vehicles;
 
 // shortcut: one default plan for every node, offset 0, no green wave; plans from the map or tuned per node later.
 const GREEN_MS: u64 = 25_000;
@@ -180,7 +181,14 @@ impl Signal {
 }
 
 impl Controller for Signal {
-    fn decide(&mut self, net: &Network, tick: u64, aps: &[Approach], go: &mut [bool]) {
+    fn decide(
+        &mut self,
+        net: &Network,
+        vs: &Vehicles,
+        tick: u64,
+        aps: &[Approach],
+        go: &mut [bool],
+    ) {
         // Green and non-signal arms go to `inner`; the others don't compete.
         self.aps.clear();
         self.index.clear();
@@ -197,7 +205,7 @@ impl Controller for Signal {
         }
         self.go.clear();
         self.go.resize(self.aps.len(), false);
-        self.inner.decide(net, tick, &self.aps, &mut self.go);
+        self.inner.decide(net, vs, tick, &self.aps, &mut self.go);
         for (&i, &g) in self.index.iter().zip(&self.go) {
             go[i] = g;
         }
@@ -290,7 +298,7 @@ mod tests {
 
     fn decide(s: &mut Signal, net: &Network, tick: u64, aps: &[Approach]) -> Vec<bool> {
         let mut go = vec![false; aps.len()];
-        s.decide(net, tick, aps, &mut go);
+        s.decide(net, &Vehicles::new(net), tick, aps, &mut go);
         go
     }
 

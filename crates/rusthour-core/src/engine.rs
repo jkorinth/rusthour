@@ -581,7 +581,7 @@ impl Engine {
             }
             self.go.clear();
             self.go.resize(self.approaches.len(), false);
-            control.decide(net, self.tick, &self.approaches, &mut self.go);
+            control.decide(net, vs, self.tick, &self.approaches, &mut self.go);
             for (a, &go) in self.approaches.iter().zip(&self.go) {
                 let q = vs.lane_id(a.from_road, a.lane);
                 self.stop[q] = !go;

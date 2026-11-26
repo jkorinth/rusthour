@@ -13,6 +13,7 @@ use super::{Approach, Controller};
 use crate::StateHasher;
 use crate::network::movement::Turn;
 use crate::network::{EndControl, Network};
+use crate::vehicle::Vehicles;
 
 /// No slot, or no arrival yet.
 const NONE: u32 = u32::MAX;
@@ -277,7 +278,14 @@ fn arriving(a: &Approach) -> bool {
 }
 
 impl Controller for Priority {
-    fn decide(&mut self, net: &Network, tick: u64, aps: &[Approach], go: &mut [bool]) {
+    fn decide(
+        &mut self,
+        net: &Network,
+        _vs: &Vehicles,
+        tick: u64,
+        aps: &[Approach],
+        go: &mut [bool],
+    ) {
         // Most nodes see no head in reach most of the time.
         if aps.is_empty() && self.idle {
             return;
@@ -480,7 +488,7 @@ mod tests {
 
     fn decide(p: &mut Priority, net: &Network, tick: u64, aps: &[Approach]) -> Vec<bool> {
         let mut go = vec![false; aps.len()];
-        p.decide(net, tick, aps, &mut go);
+        p.decide(net, &Vehicles::new(net), tick, aps, &mut go);
         go
     }
 
