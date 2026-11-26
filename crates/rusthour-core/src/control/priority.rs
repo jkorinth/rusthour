@@ -730,7 +730,8 @@ mod tests {
         ) {
             let net = node(classes);
             let mut p = priority(&net);
-            // Each arm's current head and the tick it arrived unblocked.
+            // Each arm's current head and the tick it first was arriving,
+            // blocked or not: the wait `Priority` counts for the patience.
             let mut heads = [(0u32, None::<u64>); 4];
             for (tick, blocked) in (0u64..).zip(&blocked) {
                 let aps: Vec<Approach> = (0..4u32)
@@ -741,7 +742,7 @@ mod tests {
                         ..ap(r, r * 1000 + heads[r as usize].0, 2.0, v)
                     }))
                     .collect();
-                for a in aps.iter().filter(|a| arriving(a)) {
+                for a in aps.iter().filter(|a| super::arriving(a)) {
                     heads[a.from_road as usize].1.get_or_insert(tick);
                 }
                 let go = decide(&mut p, &net, tick, &aps);
