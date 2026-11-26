@@ -1,6 +1,6 @@
 //! Driver profiles (ADR-0006): each sets a vehicle's IDM and MOBIL
 //! parameters at spawn; erratic drivers also get parameter jitter and an
-//! acceleration noise. Each profile is a submodule; the `match` arms here are
+//! acceleration noise, and each its gap acceptance (ADR-0009). Each profile is a submodule; the `match` arms here are
 //! the only shared lines.
 
 mod aggressive;
@@ -35,6 +35,17 @@ pub struct Driver {
     pub idm: IdmParams,
     /// Lane-changing parameters.
     pub mobil: MobilParams,
+    /// Gap acceptance at roundabout entries (ADR-0009).
+    pub gap: Gap,
+}
+
+/// How long a gap in circulating traffic a driver accepts (ADR-0009). The
+/// follow-up time is not a parameter: it emerges from car following.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct Gap {
+    /// Critical gap `tc`: the shortest time to the next circulating vehicle
+    /// a driver at the line enters in (s).
+    pub critical_s: f64,
 }
 
 /// The parameters of a profile a run can tune (ADR-0006, M4.4 addendum):

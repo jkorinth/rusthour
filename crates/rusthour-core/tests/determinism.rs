@@ -58,7 +58,10 @@ use rusthour_core::{Config, Engine, Stream, run_and_hash};
 /// priors is smaller.
 /// Changed in M4.14: the room check no longer counts on a standing tail, so
 /// a standing head waits until the room is there.
-const GOLDEN_HASH: u64 = 3_708_986_040_628_129_946;
+/// Changed in M5.2: each driver has a critical gap for roundabout entries,
+/// which the hash includes, and erratic drivers draw its jitter after their
+/// other parameters. This network has no roundabout.
+const GOLDEN_HASH: u64 = 3_688_749_567_698_331_390;
 
 /// A four-road ring with a short road and a merging side road that routing
 /// excludes. Random demand keeps 10 vehicles on the ring, and hand-placed

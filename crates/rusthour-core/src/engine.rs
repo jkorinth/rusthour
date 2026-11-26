@@ -320,8 +320,24 @@ impl Engine {
         let driver = Driver {
             idm: params,
             mobil: MobilParams::default(),
+            gap: Profile::Normal.base().gap,
         };
         let new = entering(route, driver, (Profile::Normal, Class::Car), v, self.tick);
+        Some(self.vehicles.spawn(new))
+    }
+
+    /// Inserts a car with a driver of `profile`, tuned as the run's config
+    /// says, as [`Engine::spawn`] does; an erratic driver draws its jitter
+    /// from the Behavior stream. For tests and studies of driver mixes.
+    ///
+    /// # Panics
+    /// If `route` is empty or names a road not in the network.
+    pub fn spawn_profile(&mut self, route: &[u32], profile: Profile) -> Option<VehicleId> {
+        let tuning = self.config.tuning[profile as usize];
+        let v = self.entry_speed(route[0], &profile.base_with(&tuning).idm)?;
+        let rng = &mut self.rngs[Stream::Behavior as usize - 1];
+        let driver = Class::Car.apply(profile.driver_with(&tuning, rng));
+        let new = entering(route, driver, (profile, Class::Car), v, self.tick);
         Some(self.vehicles.spawn(new))
     }
 
@@ -1096,6 +1112,7 @@ fn entering(
         speed_mps: v,
         params: d.idm,
         mobil: d.mobil,
+        gap: d.gap,
         profile,
         class,
         route,

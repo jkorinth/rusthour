@@ -843,6 +843,7 @@ mod tests {
             speed_mps: 0.0,
             params: crate::vehicle::idm::IdmParams::default(),
             mobil: crate::behavior::mobil::MobilParams::default(),
+            gap: crate::behavior::profile::Gap::default(),
             profile: crate::behavior::profile::Profile::Normal,
             class: crate::vehicle::class::Class::Car,
             route: &[0, 4, 5, 6],

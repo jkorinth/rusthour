@@ -364,10 +364,11 @@ mod tests {
             stuck_timeout_s: 1,
             ..Config::default()
         };
-        // A signal holds vehicles long enough for the 1 s stuck timeout.
+        // A signal holds vehicles long enough for the 1 s stuck timeout; it
+        // has one arm and so only 5 s of red, and seed 2 meets it standing.
         let mut net = ring();
         net.roads[2].end_control = crate::EndControl::Signals;
-        let mut sim = InProcess::with_network(config, 7, net).unwrap();
+        let mut sim = InProcess::with_network(config, 2, net).unwrap();
         sim.step(3000);
         let status = sim.status();
         let mut by_road = vec![(RoadId(9), 9)]; // replaced, not appended to
